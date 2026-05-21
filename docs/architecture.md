@@ -203,9 +203,9 @@ KernelQ now has a **scheduler tick runner** in the **Python control plane** (`co
 
 **What happens in one tick (`SchedulerTickRunner.run_once()`):**
 
-1. **Query Postgres** — `list_schedulable_jobs(limit=max_jobs_per_tick)` returns rows where **`state` is `queued`**, ordered by **`priority DESC`**, then **`created_at ASC`**.
-2. **Cap batch size** — at most **`max_jobs_per_tick`** jobs are considered per tick so one pass cannot drain an unbounded backlog or overload downstream systems later.
-3. **Claim each selected job** — for each returned row, `mark_job_dispatched(job_id)` moves **`queued` → `dispatched`** when the row is still waiting. The tick returns a **`SchedulerTickResult`**: how many were selected, how many were dispatched, which `job_id`s succeeded, how many were skipped (for example lost a race), and any per-job errors.
+1. **Atomically claim jobs** — `claim_schedulable_jobs(limit=max_jobs_per_tick)` selects up to *N* **`queued`** rows (ordered by **`priority DESC`**, then **`created_at ASC`**) and marks them **`dispatched`** in **one transaction** (see **Atomic Job Claiming** below).
+2. **Cap batch size** — `max_jobs_per_tick` limits how many rows one pass can claim so a tick cannot drain an unbounded backlog or overload downstream systems later.
+3. **Return a summary** — **`SchedulerTickResult`** reports how many jobs were claimed, their `job_id`s, and any repository-level errors. With atomic claiming, **selected** and **dispatched** counts match on success, and **skipped** is zero unless the design changes.
 
 **What `dispatched` means today:** the scheduler **selected and claimed** the job in Postgres. It does **not** yet mean “published to Kafka” or “running on a Go worker.” Think of it as *handed off from the waiting line to the outbound lane*—the durable record that this tick owns the job and another tick should not pick it again.
 
@@ -213,7 +213,40 @@ KernelQ now has a **scheduler tick runner** in the **Python control plane** (`co
 
 **Where it lives:** the tick runner belongs in the **Python control plane** alongside `JobRepository` and the lifecycle state machine. **Go workers** execute jobs; they do not run this loop. In interviews: *“Control plane ticks read and claim queued rows; workers execute after Kafka delivers work.”*
 
-**Interview sound bite:** *“Each tick queries `queued` jobs with a limit, marks winners `dispatched` in Postgres. `dispatched` today means claimed by the scheduler, not yet on Kafka—that publish step is next.”*
+**Interview sound bite:** *“Each tick calls `claim_schedulable_jobs` with a limit. `dispatched` today means claimed in Postgres, not yet on Kafka—that publish step is next.”*
+
+## Atomic Job Claiming
+
+The scheduler tick now uses **`JobRepository.claim_schedulable_jobs()`** instead of “list jobs, then mark each one dispatched” as separate steps. That method **selects `queued` jobs and updates them to `dispatched` in a single Postgres transaction**, which **reduces duplicate dispatch risk** when more than one scheduler runs at once.
+
+**The duplicate dispatch problem (plain English):** two schedulers can both think they should run the same job if they **read** “job A is `queued`” before either **writes** “job A is `dispatched`.” Both might publish to Kafka or hand work to workers twice. KernelQ avoids that by making **pick + claim** one atomic database operation.
+
+**Race condition (plain English):** a **race** is when the outcome depends on **timing**—who finishes first. Scheduler A and Scheduler B racing on the same row is a classic race: without locking or atomic updates, both can win the read step and both try to dispatch.
+
+**What the SQL pattern does:** `claim_schedulable_jobs` uses a subquery like:
+
+```sql
+SELECT job_id FROM jobs
+WHERE state = 'queued'
+ORDER BY priority DESC, created_at ASC
+LIMIT <n>
+FOR UPDATE SKIP LOCKED
+```
+
+then updates those rows to **`dispatched`**.
+
+- **`FOR UPDATE`** — “I am about to change these rows; lock them for this transaction.”
+- **`SKIP LOCKED`** — if another scheduler already locked a row, **do not wait**—skip it and take the next available `queued` rows.
+
+So multiple instances **work in parallel** without blocking each other on the same jobs, and without picking the same locked rows.
+
+**Why one transaction matters:** the **select-with-lock** and the **update to `dispatched`** commit together. Other sessions do not see a row stuck as `queued` after you have already claimed it inside that transaction.
+
+**Older methods still exist:** `list_schedulable_jobs` and `mark_job_dispatched` remain useful for tests and teaching, but **`SchedulerTickRunner` uses `claim_schedulable_jobs`** for production-style ticks.
+
+**Preparing for multiple scheduler instances:** today you can run one tick loop in development; tomorrow you might run **several control-plane processes** (or pods) each calling `run_once()` on a timer. Atomic claiming is how KernelQ **shares the queue safely** across those instances before Kafka publish is added.
+
+**Interview sound bite:** *“We claim in one transaction with `FOR UPDATE SKIP LOCKED` so two schedulers don’t dispatch the same job—locked rows are skipped, not double-picked.”*
 
 ## API to Repository Flow
 

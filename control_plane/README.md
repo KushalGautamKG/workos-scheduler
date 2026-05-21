@@ -81,7 +81,11 @@ It supports **create**, **fetch by id**, **update state**, and **delete**—so S
 
 ## Scheduler Tick Runner
 
-KernelQ now has a **`SchedulerTickRunner`** (`kernelq/scheduler_tick.py`). Each **`run_once()`** tick queries Postgres for **`queued`** jobs (up to `max_jobs_per_tick`), then marks selected rows **`dispatched`**. It runs **synchronously** for now—no async and no **Kafka publishing** yet; that comes in a later step.
+KernelQ now has a **`SchedulerTickRunner`** (`kernelq/scheduler_tick.py`). Each **`run_once()`** tick calls **`claim_schedulable_jobs`** (up to `max_jobs_per_tick`). It runs **synchronously** for now—no async and no **Kafka publishing** yet.
+
+## Atomic Job Claiming
+
+Scheduler ticks claim work through **`JobRepository.claim_schedulable_jobs()`**: it **selects `queued` jobs and marks them `dispatched` in one Postgres transaction**, which **reduces duplicate dispatch risk** when multiple schedulers run. The SQL uses row locking with **`FOR UPDATE SKIP LOCKED`** so instances skip rows another scheduler is already claiming. **Kafka publishing** still comes later.
 
 ## Responsibilities
 

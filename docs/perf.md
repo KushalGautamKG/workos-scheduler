@@ -98,9 +98,9 @@ KernelQ’s **scheduler tick runner** (`SchedulerTickRunner.run_once()` in the P
 
 | Metric | What it means | Why it matters |
 |--------|---------------|----------------|
-| `selected_count` | How many jobs `list_schedulable_jobs` returned this tick (at most `max_jobs_per_tick`) | Shows how much work the tick tried to process; sudden drops may mean an empty queue or a query problem |
+| `selected_count` | How many jobs `claim_schedulable_jobs` returned this tick (at most `max_jobs_per_tick`) | Shows how much work the tick claimed in one atomic pass; sudden drops may mean an empty queue or a query problem |
 | `dispatched_count` | How many selected jobs were successfully marked **`dispatched`** (`queued` → `dispatched`) | Confirms claims succeeded; this is the durable handoff count before Kafka exists |
-| `skipped_count` | Selected jobs that were **not** dispatched and did **not** raise an exception (for example another scheduler already claimed the row) | Signals contention or stale reads; high skip rates with low errors suggest races or duplicate ticks |
+| `skipped_count` | Jobs that were not claimed and did not error (zero with atomic `claim_schedulable_jobs` today) | With the older list-then-mark path, skips signaled races; atomic claiming moves contention into DB locking instead |
 | `error_count` | Number of entries in `errors` (per-job exceptions during `mark_job_dispatched`) | Separates infrastructure failures from skips; operators can alert on non-zero errors |
 | `max_jobs_per_tick` | Configured cap passed into `SchedulerTickRunner` (batch limit for the schedulable query) | Documents the tick’s intended batch size when comparing runs; tuning it trades throughput per tick vs steady load |
 
@@ -116,6 +116,45 @@ KernelQ’s **scheduler tick runner** (`SchedulerTickRunner.run_once()` in the P
 | `dispatch_transition_latency` | Time from selecting a row to completing `queued` → `dispatched` (or through Kafka publish later) | Captures end-to-end claim cost and contention when multiple control-plane instances run ticks |
 
 We have **not** published numeric targets or sample dashboards for tick metrics yet. Use **`SchedulerTickResult`** in tests and logs first; add histograms and SLOs after a dispatch loop runs continuously against real Postgres (and later Kafka).
+
+## Atomic Claiming Metrics
+
+KernelQ’s scheduler tick now calls **`claim_schedulable_jobs`**—one Postgres transaction that locks candidate **`queued`** rows (`FOR UPDATE SKIP LOCKED`), updates them to **`dispatched`**, and returns the claimed rows. At this stage, atomic claiming matters most for **reliability** (avoiding duplicate dispatch) rather than shaving milliseconds off a hot path. Performance tuning still matters, but **correctness under multiple schedulers** is the primary win.
+
+**Future metrics (not measured yet):**
+
+| Metric | What it means | Why it matters |
+|--------|---------------|----------------|
+| `duplicate_dispatch_rate` | How often the same `job_id` is handed off more than once (target: **0** in production) | The main reliability signal atomic claiming exists to protect; any non-zero rate means races or bugs in claim/publish logic |
+| `claim_query_latency` | Time for `claim_schedulable_jobs` to complete (p50 / p95 / p99) | Slow claims delay every tick; grows with table size, index health, and contention |
+| `skipped_locked_rows` | How many `queued` rows were skipped because another session held `FOR UPDATE` locks (inferred from “wanted N rows, got fewer” under load, or DB stats) | Shows multi-scheduler contention; some skips are normal, chronic starvation of low-priority work is not |
+| `dispatch_transition_latency` | Time from start of claim to committed `dispatched` rows (same transaction today) | End-to-end cost of one atomic handoff; useful when comparing claim vs older list-then-mark |
+| `scheduler_tick_throughput` | How many jobs claimed per second across all scheduler instances | Capacity planning once several control-plane loops run in parallel |
+
+**Placeholder: `EXPLAIN ANALYZE` on the claim query**
+
+Paste a real plan here after benchmarking against local or staging Postgres (no fabricated numbers):
+
+```
+-- Example (run when ready):
+-- EXPLAIN (ANALYZE, BUFFERS)
+-- UPDATE jobs
+-- SET state = 'dispatched', updated_at = NOW()
+-- WHERE job_id IN (
+--     SELECT job_id
+--     FROM jobs
+--     WHERE state = 'queued'
+--     ORDER BY priority DESC, created_at ASC
+--     LIMIT 10
+--     FOR UPDATE SKIP LOCKED
+-- )
+-- RETURNING job_id, tenant_id, priority, state, payload,
+--           retry_count, max_retries, created_at, updated_at;
+
+-- TODO: paste actual EXPLAIN ANALYZE output after first benchmark run.
+```
+
+Until that benchmark exists, treat this section as a **reliability-and-observability plan**, not a performance report.
 
 ## Load Testing Methodology
 

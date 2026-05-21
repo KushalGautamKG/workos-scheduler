@@ -7,6 +7,8 @@ Requires:
 
 Tests use very high priorities so our rows sort ahead of unrelated queued jobs
 that may already exist in a shared local database.
+
+``run_once()`` uses ``claim_schedulable_jobs`` (one atomic claim per tick).
 """
 
 from __future__ import annotations
@@ -36,6 +38,11 @@ def _delete_jobs(repo: JobRepository, *job_ids: str) -> None:
         repo.delete_job(job_id)
 
 
+def _our_dispatched_ids(dispatched_job_ids: list[str], prefix: str) -> list[str]:
+    """Job ids from this test only (shared Postgres may contain other jobs)."""
+    return [job_id for job_id in dispatched_job_ids if job_id.startswith(prefix)]
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _require_postgres() -> None:
     try:
@@ -50,7 +57,7 @@ def test_run_once_dispatches_queued_jobs() -> None:
     first_id = _job_id(prefix, "first")
     second_id = _job_id(prefix, "second")
     third_id = _job_id(prefix, "third")
-    base = 6_000_000
+    base = 8_000_000
     with connect() as conn:
         repo = JobRepository(conn)
         _delete_jobs(repo, first_id, second_id, third_id)
@@ -61,14 +68,14 @@ def test_run_once_dispatches_queued_jobs() -> None:
             time.sleep(0.01)
             repo.create_job(third_id, "tenant-a", base + 3, JobState.QUEUED.value)
 
-            runner = SchedulerTickRunner(repo, max_jobs_per_tick=2)
-            result = runner.run_once()
+            result = SchedulerTickRunner(repo, max_jobs_per_tick=2).run_once()
 
-            assert result.selected_count == 2
-            assert result.dispatched_count == 2
+            ours = _our_dispatched_ids(result.dispatched_job_ids, prefix)
+            assert len(ours) == 2
+            assert set(ours) == {third_id, second_id}
+            assert result.selected_count == result.dispatched_count == 2
             assert result.skipped_count == 0
             assert result.errors == []
-            assert set(result.dispatched_job_ids) == {third_id, second_id}
 
             assert repo.get_job(third_id).state == JobState.DISPATCHED.value
             assert repo.get_job(second_id).state == JobState.DISPATCHED.value
@@ -82,7 +89,7 @@ def test_run_once_respects_max_jobs_per_tick() -> None:
     first_id = _job_id(prefix, "first")
     second_id = _job_id(prefix, "second")
     third_id = _job_id(prefix, "third")
-    base = 6_100_000
+    base = 8_100_000
     with connect() as conn:
         repo = JobRepository(conn)
         _delete_jobs(repo, first_id, second_id, third_id)
@@ -93,9 +100,11 @@ def test_run_once_respects_max_jobs_per_tick() -> None:
 
             result = SchedulerTickRunner(repo, max_jobs_per_tick=1).run_once()
 
+            ours = _our_dispatched_ids(result.dispatched_job_ids, prefix)
+            assert ours == [third_id]
             assert result.selected_count == 1
             assert result.dispatched_count == 1
-            assert result.dispatched_job_ids == [third_id]
+            assert result.skipped_count == 0
 
             assert repo.get_job(third_id).state == JobState.DISPATCHED.value
             assert repo.get_job(second_id).state == JobState.QUEUED.value
@@ -112,18 +121,53 @@ def test_run_once_ignores_non_queued_jobs() -> None:
         repo = JobRepository(conn)
         _delete_jobs(repo, queued_id, failed_id)
         try:
-            repo.create_job(queued_id, "tenant-a", 7_000_000, JobState.QUEUED.value)
-            repo.create_job(failed_id, "tenant-a", 7_000_000, JobState.FAILED.value)
+            repo.create_job(queued_id, "tenant-a", 8_200_000, JobState.QUEUED.value)
+            repo.create_job(failed_id, "tenant-a", 8_200_000, JobState.FAILED.value)
 
             result = SchedulerTickRunner(repo, max_jobs_per_tick=10).run_once()
 
-            assert queued_id in result.dispatched_job_ids
+            ours = _our_dispatched_ids(result.dispatched_job_ids, prefix)
+            assert ours == [queued_id]
             assert failed_id not in result.dispatched_job_ids
 
             assert repo.get_job(queued_id).state == JobState.DISPATCHED.value
             assert repo.get_job(failed_id).state == JobState.FAILED.value
         finally:
             _delete_jobs(repo, queued_id, failed_id)
+
+
+def test_run_once_twice_does_not_redispatch_same_jobs() -> None:
+    """Atomic claim ensures a second tick does not pick the same rows again."""
+    prefix = _unique_prefix("test_tick_twice")
+    first_id = _job_id(prefix, "first")
+    second_id = _job_id(prefix, "second")
+    base = 8_300_000
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, first_id, second_id)
+        try:
+            repo.create_job(first_id, "tenant-a", base + 1, JobState.QUEUED.value)
+            repo.create_job(second_id, "tenant-a", base + 2, JobState.QUEUED.value)
+
+            runner = SchedulerTickRunner(repo, max_jobs_per_tick=2)
+
+            first = runner.run_once()
+            second = runner.run_once()
+
+            first_ours = _our_dispatched_ids(first.dispatched_job_ids, prefix)
+            second_ours = _our_dispatched_ids(second.dispatched_job_ids, prefix)
+
+            assert set(first_ours) == {first_id, second_id}
+            assert first.selected_count == first.dispatched_count == 2
+            assert first.skipped_count == 0
+
+            assert second_ours == []
+            assert second.selected_count == second.dispatched_count
+            # Second tick may claim unrelated queued rows in a shared DB; our jobs stay dispatched.
+            assert repo.get_job(first_id).state == JobState.DISPATCHED.value
+            assert repo.get_job(second_id).state == JobState.DISPATCHED.value
+        finally:
+            _delete_jobs(repo, first_id, second_id)
 
 
 def test_max_jobs_per_tick_must_be_positive() -> None:

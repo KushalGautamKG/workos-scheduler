@@ -1,13 +1,13 @@
 """
-One scheduler tick: pick schedulable jobs from Postgres and mark them dispatched.
+One scheduler tick: atomically claim schedulable jobs from Postgres.
 
 This module is intentionally small and synchronous:
 - No Kafka publishing yet (that comes in a later milestone).
 - No async or threading yet (one tick runs to completion on the caller's thread).
 
 A *tick* is one pass of the dispatch loop in the Python control plane:
-ask the database which jobs are waiting, try to claim each one as ``dispatched``,
-and return a summary of what happened.
+ask Postgres to lock and claim up to N ``queued`` jobs as ``dispatched``,
+then return a summary of what happened.
 """
 
 from __future__ import annotations
@@ -22,12 +22,12 @@ class SchedulerTickResult:
     """
     Summary of a single scheduler tick.
 
-    - selected_count: how many jobs ``list_schedulable_jobs`` returned this tick
+    - selected_count: how many jobs were claimed this tick
     - dispatched_count: how many were successfully marked ``dispatched``
-    - dispatched_job_ids: ids that moved to ``dispatched`` (in processing order)
+    - dispatched_job_ids: ids that moved to ``dispatched`` (in scheduling order)
     - skipped_count: selected jobs that were not dispatched and did not error
       (for example another process already claimed the row)
-    - errors: human-readable problem descriptions for jobs that raised exceptions
+    - errors: human-readable problem descriptions when the repository call fails
     """
 
     selected_count: int
@@ -47,7 +47,7 @@ class SchedulerTickRunner:
         result = runner.run_once()
         # inspect result.dispatched_count, result.errors, etc.
 
-    ``max_jobs_per_tick`` caps how many rows we try per pass so one tick cannot
+    ``max_jobs_per_tick`` caps how many rows we claim per pass so one tick cannot
     overload downstream systems once Kafka and workers are connected.
     """
 
@@ -62,42 +62,30 @@ class SchedulerTickRunner:
         """
         Execute one scheduler tick.
 
-        Steps:
-        1. Load up to ``max_jobs_per_tick`` schedulable rows (``queued``, ordered
-           by priority then age).
-        2. For each row, try ``mark_job_dispatched`` (``queued`` -> ``dispatched``).
-        3. Return counts and any per-job errors (other jobs still run).
+        Calls ``claim_schedulable_jobs`` once. That method uses a single Postgres
+        transaction with ``FOR UPDATE SKIP LOCKED`` so multiple scheduler
+        instances do not claim the same row (no duplicate dispatch).
         """
-        dispatched_job_ids: list[str] = []
-        errors: list[str] = []
-        dispatched_count = 0
+        try:
+            claimed_jobs = self._repository.claim_schedulable_jobs(
+                limit=self._max_jobs_per_tick
+            )
+        except Exception as exc:
+            return SchedulerTickResult(
+                selected_count=0,
+                dispatched_count=0,
+                dispatched_job_ids=[],
+                skipped_count=0,
+                errors=[f"claim_schedulable_jobs: {type(exc).__name__}: {exc}"],
+            )
 
-        # Step 1: ask Postgres which jobs are ready to leave the waiting line.
-        jobs = self._repository.list_schedulable_jobs(limit=self._max_jobs_per_tick)
-        selected_count = len(jobs)
-
-        # Step 2: try to claim each selected job. Failures on one job do not stop the rest.
-        for job in jobs:
-            try:
-                updated = self._repository.mark_job_dispatched(job.job_id)
-            except Exception as exc:
-                # Record the problem and continue with the next job.
-                errors.append(f"job_id={job.job_id}: {type(exc).__name__}: {exc}")
-                continue
-
-            if updated is not None:
-                dispatched_count += 1
-                dispatched_job_ids.append(job.job_id)
-            # If ``mark_job_dispatched`` returns None, the row was not claimed
-            # (missing job, or no longer ``queued``). That counts as skipped below.
-
-        # Step 3: skipped = selected but neither dispatched nor failed with an exception.
-        skipped_count = selected_count - dispatched_count - len(errors)
+        dispatched_job_ids = [job.job_id for job in claimed_jobs]
+        claimed_count = len(claimed_jobs)
 
         return SchedulerTickResult(
-            selected_count=selected_count,
-            dispatched_count=dispatched_count,
+            selected_count=claimed_count,
+            dispatched_count=claimed_count,
             dispatched_job_ids=dispatched_job_ids,
-            skipped_count=skipped_count,
-            errors=errors,
+            skipped_count=0,
+            errors=[],
         )

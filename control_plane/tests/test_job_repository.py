@@ -271,3 +271,132 @@ def test_mark_job_dispatched_non_queued_returns_none() -> None:
             assert loaded.state == JobState.RUNNING.value
         finally:
             _delete_jobs(repo, job_id)
+
+
+def test_claim_schedulable_jobs_marks_queued_as_dispatched() -> None:
+    prefix = _unique_job_id("test_jr_claim_dispatch")
+    first_id = _job_id(prefix, "one")
+    second_id = _job_id(prefix, "two")
+    base = 4_000_000
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, first_id, second_id)
+        try:
+            repo.create_job(first_id, "tenant-a", base + 1, JobState.QUEUED.value)
+            repo.create_job(second_id, "tenant-a", base + 2, JobState.QUEUED.value)
+
+            claimed = repo.claim_schedulable_jobs(limit=2)
+            ours = _our_jobs(claimed, prefix)
+
+            assert len(ours) == 2
+            assert all(job.state == JobState.DISPATCHED.value for job in ours)
+            assert repo.get_job(first_id).state == JobState.DISPATCHED.value
+            assert repo.get_job(second_id).state == JobState.DISPATCHED.value
+        finally:
+            _delete_jobs(repo, first_id, second_id)
+
+
+def test_claim_schedulable_jobs_respects_limit() -> None:
+    prefix = _unique_job_id("test_jr_claim_limit")
+    first_id = _job_id(prefix, "first")
+    second_id = _job_id(prefix, "second")
+    third_id = _job_id(prefix, "third")
+    base = 4_100_000
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, first_id, second_id, third_id)
+        try:
+            repo.create_job(first_id, "tenant-a", base + 1, JobState.QUEUED.value)
+            repo.create_job(second_id, "tenant-a", base + 2, JobState.QUEUED.value)
+            repo.create_job(third_id, "tenant-a", base + 3, JobState.QUEUED.value)
+
+            claimed = repo.claim_schedulable_jobs(limit=2)
+            ours = _our_jobs(claimed, prefix)
+
+            assert len(ours) == 2
+            assert [job.job_id for job in ours] == [third_id, second_id]
+            assert repo.get_job(third_id).state == JobState.DISPATCHED.value
+            assert repo.get_job(second_id).state == JobState.DISPATCHED.value
+            assert repo.get_job(first_id).state == JobState.QUEUED.value
+        finally:
+            _delete_jobs(repo, first_id, second_id, third_id)
+
+
+def test_claim_schedulable_jobs_returns_only_queued() -> None:
+    prefix = _unique_job_id("test_jr_claim_queued_only")
+    queued_id = _job_id(prefix, "queued")
+    created_id = _job_id(prefix, "created")
+    failed_id = _job_id(prefix, "failed")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, queued_id, created_id, failed_id)
+        try:
+            repo.create_job(queued_id, "tenant-a", 4_200_000, JobState.QUEUED.value)
+            repo.create_job(created_id, "tenant-a", 4_200_000, JobState.CREATED.value)
+            repo.create_job(failed_id, "tenant-a", 4_200_000, JobState.FAILED.value)
+
+            claimed = repo.claim_schedulable_jobs(limit=10)
+            ours = _our_jobs(claimed, prefix)
+
+            assert len(ours) == 1
+            assert ours[0].job_id == queued_id
+            assert ours[0].state == JobState.DISPATCHED.value
+            assert repo.get_job(failed_id).state == JobState.FAILED.value
+            assert repo.get_job(created_id).state == JobState.CREATED.value
+        finally:
+            _delete_jobs(repo, queued_id, created_id, failed_id)
+
+
+def test_claim_schedulable_jobs_orders_by_priority_then_created_at() -> None:
+    prefix = _unique_job_id("test_jr_claim_order")
+    low_id = _job_id(prefix, "low")
+    high_new_id = _job_id(prefix, "high_new")
+    high_old_id = _job_id(prefix, "high_old")
+    base = 4_300_000
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, low_id, high_new_id, high_old_id)
+        try:
+            repo.create_job(low_id, "tenant-a", base + 1, JobState.QUEUED.value)
+            time.sleep(0.02)
+            repo.create_job(high_new_id, "tenant-a", base + 10, JobState.QUEUED.value)
+            time.sleep(0.02)
+            repo.create_job(high_old_id, "tenant-a", base + 10, JobState.QUEUED.value)
+
+            claimed = repo.claim_schedulable_jobs(limit=10)
+            ours = _our_jobs(claimed, prefix)
+
+            assert [job.job_id for job in ours] == [high_new_id, high_old_id, low_id]
+            assert [job.priority for job in ours] == [base + 10, base + 10, base + 1]
+        finally:
+            _delete_jobs(repo, low_id, high_new_id, high_old_id)
+
+
+def test_claim_schedulable_jobs_limit_must_be_positive() -> None:
+    with connect() as conn:
+        repo = JobRepository(conn)
+        with pytest.raises(ValueError, match="limit"):
+            repo.claim_schedulable_jobs(limit=0)
+
+
+def test_claim_schedulable_jobs_does_not_reclaim_dispatched() -> None:
+    prefix = _unique_job_id("test_jr_claim_twice")
+    first_id = _job_id(prefix, "first")
+    second_id = _job_id(prefix, "second")
+    base = 4_400_000
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, first_id, second_id)
+        try:
+            repo.create_job(first_id, "tenant-a", base + 1, JobState.QUEUED.value)
+            repo.create_job(second_id, "tenant-a", base + 2, JobState.QUEUED.value)
+
+            first_claim = repo.claim_schedulable_jobs(limit=2)
+            first_ours = _our_jobs(first_claim, prefix)
+            assert len(first_ours) == 2
+
+            second_claim = repo.claim_schedulable_jobs(limit=10)
+            second_ours = _our_jobs(second_claim, prefix)
+            assert second_ours == []
+        finally:
+            _delete_jobs(repo, first_id, second_id)

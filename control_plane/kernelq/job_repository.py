@@ -215,3 +215,55 @@ class JobRepository:
 
         self._conn.commit()
         return _row_to_record(row)
+
+    def claim_schedulable_jobs(self, limit: int = 10) -> list[JobRecord]:
+        """
+        Atomically pick schedulable jobs and mark them ``dispatched``.
+
+        This is the safer path when **multiple scheduler instances** run ticks at
+        the same time. ``SELECT ... FOR UPDATE SKIP LOCKED`` locks the rows we are
+        about to claim; other schedulers **skip** locked rows instead of waiting,
+        which prevents **duplicate dispatch** of the same job.
+
+        Everything runs in **one transaction**: select-with-lock and update commit
+        together, so no other session can see these rows as still ``queued`` after
+        we claim them.
+
+        Ordering matches ``list_schedulable_jobs``: ``priority DESC``, then
+        ``created_at ASC``.
+        """
+        if limit <= 0:
+            raise ValueError("limit must be a positive integer")
+
+        # One statement: lock candidate rows, update them, return the new rows.
+        sql = """
+            UPDATE jobs
+            SET state = %(dispatched_state)s, updated_at = NOW()
+            WHERE job_id IN (
+                SELECT job_id
+                FROM jobs
+                WHERE state = %(queued_state)s
+                ORDER BY priority DESC, created_at ASC
+                LIMIT %(limit)s
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING
+                job_id, tenant_id, priority, state, payload,
+                retry_count, max_retries, created_at, updated_at
+        """
+        params = {
+            "queued_state": JobState.QUEUED.value,
+            "dispatched_state": JobState.DISPATCHED.value,
+            "limit": limit,
+        }
+
+        with self._conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+
+        self._conn.commit()
+
+        records = [_row_to_record(row) for row in rows]
+        # RETURNING order is not guaranteed; sort to match scheduling policy.
+        records.sort(key=lambda job: (-job.priority, job.created_at))
+        return records
