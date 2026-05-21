@@ -90,6 +90,33 @@ When we run the schedulable query against a realistic `jobs` table, paste the pl
 
 Until that run exists, treat this section as a **metrics plan**, not a report. Simulation counters above still describe in-memory prototypes; this table is the bridge toward **durable scheduling** observability once Kafka dispatch and a live dispatch loop are added.
 
+## Scheduler Tick Metrics
+
+KernelQ’s **scheduler tick runner** (`SchedulerTickRunner.run_once()` in the Python control plane) returns a **`SchedulerTickResult`** after each pass. Those fields are **counts you can log or export today**—no timing or broker metrics yet, but they answer “what did this tick do?” in plain numbers.
+
+**Counts from each tick (today):**
+
+| Metric | What it means | Why it matters |
+|--------|---------------|----------------|
+| `selected_count` | How many jobs `list_schedulable_jobs` returned this tick (at most `max_jobs_per_tick`) | Shows how much work the tick tried to process; sudden drops may mean an empty queue or a query problem |
+| `dispatched_count` | How many selected jobs were successfully marked **`dispatched`** (`queued` → `dispatched`) | Confirms claims succeeded; this is the durable handoff count before Kafka exists |
+| `skipped_count` | Selected jobs that were **not** dispatched and did **not** raise an exception (for example another scheduler already claimed the row) | Signals contention or stale reads; high skip rates with low errors suggest races or duplicate ticks |
+| `error_count` | Number of entries in `errors` (per-job exceptions during `mark_job_dispatched`) | Separates infrastructure failures from skips; operators can alert on non-zero errors |
+| `max_jobs_per_tick` | Configured cap passed into `SchedulerTickRunner` (batch limit for the schedulable query) | Documents the tick’s intended batch size when comparing runs; tuning it trades throughput per tick vs steady load |
+
+`error_count` is not a separate field on `SchedulerTickResult`; in practice it is **`len(result.errors)`** alongside the readable error strings the tick already collects.
+
+**Future metrics (not measured yet):**
+
+| Metric | What it means | Why it matters |
+|--------|---------------|----------------|
+| `tick_duration` | Wall-clock time for the full `run_once()` pass (query + all mark attempts) | A slow tick delays every job waiting behind it; helps spot DB or application regressions |
+| `postgres_query_latency` | Time for `list_schedulable_jobs` alone (and optionally each `mark_job_dispatched`) | Breaks out database cost inside the tick; pairs with `EXPLAIN ANALYZE` and index work above |
+| `kafka_publish_latency` | Time to publish a selected job to Kafka once that step exists | Shows broker health and whether publish is the bottleneck after Postgres claims |
+| `dispatch_transition_latency` | Time from selecting a row to completing `queued` → `dispatched` (or through Kafka publish later) | Captures end-to-end claim cost and contention when multiple control-plane instances run ticks |
+
+We have **not** published numeric targets or sample dashboards for tick metrics yet. Use **`SchedulerTickResult`** in tests and logs first; add histograms and SLOs after a dispatch loop runs continuously against real Postgres (and later Kafka).
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

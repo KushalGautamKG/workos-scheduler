@@ -197,6 +197,24 @@ LIMIT <n>
 
 **Interview sound bite:** *“Schedulable means `queued` in Postgres, ordered by priority then age; `mark_job_dispatched` claims the row. In-memory schedulers taught ordering rules; the repository makes those rules survive restarts—Kafka comes later.”*
 
+## Scheduler Tick Loop
+
+KernelQ now has a **scheduler tick runner** in the **Python control plane** (`control_plane/kernelq/scheduler_tick.py`). A **tick** is one pass of the dispatch loop: “ask Postgres who is waiting, pick up to *N* jobs, and claim them.” This wires the repository query path into something you can call repeatedly from a future loop, cron job, or background task—still **synchronous** and **simple** today (no async, no Kafka yet).
+
+**What happens in one tick (`SchedulerTickRunner.run_once()`):**
+
+1. **Query Postgres** — `list_schedulable_jobs(limit=max_jobs_per_tick)` returns rows where **`state` is `queued`**, ordered by **`priority DESC`**, then **`created_at ASC`**.
+2. **Cap batch size** — at most **`max_jobs_per_tick`** jobs are considered per tick so one pass cannot drain an unbounded backlog or overload downstream systems later.
+3. **Claim each selected job** — for each returned row, `mark_job_dispatched(job_id)` moves **`queued` → `dispatched`** when the row is still waiting. The tick returns a **`SchedulerTickResult`**: how many were selected, how many were dispatched, which `job_id`s succeeded, how many were skipped (for example lost a race), and any per-job errors.
+
+**What `dispatched` means today:** the scheduler **selected and claimed** the job in Postgres. It does **not** yet mean “published to Kafka” or “running on a Go worker.” Think of it as *handed off from the waiting line to the outbound lane*—the durable record that this tick owns the job and another tick should not pick it again.
+
+**What comes later:** the same tick will likely **publish selected jobs to Kafka** (before or while updating dispatch state), so workers can consume runnable work. The order might be: select → publish → mark `dispatched` (or publish only after a successful claim)—exact wiring is a later milestone. Today the tick stops at **Postgres claims** so selection and broker integration can be built and tested in steps.
+
+**Where it lives:** the tick runner belongs in the **Python control plane** alongside `JobRepository` and the lifecycle state machine. **Go workers** execute jobs; they do not run this loop. In interviews: *“Control plane ticks read and claim queued rows; workers execute after Kafka delivers work.”*
+
+**Interview sound bite:** *“Each tick queries `queued` jobs with a limit, marks winners `dispatched` in Postgres. `dispatched` today means claimed by the scheduler, not yet on Kafka—that publish step is next.”*
+
 ## API to Repository Flow
 
 The control-plane **FastAPI routes** (`control_plane/api.py`) now talk to jobs through **`JobRepository`**, not by embedding SQL in every handler. That is a simple **layered design** you can draw on a whiteboard in an interview.

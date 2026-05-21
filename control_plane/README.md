@@ -79,6 +79,10 @@ It supports **create**, **fetch by id**, **update state**, and **delete**—so S
 
 `JobRepository` can now **list queued jobs from Postgres** (`list_schedulable_jobs`) and **mark a queued job as dispatched** (`mark_job_dispatched`). That is the first step toward moving **scheduler selection** from in-memory prototypes to **durable, database-backed orchestration**—the same ordering ideas (priority, then age), but stored in the `jobs` table so they survive restarts. **Kafka publishing** will be added later; today this path updates Postgres only.
 
+## Scheduler Tick Runner
+
+KernelQ now has a **`SchedulerTickRunner`** (`kernelq/scheduler_tick.py`). Each **`run_once()`** tick queries Postgres for **`queued`** jobs (up to `max_jobs_per_tick`), then marks selected rows **`dispatched`**. It runs **synchronously** for now—no async and no **Kafka publishing** yet; that comes in a later step.
+
 ## Responsibilities
 
 The control plane is responsible for:
