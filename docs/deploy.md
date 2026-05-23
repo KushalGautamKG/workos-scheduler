@@ -126,6 +126,18 @@ python3 -m pytest control_plane/tests/test_job_repository.py
 
 If Postgres is not running, these tests will skip or fail when connecting—start the container first.
 
+## Inspecting Scheduler Query Plans
+
+After Postgres is up and the `jobs` migration is applied, you can inspect how Postgres plans scheduler-related queries (`EXPLAIN` / `EXPLAIN ANALYZE`). That helps verify whether **indexes are useful** (index scan vs full table scan) before the table grows. **Local-only for now**—not part of CI or cloud deploy yet.
+
+From the repository root:
+
+```bash
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/explain_claim_schedulable_jobs.sql
+```
+
+See `docs/perf.md` (**Postgres EXPLAIN for Scheduler Queries**) for what to look for in the output.
+
 ### Docker Compose Setup
 
 The repo includes `docker-compose.yml` with a **Postgres 16** service for local development (see **Local PostgreSQL Setup** above).

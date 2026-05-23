@@ -156,6 +156,58 @@ Paste a real plan here after benchmarking against local or staging Postgres (no 
 
 Until that benchmark exists, treat this section as a **reliability-and-observability plan**, not a performance report.
 
+## Postgres EXPLAIN for Scheduler Queries
+
+Every scheduler tick hits Postgres to find and claim **`queued`** work. As the **`jobs`** table grows, that **queued-job claim / scheduling query** must stay cheap and predictable. **`EXPLAIN`** is how we inspect the database plan **before** production load—not to guess, but to see whether Postgres uses indexes or scans the whole table.
+
+**Why we inspect scheduler queries:**
+
+- Ticks run **often**; a slow plan hurts every waiting job.
+- The query has a fixed shape: filter by **`state`**, sort by **`priority`** and **`created_at`**, **`LIMIT`** a batch, and (for claims) **`FOR UPDATE SKIP LOCKED`**.
+- Wrong plans show up only at scale—local dev with ten rows can hide a sequential scan on millions of rows.
+
+**What `EXPLAIN` shows:**
+
+- The **planned steps** Postgres would take (scan types, index names, joins, sorts, limits).
+- **Estimated** row counts and costs—not real execution time.
+
+**What `EXPLAIN ANALYZE` does:**
+
+- Runs the query for real, then prints the plan **plus actual** row counts and **execution time** per step.
+- **Important:** it **executes** the statement. Read-only `SELECT` plans are safer to try on dev; an `UPDATE` claim query will mutate rows—use staging or sample data.
+
+**What to watch for in the plan:**
+
+| Signal | What it means | Why it matters |
+|--------|---------------|----------------|
+| **Index usage** | Steps like `Index Scan` or `Bitmap Index Scan` on `state` / `(state, priority)` | Good sign Postgres is not reading every row in `jobs` |
+| **Sequential scans** | `Seq Scan on jobs` for the schedulable filter | Often bad at large table size; may mean a missing or unused index |
+| **Sorting** | `Sort` with high cost or many rows | Sorting a huge `queued` set before `LIMIT` is expensive; ideal plans narrow rows first |
+| **Estimated rows** | Planner guesses vs reality (compare in `EXPLAIN ANALYZE`) | Bad estimates can pick the wrong plan; stale statistics are a common cause |
+| **Execution time** | Actual milliseconds on each node (`EXPLAIN ANALYZE` only) | What operators feel per tick; track p95/p99 later, not just one manual run |
+
+**How to Run**
+
+From the repository root, with local Postgres up (`docker compose up -d postgres`) and migrations applied:
+
+```bash
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/explain_claim_schedulable_jobs.sql
+```
+
+That script (`control_plane/sql/explain_claim_schedulable_jobs.sql`) includes optional sample rows, **`EXPLAIN`** on the schedulable **`SELECT`**, **`EXPLAIN ANALYZE`** on the same query (with a comment that it runs), and **`EXPLAIN`** on the **`FOR UPDATE SKIP LOCKED`** claim subquery.
+
+**Observed Plan Notes**
+
+Paste real output here after you run the script (no invented numbers):
+
+```
+-- TODO: paste EXPLAIN / EXPLAIN ANALYZE output from explain_claim_schedulable_jobs.sql
+-- Note: KernelQ stores state as lowercase 'queued' in Postgres.
+-- Compare: index scan vs seq scan, sort cost, estimated vs actual rows, Execution Time.
+```
+
+**Interview sound bite:** *“We EXPLAIN the queued-job claim query to confirm index-backed plans; EXPLAIN ANALYZE runs it and shows real time—watch for seq scans and sorts on large row counts before the LIMIT.”*
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

@@ -87,6 +87,14 @@ KernelQ now has a **`SchedulerTickRunner`** (`kernelq/scheduler_tick.py`). Each 
 
 Scheduler ticks claim work through **`JobRepository.claim_schedulable_jobs()`**: it **selects `queued` jobs and marks them `dispatched` in one Postgres transaction**, which **reduces duplicate dispatch risk** when multiple schedulers run. The SQL uses row locking with **`FOR UPDATE SKIP LOCKED`** so instances skip rows another scheduler is already claiming. **Kafka publishing** still comes later.
 
+## Inspecting Scheduler Query Plans
+
+KernelQ includes **`control_plane/sql/explain_claim_schedulable_jobs.sql`** to inspect Postgres plans for scheduler queries. **`EXPLAIN`** shows how Postgres *plans* to run a query; **`EXPLAIN ANALYZE`** actually *runs* it and reports timing. That helps catch slow scheduler queries before load testing. From the repository root (Postgres running, migration applied):
+
+```bash
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/explain_claim_schedulable_jobs.sql
+```
+
 ## Responsibilities
 
 The control plane is responsible for:
