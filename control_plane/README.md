@@ -95,6 +95,16 @@ KernelQ includes **`control_plane/sql/explain_claim_schedulable_jobs.sql`** to i
 docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/explain_claim_schedulable_jobs.sql
 ```
 
+## Scheduler Query Index
+
+KernelQ now has a **scheduler-specific Postgres index** — **`idx_jobs_state_priority_created_at`** on `(state, priority DESC, created_at ASC)`. It supports querying **`queued`** jobs by **priority** (urgent first) and **age** (FIFO among equals), matching `claim_schedulable_jobs`. Apply locally with **migration 002**:
+
+```bash
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/migrations/002_add_scheduler_claim_index.sql
+```
+
+Rerun the **EXPLAIN** script above to inspect whether the query plan changed.
+
 ## Responsibilities
 
 The control plane is responsible for:

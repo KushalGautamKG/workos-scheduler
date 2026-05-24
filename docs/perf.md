@@ -208,6 +208,56 @@ Paste real output here after you run the script (no invented numbers):
 
 **Interview sound bite:** *“We EXPLAIN the queued-job claim query to confirm index-backed plans; EXPLAIN ANALYZE runs it and shows real time—watch for seq scans and sorts on large row counts before the LIMIT.”*
 
+## Scheduler Query Indexing
+
+On **Day 23**, we ran `explain_claim_schedulable_jobs.sql` against local Postgres with a handful of sample rows. The plan showed **`Seq Scan on jobs`** (filter `state = 'queued'`), then **`Sort`** on `priority DESC, created_at`, then **`Limit`**. **`EXPLAIN ANALYZE`** on the same shape reported a small in-memory sort and sub-millisecond execution on that tiny dataset.
+
+**That is okay on small tables:** when `jobs` has very few rows, Postgres often chooses a sequential scan because reading the whole table is cheaper than index setup. The planner is optimizing for **current size**, not a million-row future.
+
+**It is not enough for scale:** as `jobs` grows and most rows are **not** `queued` (terminal states, history, in-flight work), a seq scan plus sort on every tick means reading far more data than the scheduler needs. Latency per tick rises; queued work waits longer. We add an index that **matches the query shape** so the planner can narrow to waiting work in dispatch order.
+
+**Migration 002 index:**
+
+```sql
+CREATE INDEX IF NOT EXISTS idx_jobs_state_priority_created_at
+    ON jobs (state, priority DESC, created_at ASC);
+```
+
+**How this matches the scheduler query:**
+
+```sql
+WHERE state = 'queued'
+ORDER BY priority DESC, created_at ASC
+LIMIT <n>
+```
+
+- **`state`** (first column) — same filter as `WHERE state = 'queued'`.
+- **`priority DESC`** — same urgency ordering (higher priority first).
+- **`created_at ASC`** — same FIFO tie-break among equal priority.
+
+The atomic claim path (`claim_schedulable_jobs`) uses the same ordering inside its `FOR UPDATE SKIP LOCKED` subquery, so this index supports both **read** (`list_schedulable_jobs`) and **claim** plans.
+
+**Why column order and direction matter:** composite indexes are most helpful when leading columns match **`WHERE`** clauses and sort direction matches **`ORDER BY`**. Putting `state` first targets the schedulable subset; `DESC` / `ASC` on the next columns align with how KernelQ picks the next batch without an extra sort step when the planner uses the index.
+
+**Before/After EXPLAIN Notes**
+
+Run `explain_claim_schedulable_jobs.sql` **before** and **after** applying `control_plane/migrations/002_add_scheduler_claim_index.sql`. Paste whether the plan changed (no fabricated numbers):
+
+```
+-- BEFORE migration 002 (Day 23 baseline on sample data):
+--   Seq Scan on jobs → Sort → Limit
+--   (observed locally; acceptable on tiny tables)
+
+-- AFTER migration 002:
+-- TODO: paste EXPLAIN / EXPLAIN ANALYZE output and note:
+--   - Index Scan / Bitmap Index Scan on idx_jobs_state_priority_created_at?
+--   - Seq Scan still chosen (small table — planner may keep seq scan)?
+--   - Sort step reduced or removed?
+--   - Execution Time (EXPLAIN ANALYZE only — paste real value)
+```
+
+**Interview sound bite:** *“Day 23 seq scan was fine on a dev-sized table; at scale we added `(state, priority DESC, created_at ASC)` so the claim query’s filter and ORDER BY match the index—then we EXPLAIN before and after to prove the plan improved.”*
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

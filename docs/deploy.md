@@ -138,6 +138,22 @@ docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/e
 
 See `docs/perf.md` (**Postgres EXPLAIN for Scheduler Queries**) for what to look for in the output.
 
+## Applying Scheduler Query Index Migration
+
+Migration **`002_add_scheduler_claim_index.sql`** adds `idx_jobs_state_priority_created_at` for the scheduler claim query. From the repository root (Postgres running, migration **`001`** already applied):
+
+```bash
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/migrations/002_add_scheduler_claim_index.sql
+```
+
+Then rerun **EXPLAIN** to compare plans before vs after:
+
+```bash
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/explain_claim_schedulable_jobs.sql
+```
+
+The script lists indexes on `jobs` and prints query plans. See `docs/perf.md` (**Scheduler Query Indexing**) for what to paste in before/after notes.
+
 ### Docker Compose Setup
 
 The repo includes `docker-compose.yml` with a **Postgres 16** service for local development (see **Local PostgreSQL Setup** above).

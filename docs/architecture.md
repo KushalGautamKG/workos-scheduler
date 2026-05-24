@@ -248,6 +248,20 @@ So multiple instances **work in parallel** without blocking each other on the sa
 
 **Interview sound bite:** *“We claim in one transaction with `FOR UPDATE SKIP LOCKED` so two schedulers don’t dispatch the same job—locked rows are skipped, not double-picked.”*
 
+## Scheduler Query Indexing
+
+The scheduler **repeatedly** asks Postgres for the next batch of waiting work. That query has a stable shape: filter by **`state`** (only **`queued`** rows), then order by **`priority`** (urgent first) and **`created_at`** (older jobs first when priority ties)—the same policy as the in-memory priority scheduler, but executed on every tick.
+
+KernelQ adds a Postgres index to support that pattern (migration **`002_add_scheduler_claim_index.sql`**):
+
+```sql
+idx_jobs_state_priority_created_at ON jobs (state, priority DESC, created_at ASC)
+```
+
+This connects **scheduling policy** to **database physical design**: the index column list mirrors `WHERE state = 'queued'` and `ORDER BY priority DESC, created_at ASC` used by `list_schedulable_jobs` and `claim_schedulable_jobs`. As the `jobs` table grows, the planner can find schedulable rows in dispatch order instead of scanning unrelated history on every tick. Use **`EXPLAIN`** before and after applying the migration to confirm the plan (see `docs/perf.md`).
+
+**Interview sound bite:** *“Our claim query filters on state and sorts by priority then age—we added a matching composite index so policy and Postgres storage stay aligned.”*
+
 ## API to Repository Flow
 
 The control-plane **FastAPI routes** (`control_plane/api.py`) now talk to jobs through **`JobRepository`**, not by embedding SQL in every handler. That is a simple **layered design** you can draw on a whiteboard in an interview.

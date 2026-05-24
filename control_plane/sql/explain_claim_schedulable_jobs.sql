@@ -6,12 +6,22 @@
 --   Run EXPLAIN plans against KernelQ's scheduler queries on local Postgres.
 --   Use this to see whether Postgres uses indexes or scans the whole jobs table.
 --
--- How to run (from the repository root):
+-- Before vs after migration 002:
+--   Run this script BEFORE applying migration 002 to capture a baseline plan
+--   (often Seq Scan on a tiny local table). Apply migration 002, then run this
+--   script AGAIN and compare EXPLAIN output and the index list below.
+--
+-- How to run this script (from the repository root):
 --
 --   docker exec -i kernelq-postgres psql -U kernelq -d kernelq \
 --     < control_plane/sql/explain_claim_schedulable_jobs.sql
 --
 -- Or open psql and paste sections one at a time.
+--
+-- Apply migration 002 (scheduler claim index) from the repository root:
+--
+--   docker exec -i kernelq-postgres psql -U kernelq -d kernelq \
+--     < control_plane/migrations/002_add_scheduler_claim_index.sql
 --
 -- State column note:
 --   The lifecycle state is called QUEUED in docs, but Postgres stores lowercase
@@ -41,6 +51,16 @@ UPDATE jobs SET created_at = NOW() - INTERVAL '2 minutes'
 WHERE job_id = 'explain_sample_high_new';
 UPDATE jobs SET created_at = NOW() - INTERVAL '1 minute'
 WHERE job_id = 'explain_sample_high_old';
+
+-- -----------------------------------------------------------------------------
+-- Indexes on jobs (run before and after migration 002)
+-- -----------------------------------------------------------------------------
+-- Look for idx_jobs_state_priority_created_at after applying migration 002.
+
+SELECT indexname, indexdef
+FROM pg_indexes
+WHERE tablename = 'jobs'
+ORDER BY indexname;
 
 -- -----------------------------------------------------------------------------
 -- 1) Schedulable job query (read-only shape)
