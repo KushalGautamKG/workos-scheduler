@@ -262,6 +262,12 @@ This connects **scheduling policy** to **database physical design**: the index c
 
 **Interview sound bite:** *“Our claim query filters on state and sorts by priority then age—we added a matching composite index so policy and Postgres storage stay aligned.”*
 
+## Scheduler Query Scaling
+
+Scheduler queries **may behave differently** as the **`jobs`** table grows. On a handful of rows, Postgres often prefers a **sequential scan**; with thousands of rows and only a slice in **`queued`**, the same query may benefit from **`idx_jobs_state_priority_created_at`**—but the only way to know is to inspect the plan on realistic data.
+
+KernelQ includes **synthetic seed data** for local experiments: **`control_plane/sql/seed_large_jobs_dataset.sql`** inserts about **5000** jobs with mixed states and tenants. That is **not production traffic**—it helps you **validate whether scheduler indexes become useful at larger scales** before load testing. Run seed, then **`explain_claim_schedulable_jobs.sql`**, and compare **`EXPLAIN`** output (see **`docs/perf.md`**, **Large Dataset Query Plan Experiment**).
+
 ## API to Repository Flow
 
 The control-plane **FastAPI routes** (`control_plane/api.py`) now talk to jobs through **`JobRepository`**, not by embedding SQL in every handler. That is a simple **layered design** you can draw on a whiteboard in an interview.

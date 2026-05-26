@@ -105,6 +105,16 @@ docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/migra
 
 Rerun the **EXPLAIN** script above to inspect whether the query plan changed.
 
+## Large Dataset Query Experiments
+
+KernelQ includes **`control_plane/sql/seed_large_jobs_dataset.sql`** to generate **thousands** of local synthetic jobs (mixed states, tenants, priorities). That helps inspect how **scheduler query plans** change as the `jobs` table grows. After seeding, rerun **`EXPLAIN`** / **`EXPLAIN ANALYZE`** with:
+
+```bash
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/seed_large_jobs_dataset.sql
+
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/explain_claim_schedulable_jobs.sql
+```
+
 ## Responsibilities
 
 The control plane is responsible for:

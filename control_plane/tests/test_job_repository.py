@@ -143,9 +143,9 @@ def test_list_schedulable_jobs_returns_only_queued() -> None:
         repo = JobRepository(conn)
         _delete_jobs(repo, queued_id, created_id, dispatched_id)
         try:
-            repo.create_job(queued_id, "tenant-a", 5, JobState.QUEUED.value)
-            repo.create_job(created_id, "tenant-a", 5, JobState.CREATED.value)
-            repo.create_job(dispatched_id, "tenant-a", 5, JobState.DISPATCHED.value)
+            repo.create_job(queued_id, "tenant-a", 9_000_000, JobState.QUEUED.value)
+            repo.create_job(created_id, "tenant-a", 9_000_000, JobState.CREATED.value)
+            repo.create_job(dispatched_id, "tenant-a", 9_000_000, JobState.DISPATCHED.value)
 
             ours = _our_jobs(repo.list_schedulable_jobs(limit=500), prefix)
 

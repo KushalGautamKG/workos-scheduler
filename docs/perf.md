@@ -258,6 +258,52 @@ Run `explain_claim_schedulable_jobs.sql` **before** and **after** applying `cont
 
 **Interview sound bite:** *“Day 23 seq scan was fine on a dev-sized table; at scale we added `(state, priority DESC, created_at ASC)` so the claim query’s filter and ORDER BY match the index—then we EXPLAIN before and after to prove the plan improved.”*
 
+## Large Dataset Query Plan Experiment
+
+**Small tables may favor Seq Scan:** with only a few rows in `jobs`, Postgres often reads the whole table in one pass—it is simple and fast enough that an index never pays off.
+
+**Larger tables may favor indexes:** when thousands of rows exist and only a **fraction** are `queued`, scanning everything each tick wastes work. The planner may then choose **`Index Scan`** (or similar) on **`idx_jobs_state_priority_created_at`** so it can filter and walk rows in dispatch order. **You cannot assume that from docs alone**—run **`EXPLAIN`** on your data and read the plan.
+
+**Local synthetic data:** KernelQ includes **`control_plane/sql/seed_large_jobs_dataset.sql`**, which inserts about **5000** synthetic jobs (`seed-tenant-*` / `seed-job-*`) with mixed states (mostly **`queued`**, plus some **`dispatched`**, **`succeeded`**, **`failed`**), varied **priority**, **tenant_id**, and **created_at**. That is **local benchmarking data only**—not for production.
+
+### Experiment Workflow
+
+From the repository root, with Postgres up and migrations **001** and **002** applied:
+
+**1. Seed the large dataset**
+
+```bash
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/seed_large_jobs_dataset.sql
+```
+
+**2. Rerun EXPLAIN (includes `SELECT COUNT(*)` and index list)**
+
+```bash
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/explain_claim_schedulable_jobs.sql
+```
+
+Compare output to a **before-seed** run on a small table. Also compare **before vs after migration 002** if you have both captures.
+
+**Observed results (paste after you run — no invented numbers):**
+
+| Field | Notes |
+|-------|--------|
+| **Table size** | `jobs_row_count` from `SELECT COUNT(*) FROM jobs` (TODO: paste) |
+| **Observed planner choice** | e.g. Seq Scan, Index Scan, Bitmap Index Scan (TODO: paste from EXPLAIN) |
+| **Index scan appeared?** | Did the plan reference `idx_jobs_state_priority_created_at`? (TODO: yes / no) |
+| **Execution timing notes** | From `EXPLAIN ANALYZE` only — Execution Time, sort steps (TODO: paste) |
+
+```
+-- TODO: paste EXPLAIN / EXPLAIN ANALYZE snippets from after seed_large_jobs_dataset.sql
+-- Example prompts (fill in with real output):
+--   jobs_row_count: ___
+--   Plan root node: ___
+--   Uses idx_jobs_state_priority_created_at: yes / no
+--   Execution Time: ___ ms
+```
+
+**Interview sound bite:** *“We seeded ~5k jobs locally, reran EXPLAIN, and compared plans—small tables seq-scan; at scale the planner may pick our composite index if statistics say it is cheaper.”*
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

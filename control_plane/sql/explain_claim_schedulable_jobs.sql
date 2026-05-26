@@ -6,6 +6,21 @@
 --   Run EXPLAIN plans against KernelQ's scheduler queries on local Postgres.
 --   Use this to see whether Postgres uses indexes or scans the whole jobs table.
 --
+-- When to run this script:
+--   1) BEFORE seeding large data — small jobs table; plans often show Seq Scan.
+--   2) AFTER seeding large data — run seed_large_jobs_dataset.sql first, then
+--      run this script again and compare plans (index vs seq scan, sort cost).
+--
+--   Larger datasets may change planner behavior: Postgres optimizes for estimated
+--   cost on the current table size and statistics. On a tiny table it may prefer
+--   Seq Scan; as jobs grows (many non-queued rows), it may switch to Index Scan
+--   on idx_jobs_state_priority_created_at — but only EXPLAIN shows what happened.
+--
+-- Seed large local data (optional, from repository root):
+--
+--   docker exec -i kernelq-postgres psql -U kernelq -d kernelq \
+--     < control_plane/sql/seed_large_jobs_dataset.sql
+--
 -- Before vs after migration 002:
 --   Run this script BEFORE applying migration 002 to capture a baseline plan
 --   (often Seq Scan on a tiny local table). Apply migration 002, then run this
@@ -28,6 +43,14 @@
 --   strings from JobState (value 'queued'). Queries below use 'queued'.
 --
 -- =============================================================================
+
+-- -----------------------------------------------------------------------------
+-- Table size snapshot (run before and after seeding to see the difference)
+-- -----------------------------------------------------------------------------
+-- Before seed: often single digits or low tens of rows.
+-- After seed_large_jobs_dataset.sql: thousands of rows (mostly seed-tenant-%).
+
+SELECT COUNT(*) AS jobs_row_count FROM jobs;
 
 -- -----------------------------------------------------------------------------
 -- Optional setup: a few sample rows for a realistic plan
