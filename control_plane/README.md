@@ -115,6 +115,10 @@ docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/s
 docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/explain_claim_schedulable_jobs.sql
 ```
 
+## Database Test Isolation
+
+Postgres-backed tests use **test-only job ID prefixes** (for example `test-repo-`, `test-tick-`, `test-api-`) and **clean up their own rows** before/after runs. This keeps test results stable even when local Postgres already contains large seed datasets or manual jobs.
+
 ## Responsibilities
 
 The control plane is responsible for:

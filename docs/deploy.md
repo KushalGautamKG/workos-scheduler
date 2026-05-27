@@ -126,6 +126,14 @@ python3 -m pytest control_plane/tests/test_job_repository.py
 
 If Postgres is not running, these tests will skip or fail when connecting—start the container first.
 
+## Database Test Isolation
+
+Your local Postgres can contain many kinds of rows at the same time: **seed data**, **manual API test data**, and **benchmark data**. Because of that, integration tests should not assume the database is empty.
+
+Use **test-specific `job_id` prefixes** (for example `test-repo-`, `test-tick-`, `test-api-`) so each test module can find only its own rows.
+
+Tests should also **clean up their own rows before and after** running. That makes repeated runs stable and prevents accidental failures caused by unrelated local data left behind from earlier experiments.
+
 ## Inspecting Scheduler Query Plans
 
 After Postgres is up and the `jobs` migration is applied, you can inspect how Postgres plans scheduler-related queries (`EXPLAIN` / `EXPLAIN ANALYZE`). That helps verify whether **indexes are useful** (index scan vs full table scan) before the table grows. **Local-only for now**—not part of CI or cloud deploy yet.

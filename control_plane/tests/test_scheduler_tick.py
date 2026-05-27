@@ -25,8 +25,12 @@ from control_plane.kernelq.job_state import JobState
 from control_plane.kernelq.scheduler_tick import SchedulerTickRunner
 
 
+TEST_PREFIX = "test-tick-"
+
+
 def _unique_prefix(name: str) -> str:
-    return f"{name}_{uuid.uuid4().hex[:16]}"
+    # Every job id in this file starts with TEST_PREFIX so cleanup is easy.
+    return f"{TEST_PREFIX}{name}_{uuid.uuid4().hex[:16]}"
 
 
 def _job_id(prefix: str, suffix: str) -> str:
@@ -36,6 +40,15 @@ def _job_id(prefix: str, suffix: str) -> str:
 def _delete_jobs(repo: JobRepository, *job_ids: str) -> None:
     for job_id in job_ids:
         repo.delete_job(job_id)
+
+
+def _cleanup_jobs_with_test_prefix(conn) -> None:
+    """Delete rows created by this test file only."""
+    conn.execute(
+        "DELETE FROM jobs WHERE job_id LIKE %(job_id_prefix)s",
+        {"job_id_prefix": f"{TEST_PREFIX}%"},
+    )
+    conn.commit()
 
 
 def _our_dispatched_ids(dispatched_job_ids: list[str], prefix: str) -> list[str]:
@@ -52,12 +65,28 @@ def _require_postgres() -> None:
         pytest.skip(f"Postgres not reachable (start docker compose): {exc}")
 
 
+@pytest.fixture(autouse=True)
+def _cleanup_between_tests() -> None:
+    """
+    Run cleanup before and after each test.
+
+    This keeps tests isolated even when local Postgres already contains seed
+    data or leftovers from previous test runs.
+    """
+    with connect() as conn:
+        _cleanup_jobs_with_test_prefix(conn)
+    yield
+    with connect() as conn:
+        _cleanup_jobs_with_test_prefix(conn)
+
+
 def test_run_once_dispatches_queued_jobs() -> None:
     prefix = _unique_prefix("test_tick_dispatch_two")
     first_id = _job_id(prefix, "first")
     second_id = _job_id(prefix, "second")
     third_id = _job_id(prefix, "third")
-    base = 8_000_000
+    # High (but valid INT) priority so our rows win ordering in shared DB.
+    base = 1_800_000_000
     with connect() as conn:
         repo = JobRepository(conn)
         _delete_jobs(repo, first_id, second_id, third_id)
@@ -89,7 +118,8 @@ def test_run_once_respects_max_jobs_per_tick() -> None:
     first_id = _job_id(prefix, "first")
     second_id = _job_id(prefix, "second")
     third_id = _job_id(prefix, "third")
-    base = 8_100_000
+    # High (but valid INT) priority so our rows win ordering in shared DB.
+    base = 1_810_000_000
     with connect() as conn:
         repo = JobRepository(conn)
         _delete_jobs(repo, first_id, second_id, third_id)
@@ -121,8 +151,9 @@ def test_run_once_ignores_non_queued_jobs() -> None:
         repo = JobRepository(conn)
         _delete_jobs(repo, queued_id, failed_id)
         try:
-            repo.create_job(queued_id, "tenant-a", 8_200_000, JobState.QUEUED.value)
-            repo.create_job(failed_id, "tenant-a", 8_200_000, JobState.FAILED.value)
+            # High priority keeps this queued row in the selected set.
+            repo.create_job(queued_id, "tenant-a", 1_820_000_000, JobState.QUEUED.value)
+            repo.create_job(failed_id, "tenant-a", 1_820_000_000, JobState.FAILED.value)
 
             result = SchedulerTickRunner(repo, max_jobs_per_tick=10).run_once()
 
@@ -141,7 +172,8 @@ def test_run_once_twice_does_not_redispatch_same_jobs() -> None:
     prefix = _unique_prefix("test_tick_twice")
     first_id = _job_id(prefix, "first")
     second_id = _job_id(prefix, "second")
-    base = 8_300_000
+    # High (but valid INT) priority so our rows are claimed first.
+    base = 1_830_000_000
     with connect() as conn:
         repo = JobRepository(conn)
         _delete_jobs(repo, first_id, second_id)
@@ -177,18 +209,32 @@ def test_max_jobs_per_tick_must_be_positive() -> None:
             SchedulerTickRunner(repo, max_jobs_per_tick=0)
 
 
-def test_run_once_returns_zero_counts_when_no_queued_jobs() -> None:
+def test_run_once_does_not_dispatch_non_queued_only_test_rows() -> None:
+    """
+    In a shared DB we cannot assume zero global queued jobs.
+
+    Instead, verify that if this test creates only non-queued rows, none of
+    those rows are dispatched by a tick.
+    """
+    prefix = _unique_prefix("test_tick_non_queued_only")
+    failed_id = _job_id(prefix, "failed")
+    succeeded_id = _job_id(prefix, "succeeded")
     with connect() as conn:
         repo = JobRepository(conn)
-        if repo.list_schedulable_jobs(limit=1):
-            pytest.skip(
-                "Postgres already has queued jobs; need an empty schedulable queue for this test"
+        _delete_jobs(repo, failed_id, succeeded_id)
+        try:
+            repo.create_job(failed_id, "tenant-a", 1_840_000_000, JobState.FAILED.value)
+            repo.create_job(
+                succeeded_id, "tenant-a", 1_840_000_000, JobState.SUCCEEDED.value
             )
 
-        result = SchedulerTickRunner(repo, max_jobs_per_tick=5).run_once()
+            result = SchedulerTickRunner(repo, max_jobs_per_tick=5).run_once()
 
-        assert result.selected_count == 0
-        assert result.dispatched_count == 0
-        assert result.dispatched_job_ids == []
-        assert result.skipped_count == 0
-        assert result.errors == []
+            # No non-queued rows from this test should be dispatched.
+            ours = _our_dispatched_ids(result.dispatched_job_ids, prefix)
+            assert ours == []
+            assert repo.get_job(failed_id).state == JobState.FAILED.value
+            assert repo.get_job(succeeded_id).state == JobState.SUCCEEDED.value
+            assert result.errors == []
+        finally:
+            _delete_jobs(repo, failed_id, succeeded_id)

@@ -27,9 +27,13 @@ from control_plane.kernelq.job_repository import JobRepository
 from control_plane.kernelq.scheduler_metrics import SchedulerMetrics
 
 
+TEST_PREFIX = "test-api-"
+
+
 def _unique_job_id(prefix: str) -> str:
     """Return a unique job id so parallel or repeated runs do not collide."""
-    return f"{prefix}_{uuid.uuid4().hex[:16]}"
+    # Keep a consistent prefix so cleanup can safely target rows from this file.
+    return f"{TEST_PREFIX}{prefix}_{uuid.uuid4().hex[:16]}"
 
 
 def _enqueue_body(*, tenant_id: str = "tenant-a", priority: int = 5) -> dict:
@@ -41,6 +45,16 @@ def _delete_job(job_id: str) -> None:
     """Remove a test job row via JobRepository (safe if the job does not exist)."""
     with connect() as conn:
         JobRepository(conn).delete_job(job_id)
+
+
+def _cleanup_jobs_with_test_prefix() -> None:
+    """Delete all jobs created by this test module."""
+    with connect() as conn:
+        conn.execute(
+            "DELETE FROM jobs WHERE job_id LIKE %(job_id_prefix)s",
+            {"job_id_prefix": f"{TEST_PREFIX}%"},
+        )
+        conn.commit()
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -69,6 +83,17 @@ def _require_postgres_and_migration() -> None:
 def reset_metrics() -> None:
     """Reset in-process metrics so test order does not matter."""
     api_module.metrics = SchedulerMetrics()
+
+
+@pytest.fixture(autouse=True)
+def cleanup_test_jobs() -> None:
+    """
+    Run cleanup before and after each test so the module never depends on an
+    empty database or on side-effects from previous tests.
+    """
+    _cleanup_jobs_with_test_prefix()
+    yield
+    _cleanup_jobs_with_test_prefix()
 
 
 @pytest.fixture
@@ -190,8 +215,9 @@ def test_retry_after_cancel_returns_409(client: TestClient) -> None:
 
 # 8) POST enqueue missing required fields returns 422
 def test_enqueue_missing_required_fields_returns_422(client: TestClient) -> None:
+    job_id = _unique_job_id("missing_required")
     response = client.post(
-        "/jobs/bad/enqueue",
+        f"/jobs/{job_id}/enqueue",
         json={"priority": 5},
     )
 

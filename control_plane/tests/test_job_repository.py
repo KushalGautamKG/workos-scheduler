@@ -21,8 +21,13 @@ from control_plane.kernelq.job_repository import JobRepository
 from control_plane.kernelq.job_state import JobState
 
 
+TEST_PREFIX = "test-repo-"
+
+
 def _unique_job_id(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:16]}"
+    # All job ids created in this file start with TEST_PREFIX so we can clean
+    # up safely in a shared Postgres environment.
+    return f"{TEST_PREFIX}{prefix}_{uuid.uuid4().hex[:16]}"
 
 
 def _job_id(prefix: str, suffix: str) -> str:
@@ -40,6 +45,15 @@ def _delete_jobs(repo: JobRepository, *job_ids: str) -> None:
         repo.delete_job(job_id)
 
 
+def _cleanup_jobs_with_test_prefix(conn) -> None:
+    """Delete any rows created by this test file (based on TEST_PREFIX)."""
+    conn.execute(
+        "DELETE FROM jobs WHERE job_id LIKE %(job_id_prefix)s",
+        {"job_id_prefix": f"{TEST_PREFIX}%"},
+    )
+    conn.commit()
+
+
 @pytest.fixture(scope="module", autouse=True)
 def _require_postgres() -> None:
     try:
@@ -47,6 +61,19 @@ def _require_postgres() -> None:
             conn.execute("SELECT 1")
     except OperationalError as exc:
         pytest.skip(f"Postgres not reachable (start docker compose): {exc}")
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_between_tests() -> None:
+    """
+    Keep tests isolated even when the local Postgres container already has
+    other data (seed data, earlier runs, etc.).
+    """
+    with connect() as conn:
+        _cleanup_jobs_with_test_prefix(conn)
+    yield
+    with connect() as conn:
+        _cleanup_jobs_with_test_prefix(conn)
 
 
 def test_create_job_inserts_and_returns_record() -> None:
@@ -143,9 +170,17 @@ def test_list_schedulable_jobs_returns_only_queued() -> None:
         repo = JobRepository(conn)
         _delete_jobs(repo, queued_id, created_id, dispatched_id)
         try:
-            repo.create_job(queued_id, "tenant-a", 9_000_000, JobState.QUEUED.value)
-            repo.create_job(created_id, "tenant-a", 9_000_000, JobState.CREATED.value)
-            repo.create_job(dispatched_id, "tenant-a", 9_000_000, JobState.DISPATCHED.value)
+            # Use extremely high priority so these jobs win ordering even if
+            # other queued rows exist in a shared local DB.
+            # Use a very large priority (still within INT range) so these jobs
+            # win ordering even if other queued rows exist in a shared local DB.
+            repo.create_job(queued_id, "tenant-a", 1_900_000_000, JobState.QUEUED.value)
+            repo.create_job(
+                created_id, "tenant-a", 1_900_000_000, JobState.CREATED.value
+            )
+            repo.create_job(
+                dispatched_id, "tenant-a", 1_900_000_000, JobState.DISPATCHED.value
+            )
 
             ours = _our_jobs(repo.list_schedulable_jobs(limit=500), prefix)
 
@@ -162,7 +197,7 @@ def test_list_schedulable_jobs_orders_by_priority_desc() -> None:
     mid_id = _job_id(prefix, "mid")
     high_id = _job_id(prefix, "high")
     # High values so these rows sort ahead of unrelated queued jobs in shared Postgres.
-    base_priority = 2_000_000
+    base_priority = 1_900_000_000
     with connect() as conn:
         repo = JobRepository(conn)
         _delete_jobs(repo, low_id, mid_id, high_id)
@@ -187,7 +222,8 @@ def test_list_schedulable_jobs_breaks_priority_ties_by_created_at_asc() -> None:
     prefix = _unique_job_id("test_jr_sched_tie")
     older_id = _job_id(prefix, "older")
     newer_id = _job_id(prefix, "newer")
-    priority = 2_000_000
+    # Use a very large priority so we win the top ordering even with other queued rows.
+    priority = 1_900_000_000
     with connect() as conn:
         repo = JobRepository(conn)
         _delete_jobs(repo, older_id, newer_id)
@@ -211,7 +247,8 @@ def test_list_schedulable_jobs_respects_limit() -> None:
     first_id = _job_id(prefix, "first")
     second_id = _job_id(prefix, "second")
     third_id = _job_id(prefix, "third")
-    base_priority = 3_000_000
+    # Ensure our rows are always in the top LIMIT results.
+    base_priority = 1_901_000_000
     with connect() as conn:
         repo = JobRepository(conn)
         _delete_jobs(repo, first_id, second_id, third_id)
