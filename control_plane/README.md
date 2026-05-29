@@ -119,6 +119,10 @@ docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/sql/e
 
 Postgres-backed tests use **test-only job ID prefixes** (for example `test-repo-`, `test-tick-`, `test-api-`) and **clean up their own rows** before/after runs. This keeps test results stable even when local Postgres already contains large seed datasets or manual jobs.
 
+## Kafka Infrastructure
+
+KernelQ’s root **`docker-compose.yml`** now includes **Zookeeper** and **Kafka** for local development. Kafka will become the **durable coordination layer** between scheduler ticks (Python) and Go workers—buffering dispatch events and decoupling scheduling from execution. **Today this is infrastructure only:** start the broker with `docker compose up -d zookeeper kafka`; **publishing and consuming** come in a later milestone.
+
 ## Responsibilities
 
 The control plane is responsible for:

@@ -94,6 +94,34 @@ You should see `jobs` listed among relations.
 
 That returns you to your normal terminal shell.
 
+## Running Kafka Locally
+
+KernelQ’s `docker-compose.yml` includes **Zookeeper** and **Kafka** for local broker infrastructure. This is **setup only**—the control plane does **not** publish jobs to Kafka yet. Postgres and scheduling still work without the broker; Kafka prepares the environment for the next milestone.
+
+From the repository root:
+
+**1. Start Zookeeper and Kafka**
+
+```bash
+docker compose up -d zookeeper kafka
+```
+
+**2. Confirm services are running**
+
+```bash
+docker compose ps
+```
+
+You should see `kernelq-zookeeper` and `kernelq-kafka` (and optionally `kernelq-postgres` if Postgres is also up).
+
+**Notes:**
+
+- **Kafka** listens on **`localhost:9092`** from your laptop (for future producers/consumers).
+- **Postgres** is a separate service—start it with `docker compose up -d postgres` or run `docker compose up -d` to start everything together.
+- No application containers yet; only infrastructure.
+
+See `docs/decisions/ADR-0002-kafka-choice.md` and **Kafka Event Backbone** in `docs/architecture.md`.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.
@@ -164,11 +192,10 @@ The script lists indexes on `jobs` and prints query plans. See `docs/perf.md` (*
 
 ### Docker Compose Setup
 
-The repo includes `docker-compose.yml` with a **Postgres 16** service for local development (see **Local PostgreSQL Setup** above).
+The repo includes `docker-compose.yml` with **Postgres 16**, **Zookeeper**, and **Kafka** for local development (see **Local PostgreSQL Setup** and **Running Kafka Locally** above).
 
 TODO later:
 - Redis instance
-- Message broker (Kafka)
 - Control plane API container (Python FastAPI)
 - Worker processes (Go)
 

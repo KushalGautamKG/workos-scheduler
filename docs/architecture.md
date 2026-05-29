@@ -305,6 +305,32 @@ Instead, routes use the **shared job lifecycle state machine** in `control_plane
 
 **Interview sound bite:** *“Postgres stores current state; `job_state.py` defines allowed moves; the API enforces moves before UPDATE—illegal requests get 409, not mystery rows.”*
 
+## Kafka Event Backbone
+
+KernelQ uses **Postgres** for durable job **state** and **Kafka** for durable job **handoff** from schedulers to executors. Today scheduler ticks **claim** jobs in Postgres (`queued` → `dispatched`); **publishing to Kafka is the next step**—each tick will eventually emit **dispatch events** so workers can pick up runnable work without the scheduler calling them directly.
+
+**Why Kafka sits in the middle:**
+
+- **Decouples scheduling from execution** — Python decides *what* to run and writes events; Go workers decide *when* they can run them (pull model).
+- **Go workers consume from topics** — messages on a runnable-jobs topic (name TBD) carry enough data for a worker to start (for example `job_id`, tenant, payload reference).
+- **Buffering** — if workers are slow or briefly down, events wait in the log instead of blocking scheduler ticks or being lost.
+- **Retries and replay** — failed consumption can be retried; separate retry or DLQ topics can align with `RETRY_SCHEDULED` and `DEAD_LETTERED` later.
+- **Horizontal worker scaling** — add more Go consumer processes in a **consumer group**; Kafka partitions spread load without changing scheduler code.
+
+Postgres remains the **system of record** for lifecycle; Kafka is the **event backbone** between “claimed for dispatch” and “running on a worker.” See `docs/decisions/ADR-0002-kafka-choice.md` for why Kafka was chosen over direct RPC or Redis queues.
+
+**Simple flow (target architecture):**
+
+```
+Scheduler Tick
+    ↓
+Kafka Topic
+    ↓
+Go Workers
+```
+
+**Interview sound bite:** *“Ticks claim in Postgres, publish to Kafka, workers consume—state stays in the DB, transport stays in the log.”*
+
 ## Data Flow
 
 1. **Enqueue**: Client sends job request via REST API to control plane

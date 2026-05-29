@@ -1,8 +1,26 @@
-# Local development: Postgres only (KernelQ). Add more services as the project grows.
+# Local development stack for KernelQ (Postgres + Kafka).
 #
-# Start:   docker compose up -d
-# Stop:    docker compose down
-# Logs:    docker compose logs -f postgres
+# Start all services:
+#   docker compose up -d
+#
+# Start only Postgres (no broker):
+#   docker compose up -d postgres
+#
+# Logs:
+#   docker compose logs -f postgres
+#   docker compose logs -f kafka
+#
+# Why Kafka in KernelQ:
+#   The Python control plane schedules jobs and persists state in Postgres.
+#   Go workers execute jobs. Kafka sits between them as a durable buffer:
+#   schedulers publish "run this job" events; workers consume when ready.
+#   See docs/decisions/ADR-0002-kafka-choice.md.
+#
+# Zookeeper vs Kafka (beginner summary):
+#   - Zookeeper: coordination service Kafka uses (in this classic setup) to
+#     track broker metadata, leader election, and cluster configuration.
+#   - Kafka: the message broker — append-only topics that store dispatch events
+#     until Go workers read them. Host clients connect on localhost:9092.
 
 services:
   postgres:
@@ -16,6 +34,41 @@ services:
       - "5432:5432"
     volumes:
       - kernelq_postgres_data:/var/lib/postgresql/data
+
+  # Zookeeper: helps Kafka brokers agree on cluster state (metadata, leaders).
+  # KernelQ needs it here because this local stack uses the traditional
+  # Zookeeper-backed Kafka mode — simple and widely documented for learning.
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: kernelq-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  # Kafka: durable log between the Python scheduler and Go workers.
+  # Producers (control plane) write dispatch events; consumers (workers) read them.
+  # PLAINTEXT listeners only — fine for local dev, not for production.
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: kernelq-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      # Two listeners: internal (docker network) and external (your laptop).
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Single-broker dev settings (replication factor 1 is OK locally).
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
 volumes:
   kernelq_postgres_data:
