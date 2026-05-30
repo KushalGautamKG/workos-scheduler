@@ -122,6 +122,70 @@ You should see `kernelq-zookeeper` and `kernelq-kafka` (and optionally `kernelq-
 
 See `docs/decisions/ADR-0002-kafka-choice.md` and **Kafka Event Backbone** in `docs/architecture.md`.
 
+## Creating Kafka Topics Locally
+
+After Zookeeper and Kafka are running, create KernelQ’s three job topics (`dispatch`, `retry`, `dlq`) with the repo script. From the **repository root**:
+
+**1. Make the script executable (once)**
+
+```bash
+chmod +x infra/kafka/create-topics.sh
+```
+
+**2. Create topics**
+
+```bash
+./infra/kafka/create-topics.sh
+```
+
+The script uses `docker exec` against **`kernelq-kafka`**, runs `kafka-topics` inside the container, and creates:
+
+- `kernelq.jobs.dispatch` — normal runnable work
+- `kernelq.jobs.retry` — jobs that failed but can run again
+- `kernelq.jobs.dlq` — dead-letter / poison messages
+
+Each topic gets **3 partitions** and **replication factor 1** (fine for local dev). The script is **safe to rerun** (`--if-not-exists`). See **Kafka Topics** in `docs/architecture.md` for why these names exist.
+
+### Kafka CLI Smoke Test
+
+Once topics exist, you can prove the broker and topic wiring work **before** any Python or Go code publishes jobs. Kafka ships two small CLI tools inside the container: a **producer** (writes messages) and a **consumer** (reads messages).
+
+**1. Produce one message**
+
+Run this from your host. It opens an interactive producer; paste one line of JSON, then press **Enter**, then **Ctrl+D** to finish:
+
+```bash
+docker exec -i kernelq-kafka kafka-console-producer \
+  --bootstrap-server kafka:29092 \
+  --topic kernelq.jobs.dispatch
+```
+
+Example message (one line):
+
+```json
+{"job_id":"smoke-test-1","tenant_id":"tenant-a","priority":5}
+```
+
+**What happened:** the **producer** appended your JSON string to the **`kernelq.jobs.dispatch`** topic log on the broker (`kafka:29092` is the in-Docker bootstrap address).
+
+**2. Consume messages**
+
+In a **new terminal**, read back from the same topic (including messages already on the log):
+
+```bash
+docker exec -it kernelq-kafka kafka-console-consumer \
+  --bootstrap-server kafka:29092 \
+  --topic kernelq.jobs.dispatch \
+  --from-beginning \
+  --max-messages 1
+```
+
+You should see the same JSON line printed. Press **Ctrl+C** if the consumer keeps waiting after one message.
+
+**What happened:** the **consumer** subscribed to `kernelq.jobs.dispatch`, read from the start of the log (`--from-beginning`), and printed up to one message (`--max-messages 1`).
+
+**Why this matters:** if produce and consume both work, **local Kafka topic wiring is healthy**—broker up, topic created, messages durable on the log. The control plane and Go workers will use the same topic names later; this smoke test confirms infrastructure only, not application code.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.
@@ -192,7 +256,7 @@ The script lists indexes on `jobs` and prints query plans. See `docs/perf.md` (*
 
 ### Docker Compose Setup
 
-The repo includes `docker-compose.yml` with **Postgres 16**, **Zookeeper**, and **Kafka** for local development (see **Local PostgreSQL Setup** and **Running Kafka Locally** above).
+The repo includes `docker-compose.yml` with **Postgres 16**, **Zookeeper**, and **Kafka** for local development (see **Local PostgreSQL Setup**, **Running Kafka Locally**, and **Creating Kafka Topics Locally** above).
 
 TODO later:
 - Redis instance

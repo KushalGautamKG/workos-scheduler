@@ -123,6 +123,10 @@ Postgres-backed tests use **test-only job ID prefixes** (for example `test-repo-
 
 KernelQ’s root **`docker-compose.yml`** now includes **Zookeeper** and **Kafka** for local development. Kafka will become the **durable coordination layer** between scheduler ticks (Python) and Go workers—buffering dispatch events and decoupling scheduling from execution. **Today this is infrastructure only:** start the broker with `docker compose up -d zookeeper kafka`; **publishing and consuming** come in a later milestone.
 
+## Kafka Topics
+
+KernelQ defines three topics: **`kernelq.jobs.dispatch`** (runnable work), **`kernelq.jobs.retry`** (failed jobs that can run again), and **`kernelq.jobs.dlq`** (dead-letter / poison messages). Create them locally with **`infra/kafka/create-topics.sh`** (see `docs/deploy.md`). The control plane will **publish dispatch events** to `kernelq.jobs.dispatch` after scheduler ticks claim jobs—a later milestone; today ticks update Postgres only.
+
 ## Responsibilities
 
 The control plane is responsible for:

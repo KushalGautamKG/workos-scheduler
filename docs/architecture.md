@@ -312,7 +312,7 @@ KernelQ uses **Postgres** for durable job **state** and **Kafka** for durable jo
 **Why Kafka sits in the middle:**
 
 - **Decouples scheduling from execution** — Python decides *what* to run and writes events; Go workers decide *when* they can run them (pull model).
-- **Go workers consume from topics** — messages on a runnable-jobs topic (name TBD) carry enough data for a worker to start (for example `job_id`, tenant, payload reference).
+- **Go workers consume from topics** — messages on **`kernelq.jobs.dispatch`** carry enough data for a worker to start (for example `job_id`, tenant, payload reference).
 - **Buffering** — if workers are slow or briefly down, events wait in the log instead of blocking scheduler ticks or being lost.
 - **Retries and replay** — failed consumption can be retried; separate retry or DLQ topics can align with `RETRY_SCHEDULED` and `DEAD_LETTERED` later.
 - **Horizontal worker scaling** — add more Go consumer processes in a **consumer group**; Kafka partitions spread load without changing scheduler code.
@@ -330,6 +330,47 @@ Go Workers
 ```
 
 **Interview sound bite:** *“Ticks claim in Postgres, publish to Kafka, workers consume—state stays in the DB, transport stays in the log.”*
+
+## Kafka Topics
+
+KernelQ uses **three named topics** so normal work, retries, and permanent failures follow **separate lanes** instead of one mixed queue. Create them locally with `infra/kafka/create-topics.sh` (3 partitions each, replication factor 1 for dev).
+
+### Topic roles
+
+| Topic | Purpose | Who produces | Who consumes |
+|-------|---------|--------------|--------------|
+| **`kernelq.jobs.dispatch`** | **Normal runnable work** — after a scheduler tick claims a job in Postgres, the control plane publishes a dispatch event here for Go workers to pick up. | Python control plane (scheduler) | Go worker consumer group |
+| **`kernelq.jobs.retry`** | **Retry flow** — jobs that **failed but can run again** (retries remain, backoff elapsed) are re-published here instead of competing with first-time dispatch traffic. Aligns with `RETRY_SCHEDULED` → back to `QUEUED` in the lifecycle. | Control plane / retry dispatcher | Go retry workers (or same workers, different consumer group) |
+| **`kernelq.jobs.dlq`** | **Dead-letter queue (DLQ)** — **poison messages** (always crash the consumer) or jobs that **permanently failed** (max retries exhausted) land here for inspection, alerting, or manual replay—not for automatic execution. Aligns with `DEAD_LETTERED`. | Control plane / worker error handler | Ops tooling, dashboards, manual replay jobs |
+
+**Plain English:** *dispatch* is the happy path; *retry* is “try again later”; *dlq* is “stop auto-running this and let a human look.”
+
+### Why separate topics (not one big queue)
+
+Mixing first-time dispatch, retries, and dead letters in a **single topic** makes operations harder:
+
+- A **poison message** on the main lane can block or slow normal throughput.
+- **Retry storms** after an outage spike traffic that looks like new work—harder to tune consumers and alerts.
+- **Metrics and lag** become ambiguous: is high lag “busy” or “broken”?
+
+Separate topics give **clear semantics**: monitor dispatch lag for capacity, retry lag for failure recovery, DLQ depth for jobs that need human attention.
+
+### Partitions (parallel consumption)
+
+Each topic is created with **3 partitions** locally. A **partition** is an ordered slice of the topic log. Kafka assigns partitions to consumers in a **consumer group** so **multiple Go worker processes can read in parallel**—worker A might handle partition 0, worker B partition 1, and so on.
+
+- **More partitions** → more parallel consumption (up to one consumer per partition per group).
+- **Same `job_id` keyed to one partition** (future design) → ordering per job stays predictable.
+
+Partitions are how KernelQ scales workers **without** changing scheduler code: add consumers, Kafka spreads partition assignment.
+
+### Replication factor (local vs production)
+
+**Locally:** replication factor **1** is enough—one broker, one copy of each partition on disk. Fast to run in Docker Compose; no cross-broker redundancy.
+
+**In production:** replication factor would be **3** (or higher per ops policy) so each partition is copied to multiple brokers. If one broker dies, another replica still serves reads and can become leader—**durability and availability** under real failures.
+
+**Interview sound bite:** *“Three topics—dispatch, retry, DLQ—so happy path, retries, and poison jobs don’t share one lane; three partitions for parallel Go consumers locally; replication 1 in dev, 3+ in prod.”*
 
 ## Data Flow
 
