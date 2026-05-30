@@ -4,3 +4,4 @@ pytest
 httpx
 anyio
 psycopg[binary]
+confluent-kafka

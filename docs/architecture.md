@@ -372,6 +372,27 @@ Partitions are how KernelQ scales workers **without** changing scheduler code: a
 
 **Interview sound bite:** *“Three topics—dispatch, retry, DLQ—so happy path, retries, and poison jobs don’t share one lane; three partitions for parallel Go consumers locally; replication 1 in dev, 3+ in prod.”*
 
+## Kafka Dispatch Producer
+
+The **Python control plane** publishes **dispatch events** to Kafka after it decides a job is ready for workers. Each event is a small JSON message (for example `job_id`, `tenant_id`, `priority`, `state`, `payload`) that tells executors *what to run* without the scheduler calling them directly.
+
+**Where events go:** normal dispatch traffic is written to **`kernelq.jobs.dispatch`**. That is the happy-path topic created by `infra/kafka/create-topics.sh`. Retry and DLQ traffic use their own topics later.
+
+**Who reads them:** **Go workers** (not built yet) will **consume** from `kernelq.jobs.dispatch` in a consumer group, transition jobs toward `running` in Postgres, and execute the work. Kafka carries the handoff; Postgres stays the system of record.
+
+**Producer wrapper (`control_plane/kernelq/kafka_producer.py`):** scheduler code should not scatter raw `confluent_kafka` calls. A thin **`KafkaJobProducer`** + **`DispatchEvent`** dataclass centralize:
+
+- topic name (`kernelq.jobs.dispatch`)
+- JSON serialization
+- message key (`job_id`, for partition stickiness)
+- flush / shutdown behavior
+
+The tick runner will eventually call something like `publish_dispatch_event(...)` after `claim_schedulable_jobs`. **Unit tests inject a fake producer** so pytest does not need a real broker.
+
+**What exists today:** a **producer skeleton**—publish one dispatch event synchronously. **`SchedulerTickRunner` is not wired yet**; ticks still stop at Postgres claims. Next milestone: call the producer from the tick loop after claim.
+
+**Interview sound bite:** *“Thin Python producer publishes JSON to `kernelq.jobs.dispatch`; Go workers consume later; wrapper keeps Kafka out of scheduler logic—we’re on the publish module before tick integration.”*
+
 ## Data Flow
 
 1. **Enqueue**: Client sends job request via REST API to control plane

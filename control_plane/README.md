@@ -127,6 +127,10 @@ KernelQ’s root **`docker-compose.yml`** now includes **Zookeeper** and **Kafka
 
 KernelQ defines three topics: **`kernelq.jobs.dispatch`** (runnable work), **`kernelq.jobs.retry`** (failed jobs that can run again), and **`kernelq.jobs.dlq`** (dead-letter / poison messages). Create them locally with **`infra/kafka/create-topics.sh`** (see `docs/deploy.md`). The control plane will **publish dispatch events** to `kernelq.jobs.dispatch` after scheduler ticks claim jobs—a later milestone; today ticks update Postgres only.
 
+## Kafka Producer Skeleton
+
+KernelQ now has a Python **`KafkaJobProducer`** wrapper in **`kernelq/kafka_producer.py`**. It publishes **`DispatchEvent`** JSON to **`kernelq.jobs.dispatch`** (key = `job_id`). Tests in **`tests/test_kafka_producer.py`** inject a **fake producer**, so pytest does not need a running Kafka broker. **`SchedulerTickRunner` integration** (publish after claim) comes next.
+
 ## Responsibilities
 
 The control plane is responsible for:
