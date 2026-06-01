@@ -99,7 +99,7 @@ KernelQ’s **scheduler tick runner** (`SchedulerTickRunner.run_once()` in the P
 | Metric | What it means | Why it matters |
 |--------|---------------|----------------|
 | `selected_count` | How many jobs `claim_schedulable_jobs` returned this tick (at most `max_jobs_per_tick`) | Shows how much work the tick claimed in one atomic pass; sudden drops may mean an empty queue or a query problem |
-| `dispatched_count` | How many selected jobs were successfully marked **`dispatched`** (`queued` → `dispatched`) | Confirms claims succeeded; this is the durable handoff count before Kafka exists |
+| `dispatched_count` | How many selected jobs were successfully marked **`dispatched`** (`queued` → `dispatched`) | Confirms Postgres claims succeeded; compare to **`published_count`** in **Scheduler Publish Metrics** when Kafka is wired |
 | `skipped_count` | Jobs that were not claimed and did not error (zero with atomic `claim_schedulable_jobs` today) | With the older list-then-mark path, skips signaled races; atomic claiming moves contention into DB locking instead |
 | `error_count` | Number of entries in `errors` (per-job exceptions during `mark_job_dispatched`) | Separates infrastructure failures from skips; operators can alert on non-zero errors |
 | `max_jobs_per_tick` | Configured cap passed into `SchedulerTickRunner` (batch limit for the schedulable query) | Documents the tick’s intended batch size when comparing runs; tuning it trades throughput per tick vs steady load |
@@ -112,10 +112,50 @@ KernelQ’s **scheduler tick runner** (`SchedulerTickRunner.run_once()` in the P
 |--------|---------------|----------------|
 | `tick_duration` | Wall-clock time for the full `run_once()` pass (query + all mark attempts) | A slow tick delays every job waiting behind it; helps spot DB or application regressions |
 | `postgres_query_latency` | Time for `list_schedulable_jobs` alone (and optionally each `mark_job_dispatched`) | Breaks out database cost inside the tick; pairs with `EXPLAIN ANALYZE` and index work above |
-| `kafka_publish_latency` | Time to publish a selected job to Kafka once that step exists | Shows broker health and whether publish is the bottleneck after Postgres claims |
+| `kafka_publish_latency` | Time to publish a selected job to Kafka | Shows broker health and whether publish is the bottleneck after Postgres claims; see **Scheduler Publish Metrics** |
 | `dispatch_transition_latency` | Time from selecting a row to completing `queued` → `dispatched` (or through Kafka publish later) | Captures end-to-end claim cost and contention when multiple control-plane instances run ticks |
 
-We have **not** published numeric targets or sample dashboards for tick metrics yet. Use **`SchedulerTickResult`** in tests and logs first; add histograms and SLOs after a dispatch loop runs continuously against real Postgres (and later Kafka).
+We have **not** published numeric targets or sample dashboards for tick metrics yet. Use **`SchedulerTickResult`** in tests and logs first; add histograms and SLOs after a dispatch loop runs continuously against real Postgres and Kafka.
+
+## Scheduler Publish Metrics
+
+Scheduler ticks can now **publish dispatch events** to Kafka after **`claim_schedulable_jobs`**. When a **`job_producer`** is configured, **`SchedulerTickResult`** adds publish-related counts you can log after each **`run_once()`**—still **counts only**, no latency histograms yet.
+
+**Publish-related counts (today):**
+
+| Metric | Where it lives | What it means | Why it matters |
+|--------|----------------|---------------|----------------|
+| `selected_count` | `SchedulerTickResult.selected_count` | How many jobs the tick **claimed** from Postgres this pass (at most `max_jobs_per_tick`) | Baseline “how much work did we pick up?” before comparing to publish outcomes |
+| `dispatched_count` | `SchedulerTickResult.dispatched_count` | How many rows moved **`queued` → `dispatched`** in the claim transaction | With atomic claiming, this matches `selected_count` on success—the DB handoff count |
+| `published_count` | `SchedulerTickResult.published_count` | How many **`DispatchEvent`** messages were **successfully** sent to **`kernelq.jobs.dispatch`** | Shows how many claimed jobs actually reached the broker this tick |
+| `publish_error_count` | **`len(result.publish_errors)`** (not a separate field yet) | How many per-job **`publish_dispatch_event`** calls **failed** after claim | Non-zero means some jobs may be **`dispatched`** in Postgres **without** a Kafka message—see reliability gap in `docs/architecture.md` |
+
+**Plain English check:** if `dispatched_count` is 10 but `published_count` is 8, **`publish_error_count`** should be 2—two jobs were claimed but not published.
+
+**Why publish errors matter**
+
+Publish failures are **silent to workers** unless you measure them. Postgres already says **`dispatched`**; Kafka never got the event, so **Go workers have nothing to consume**. Without tracking **`publish_errors`**, operators only notice missing work through stuck jobs or support tickets—not through the tick summary.
+
+Watch for:
+
+- **`published_count` < `dispatched_count`** — stranded handoffs (claim succeeded, publish did not)
+- **Growing `publish_error_count` over time** — broker outage, misconfiguration, or network problems
+- **Non-empty `publish_errors` strings** — each entry names a `job_id` and exception type for debugging
+
+Today the tick **does not roll back** Postgres on publish failure. Metrics help you **detect** the gap until an **outbox** or **retryable dispatch** mechanism fixes it.
+
+**Future metrics (not measured yet):**
+
+| Metric | What it means | Why it matters |
+|--------|---------------|----------------|
+| `kafka_publish_latency` | Time from start of `publish_dispatch_event` to broker ack (p50 / p95 / p99) | Slow publish delays every claimed job in the tick; separates app time from broker slowness |
+| `broker_error_rate` | Share of publish attempts that fail with broker or client errors | Early warning for Kafka health, auth, or quota issues |
+| `dispatch_to_consume_latency` | Time from successful publish until a worker consumes the message | End-to-end handoff latency—scheduler did its job, but is execution keeping up? |
+| `producer_retry_count` | How often the producer retries after transient failures | Shows whether failures are flaky vs sustained; pairs with outbox/retry design later |
+
+We have **not** defined numeric SLOs or dashboard panels for these yet. Log **`SchedulerTickResult`** fields in tests and manual runs first; add timers and histograms when the tick loop runs continuously against real Kafka.
+
+**Interview sound bite:** *“Log selected, dispatched, published, and len(publish_errors)—if dispatched beats published, jobs are stranded until outbox/retry; latency and broker error rate come next.”*
 
 ## Atomic Claiming Metrics
 

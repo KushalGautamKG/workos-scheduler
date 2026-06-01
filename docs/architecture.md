@@ -199,21 +199,20 @@ LIMIT <n>
 
 ## Scheduler Tick Loop
 
-KernelQ now has a **scheduler tick runner** in the **Python control plane** (`control_plane/kernelq/scheduler_tick.py`). A **tick** is one pass of the dispatch loop: “ask Postgres who is waiting, pick up to *N* jobs, and claim them.” This wires the repository query path into something you can call repeatedly from a future loop, cron job, or background task—still **synchronous** and **simple** today (no async, no Kafka yet).
+KernelQ now has a **scheduler tick runner** in the **Python control plane** (`control_plane/kernelq/scheduler_tick.py`). A **tick** is one pass of the dispatch loop: claim waiting jobs in Postgres, optionally publish dispatch events to Kafka, return a summary. Call it from a loop, cron, or background task—**synchronous** and **simple** today.
 
 **What happens in one tick (`SchedulerTickRunner.run_once()`):**
 
 1. **Atomically claim jobs** — `claim_schedulable_jobs(limit=max_jobs_per_tick)` selects up to *N* **`queued`** rows (ordered by **`priority DESC`**, then **`created_at ASC`**) and marks them **`dispatched`** in **one transaction** (see **Atomic Job Claiming** below).
-2. **Cap batch size** — `max_jobs_per_tick` limits how many rows one pass can claim so a tick cannot drain an unbounded backlog or overload downstream systems later.
-3. **Return a summary** — **`SchedulerTickResult`** reports how many jobs were claimed, their `job_id`s, and any repository-level errors. With atomic claiming, **selected** and **dispatched** counts match on success, and **skipped** is zero unless the design changes.
+2. **Optionally publish to Kafka** — when a **`job_producer`** is injected, build a **`DispatchEvent`** per claimed row and call **`publish_dispatch_event`** on **`kernelq.jobs.dispatch`** (see **Scheduler to Kafka Dispatch Flow**).
+3. **Cap batch size** — `max_jobs_per_tick` limits how many rows one pass can claim.
+4. **Return a summary** — **`SchedulerTickResult`** reports claimed ids, **`published_count`**, repository **`errors`**, and per-message **`publish_errors`**.
 
-**What `dispatched` means today:** the scheduler **selected and claimed** the job in Postgres. It does **not** yet mean “published to Kafka” or “running on a Go worker.” Think of it as *handed off from the waiting line to the outbound lane*—the durable record that this tick owns the job and another tick should not pick it again.
+**What `dispatched` means:** the scheduler **claimed** the job in Postgres (`queued` → `dispatched`). With a producer wired in, the tick also **attempts** Kafka publish immediately after claim. Workers still consume from the topic and update Postgres toward **`running`**.
 
-**What comes later:** the same tick will likely **publish selected jobs to Kafka** (before or while updating dispatch state), so workers can consume runnable work. The order might be: select → publish → mark `dispatched` (or publish only after a successful claim)—exact wiring is a later milestone. Today the tick stops at **Postgres claims** so selection and broker integration can be built and tested in steps.
+**Where it lives:** the tick runner belongs in the **Python control plane** alongside `JobRepository` and the lifecycle state machine. **Go workers** execute jobs; they do not run this loop.
 
-**Where it lives:** the tick runner belongs in the **Python control plane** alongside `JobRepository` and the lifecycle state machine. **Go workers** execute jobs; they do not run this loop. In interviews: *“Control plane ticks read and claim queued rows; workers execute after Kafka delivers work.”*
-
-**Interview sound bite:** *“Each tick calls `claim_schedulable_jobs` with a limit. `dispatched` today means claimed in Postgres, not yet on Kafka—that publish step is next.”*
+**Interview sound bite:** *“Each tick claims in Postgres, then publishes `DispatchEvent` JSON to `kernelq.jobs.dispatch` when a producer is configured.”*
 
 ## Atomic Job Claiming
 
@@ -387,11 +386,47 @@ The **Python control plane** publishes **dispatch events** to Kafka after it dec
 - message key (`job_id`, for partition stickiness)
 - flush / shutdown behavior
 
-The tick runner will eventually call something like `publish_dispatch_event(...)` after `claim_schedulable_jobs`. **Unit tests inject a fake producer** so pytest does not need a real broker.
+The tick runner calls **`publish_dispatch_event(...)`** after **`claim_schedulable_jobs`** when a producer is configured. **Unit tests inject a fake producer** so pytest does not need a real broker.
 
-**What exists today:** a **producer skeleton**—publish one dispatch event synchronously. **`SchedulerTickRunner` is not wired yet**; ticks still stop at Postgres claims. Next milestone: call the producer from the tick loop after claim.
+**What exists today:** **`SchedulerTickRunner`** can publish after claim when **`job_producer`** is passed in. Production wiring (always-on producer in the tick loop, metrics, outbox) is still evolving—see **Scheduler to Kafka Dispatch Flow**.
 
-**Interview sound bite:** *“Thin Python producer publishes JSON to `kernelq.jobs.dispatch`; Go workers consume later; wrapper keeps Kafka out of scheduler logic—we’re on the publish module before tick integration.”*
+**Interview sound bite:** *“Thin Python producer publishes JSON to `kernelq.jobs.dispatch`; the tick runner calls it after Postgres claim; Go workers consume later.”*
+
+## Scheduler to Kafka Dispatch Flow
+
+**`SchedulerTickRunner`** now connects **Postgres scheduling** to the **Kafka event backbone**. When you pass a **`KafkaJobProducer`** (or test fake), each tick **claims** runnable jobs, then **publishes** one **`DispatchEvent`** per claimed row.
+
+**Step-by-step (one `run_once()`):**
+
+```
+queued rows in Postgres
+    ↓  claim_schedulable_jobs (one transaction, FOR UPDATE SKIP LOCKED)
+dispatched rows in Postgres
+    ↓  for each claimed job: build DispatchEvent, publish_dispatch_event
+messages on kernelq.jobs.dispatch
+    ↓  (later) Go workers consume
+running / terminal states in Postgres
+```
+
+1. **Claim in Postgres first** — `claim_schedulable_jobs` atomically moves **`queued` → `dispatched`**. This prevents two schedulers from picking the same row and gives a durable “we own this handoff” record.
+2. **Publish to Kafka** — for each claimed job, the tick builds a **`DispatchEvent`** (`event_type`, `job_id`, `tenant_id`, `priority`, `state`, `payload`) and sends JSON to **`kernelq.jobs.dispatch`** (message **key** = `job_id`).
+3. **Return counts** — **`SchedulerTickResult`** includes **`published_count`** and **`publish_errors`** alongside claim counts.
+
+**Why this matters:** the Python control plane no longer stops at “marked dispatched in the database.” It can **hand work to the broker** so Go workers pull from the log instead of being called directly. Postgres = lifecycle truth; Kafka = transport between claim and execution.
+
+**Optional producer:** pass **`job_producer=None`** to claim only (same behavior as before Kafka integration)—useful for tests and gradual rollout.
+
+### Known reliability gap (claim before publish)
+
+Today the order is **claim, then publish**. We do **not** roll back Postgres if Kafka fails.
+
+| If this succeeds | But this fails | Problem |
+|------------------|----------------|---------|
+| DB row → **`dispatched`** | Kafka **`publish_dispatch_event`** | Job looks handed off in Postgres, but **no message** on `kernelq.jobs.dispatch`—workers never see it |
+
+The tick records the failure in **`publish_errors`** and continues other jobs, but the stranded row stays **`dispatched`**. A later milestone will fix this with an **outbox-style pattern** (write event durably, then publish) or a **retryable dispatch mechanism** (reconcile / republish / revert state).
+
+**Interview sound bite:** *“Claim in Postgres, publish to `kernelq.jobs.dispatch`, workers consume later—today claim-before-publish can strand rows if Kafka fails; outbox or retryable dispatch fixes that next.”*
 
 ## Data Flow
 

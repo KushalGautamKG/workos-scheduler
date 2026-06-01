@@ -9,6 +9,7 @@ Tests use very high priorities so our rows sort ahead of unrelated queued jobs
 that may already exist in a shared local database.
 
 ``run_once()`` uses ``claim_schedulable_jobs`` (one atomic claim per tick).
+Kafka publish tests inject ``FakeJobProducer`` so no real broker is required.
 """
 
 from __future__ import annotations
@@ -22,10 +23,29 @@ from psycopg import OperationalError
 from control_plane.kernelq.db import connect
 from control_plane.kernelq.job_repository import JobRepository
 from control_plane.kernelq.job_state import JobState
+from control_plane.kernelq.kafka_producer import DispatchEvent
 from control_plane.kernelq.scheduler_tick import SchedulerTickRunner
 
 
 TEST_PREFIX = "test-tick-"
+
+
+class FakeJobProducer:
+    """
+    Stand-in for ``KafkaJobProducer`` in scheduler tick tests.
+
+    Records every ``DispatchEvent`` passed to ``publish_dispatch_event``.
+    Optionally raises for specific ``job_id`` values to simulate broker failures.
+    """
+
+    def __init__(self, fail_job_ids: set[str] | None = None) -> None:
+        self.published_events: list[DispatchEvent] = []
+        self._fail_job_ids = fail_job_ids or set()
+
+    def publish_dispatch_event(self, event: DispatchEvent) -> None:
+        if event.job_id in self._fail_job_ids:
+            raise RuntimeError(f"simulated publish failure for {event.job_id}")
+        self.published_events.append(event)
 
 
 def _unique_prefix(name: str) -> str:
@@ -54,6 +74,11 @@ def _cleanup_jobs_with_test_prefix(conn) -> None:
 def _our_dispatched_ids(dispatched_job_ids: list[str], prefix: str) -> list[str]:
     """Job ids from this test only (shared Postgres may contain other jobs)."""
     return [job_id for job_id in dispatched_job_ids if job_id.startswith(prefix)]
+
+
+def _our_published_events(events: list[DispatchEvent], prefix: str) -> list[DispatchEvent]:
+    """Dispatch events from this test only (ignore unrelated claimed rows)."""
+    return [event for event in events if event.job_id.startswith(prefix)]
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -238,3 +263,147 @@ def test_run_once_does_not_dispatch_non_queued_only_test_rows() -> None:
             assert result.errors == []
         finally:
             _delete_jobs(repo, failed_id, succeeded_id)
+
+
+def test_run_once_publishes_one_event_per_claimed_job_with_producer() -> None:
+    prefix = _unique_prefix("test_tick_publish_count")
+    first_id = _job_id(prefix, "first")
+    second_id = _job_id(prefix, "second")
+    base = 1_850_000_000
+    fake = FakeJobProducer()
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, first_id, second_id)
+        try:
+            repo.create_job(first_id, "tenant-a", base + 1, JobState.QUEUED.value)
+            time.sleep(0.01)
+            repo.create_job(second_id, "tenant-a", base + 2, JobState.QUEUED.value)
+
+            result = SchedulerTickRunner(
+                repo, max_jobs_per_tick=2, job_producer=fake
+            ).run_once()
+
+            ours = _our_dispatched_ids(result.dispatched_job_ids, prefix)
+            published = _our_published_events(fake.published_events, prefix)
+
+            assert len(ours) == 2
+            assert len(published) == 2
+            assert {event.job_id for event in published} == set(ours)
+        finally:
+            _delete_jobs(repo, first_id, second_id)
+
+
+def test_run_once_published_events_include_expected_fields() -> None:
+    prefix = _unique_prefix("test_tick_publish_fields")
+    job_id = _job_id(prefix, "job")
+    payload = {"kind": "billing-export", "amount": 42}
+    fake = FakeJobProducer()
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, job_id)
+        try:
+            repo.create_job(
+                job_id,
+                "tenant-b",
+                1_851_000_000,
+                JobState.QUEUED.value,
+                payload=payload,
+            )
+
+            SchedulerTickRunner(repo, max_jobs_per_tick=1, job_producer=fake).run_once()
+
+            published = _our_published_events(fake.published_events, prefix)
+            assert len(published) == 1
+            event = published[0]
+            assert event.event_type == "job.dispatch"
+            assert event.job_id == job_id
+            assert event.tenant_id == "tenant-b"
+            assert event.priority == 1_851_000_000
+            assert event.state == JobState.DISPATCHED.value
+            assert event.payload == payload
+        finally:
+            _delete_jobs(repo, job_id)
+
+
+def test_run_once_published_count_matches_successful_publishes() -> None:
+    prefix = _unique_prefix("test_tick_published_count")
+    first_id = _job_id(prefix, "first")
+    second_id = _job_id(prefix, "second")
+    base = 1_852_000_000
+    fake = FakeJobProducer()
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, first_id, second_id)
+        try:
+            repo.create_job(first_id, "tenant-a", base + 1, JobState.QUEUED.value)
+            repo.create_job(second_id, "tenant-a", base + 2, JobState.QUEUED.value)
+
+            result = SchedulerTickRunner(
+                repo, max_jobs_per_tick=2, job_producer=fake
+            ).run_once()
+
+            ours = _our_dispatched_ids(result.dispatched_job_ids, prefix)
+            assert len(ours) == 2
+            assert result.published_count == 2
+            assert len(_our_published_events(fake.published_events, prefix)) == 2
+        finally:
+            _delete_jobs(repo, first_id, second_id)
+
+
+def test_run_once_continues_after_publish_failure_for_one_job() -> None:
+    prefix = _unique_prefix("test_tick_publish_partial_fail")
+    fail_id = _job_id(prefix, "fail")
+    ok_id = _job_id(prefix, "ok")
+    base = 1_853_000_000
+    fake = FakeJobProducer(fail_job_ids={fail_id})
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, fail_id, ok_id)
+        try:
+            # Higher priority is claimed first; simulate failure on that row.
+            repo.create_job(fail_id, "tenant-a", base + 2, JobState.QUEUED.value)
+            time.sleep(0.01)
+            repo.create_job(ok_id, "tenant-a", base + 1, JobState.QUEUED.value)
+
+            result = SchedulerTickRunner(
+                repo, max_jobs_per_tick=2, job_producer=fake
+            ).run_once()
+
+            ours = _our_dispatched_ids(result.dispatched_job_ids, prefix)
+            published = _our_published_events(fake.published_events, prefix)
+
+            assert set(ours) == {fail_id, ok_id}
+            assert result.dispatched_count == 2
+            assert result.published_count == 1
+            assert len(published) == 1
+            assert published[0].job_id == ok_id
+
+            assert len(result.publish_errors) == 1
+            assert fail_id in result.publish_errors[0]
+            assert "RuntimeError" in result.publish_errors[0]
+
+            assert repo.get_job(fail_id).state == JobState.DISPATCHED.value
+            assert repo.get_job(ok_id).state == JobState.DISPATCHED.value
+        finally:
+            _delete_jobs(repo, fail_id, ok_id)
+
+
+def test_run_once_without_producer_does_not_publish() -> None:
+    prefix = _unique_prefix("test_tick_no_producer")
+    job_id = _job_id(prefix, "job")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, job_id)
+        try:
+            repo.create_job(job_id, "tenant-a", 1_854_000_000, JobState.QUEUED.value)
+
+            result = SchedulerTickRunner(repo, max_jobs_per_tick=1).run_once()
+
+            ours = _our_dispatched_ids(result.dispatched_job_ids, prefix)
+            assert ours == [job_id]
+            assert result.dispatched_count == 1
+            assert result.published_count == 0
+            assert result.publish_errors == []
+            assert repo.get_job(job_id).state == JobState.DISPATCHED.value
+        finally:
+            _delete_jobs(repo, job_id)

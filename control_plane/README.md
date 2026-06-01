@@ -81,11 +81,11 @@ It supports **create**, **fetch by id**, **update state**, and **delete**—so S
 
 ## Scheduler Tick Runner
 
-KernelQ now has a **`SchedulerTickRunner`** (`kernelq/scheduler_tick.py`). Each **`run_once()`** tick calls **`claim_schedulable_jobs`** (up to `max_jobs_per_tick`). It runs **synchronously** for now—no async and no **Kafka publishing** yet.
+KernelQ now has a **`SchedulerTickRunner`** (`kernelq/scheduler_tick.py`). Each **`run_once()`** tick calls **`claim_schedulable_jobs`** (up to `max_jobs_per_tick`), then optionally publishes **`DispatchEvent`** messages when a **`job_producer`** is passed in. It runs **synchronously** for now—no async yet.
 
 ## Atomic Job Claiming
 
-Scheduler ticks claim work through **`JobRepository.claim_schedulable_jobs()`**: it **selects `queued` jobs and marks them `dispatched` in one Postgres transaction**, which **reduces duplicate dispatch risk** when multiple schedulers run. The SQL uses row locking with **`FOR UPDATE SKIP LOCKED`** so instances skip rows another scheduler is already claiming. **Kafka publishing** still comes later.
+Scheduler ticks claim work through **`JobRepository.claim_schedulable_jobs()`**: it **selects `queued` jobs and marks them `dispatched` in one Postgres transaction**, which **reduces duplicate dispatch risk** when multiple schedulers run. The SQL uses row locking with **`FOR UPDATE SKIP LOCKED`** so instances skip rows another scheduler is already claiming. Kafka publish runs **after** claim when a producer is configured.
 
 ## Inspecting Scheduler Query Plans
 
@@ -125,11 +125,15 @@ KernelQ’s root **`docker-compose.yml`** now includes **Zookeeper** and **Kafka
 
 ## Kafka Topics
 
-KernelQ defines three topics: **`kernelq.jobs.dispatch`** (runnable work), **`kernelq.jobs.retry`** (failed jobs that can run again), and **`kernelq.jobs.dlq`** (dead-letter / poison messages). Create them locally with **`infra/kafka/create-topics.sh`** (see `docs/deploy.md`). The control plane will **publish dispatch events** to `kernelq.jobs.dispatch` after scheduler ticks claim jobs—a later milestone; today ticks update Postgres only.
+KernelQ defines three topics: **`kernelq.jobs.dispatch`** (runnable work), **`kernelq.jobs.retry`** (failed jobs that can run again), and **`kernelq.jobs.dlq`** (dead-letter / poison messages). Create them locally with **`infra/kafka/create-topics.sh`** (see `docs/deploy.md`).
 
 ## Kafka Producer Skeleton
 
-KernelQ now has a Python **`KafkaJobProducer`** wrapper in **`kernelq/kafka_producer.py`**. It publishes **`DispatchEvent`** JSON to **`kernelq.jobs.dispatch`** (key = `job_id`). Tests in **`tests/test_kafka_producer.py`** inject a **fake producer**, so pytest does not need a running Kafka broker. **`SchedulerTickRunner` integration** (publish after claim) comes next.
+KernelQ has a Python **`KafkaJobProducer`** wrapper in **`kernelq/kafka_producer.py`**. It publishes **`DispatchEvent`** JSON to **`kernelq.jobs.dispatch`** (key = `job_id`). Tests in **`tests/test_kafka_producer.py`** inject a **fake producer**, so pytest does not need a running Kafka broker.
+
+## Scheduler Kafka Publishing
+
+**`SchedulerTickRunner`** can publish dispatch events to Kafka through the producer wrapper after **`claim_schedulable_jobs`**. Tests in **`tests/test_scheduler_tick.py`** use **`FakeJobProducer`**, so they do not require a broker. **Known gap:** if Postgres marks a job **`dispatched`** but publish fails, workers may never see it—a future **outbox** or **retryable dispatch** mechanism will fix that (see `docs/architecture.md`).
 
 ## Responsibilities
 
