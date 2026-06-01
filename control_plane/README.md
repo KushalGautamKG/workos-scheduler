@@ -135,6 +135,10 @@ KernelQ has a Python **`KafkaJobProducer`** wrapper in **`kernelq/kafka_producer
 
 **`SchedulerTickRunner`** can publish dispatch events to Kafka through the producer wrapper after **`claim_schedulable_jobs`**. Tests in **`tests/test_scheduler_tick.py`** use **`FakeJobProducer`**, so they do not require a broker. **Known gap:** if Postgres marks a job **`dispatched`** but publish fails, workers may never see it—a future **outbox** or **retryable dispatch** mechanism will fix that (see `docs/architecture.md`).
 
+## Manual Scheduler-to-Kafka Smoke Test
+
+**`scripts/run_scheduler_tick_once.py`** runs **one** scheduler tick with a **real `KafkaJobProducer`**: it claims **one** **`queued`** job from Postgres and publishes a **`DispatchEvent`** to **`kernelq.jobs.dispatch`**. You need a queued job already (API or SQL)—the script does not create one. Use the **Kafka CLI consumer** to read the message locally; **Go workers** will consume the topic later. Full steps: **`docs/deploy.md`** (Manual Scheduler-to-Kafka Smoke Test).
+
 ## Responsibilities
 
 The control plane is responsible for:

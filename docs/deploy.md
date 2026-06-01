@@ -186,6 +186,90 @@ You should see the same JSON line printed. Press **Ctrl+C** if the consumer keep
 
 **Why this matters:** if produce and consume both work, **local Kafka topic wiring is healthy**—broker up, topic created, messages durable on the log. The control plane and Go workers will use the same topic names later; this smoke test confirms infrastructure only, not application code.
 
+## Manual Scheduler-to-Kafka Smoke Test
+
+This walkthrough runs the **real** Python scheduler path: a **`queued`** row in Postgres → one **`SchedulerTickRunner`** pass → a message on **`kernelq.jobs.dispatch`**. It uses **`control_plane/scripts/run_scheduler_tick_once.py`** (not fake producers in pytest).
+
+**What this proves:** Postgres → scheduler tick → Kafka dispatch topic.
+
+**What this does not prove yet:** **Go worker execution**, retries, exactly-once behavior, or production-grade reliability. Workers are not wired in; you are only checking that the control plane can hand work to the broker.
+
+From the **repository root**:
+
+**1. Start infrastructure**
+
+```bash
+docker compose up -d postgres zookeeper kafka
+```
+
+Apply the jobs migration if you have not already (see **Local PostgreSQL Setup**):
+
+```bash
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/migrations/001_create_jobs.sql
+```
+
+**2. Create Kafka topics**
+
+```bash
+chmod +x infra/kafka/create-topics.sh   # once
+./infra/kafka/create-topics.sh
+```
+
+**3. Create a queued job (API or SQL)**
+
+The tick script **does not create jobs**—it only claims rows already in state **`queued`**.
+
+**API option** — start the control plane in one terminal:
+
+```bash
+python3 -m pip install -r control_plane/requirements.txt   # if needed
+python3 -m uvicorn control_plane.api:app --reload
+```
+
+In **another terminal**, enqueue a job (use a fresh `job_id` if you rerun):
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs/day31-smoke/enqueue \
+  -H "Content-Type: application/json" \
+  -d '{"tenant_id":"tenant-a","priority":999999,"payload":{"kind":"day31-smoke"}}'
+```
+
+You should get a JSON response with `"state": "queued"`. High **priority** helps this job win the claim when other queued rows exist in a shared local database.
+
+**SQL option** — insert a row directly with `psql` if you prefer; state must be **`queued`**.
+
+**4. Run one scheduler tick**
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/run_scheduler_tick_once.py
+```
+
+Read the printed summary. On success you should see something like:
+
+- `selected_count: 1`
+- `dispatched_count: 1`
+- `published_count: 1`
+- `dispatched_job_ids` listing your job id
+- `errors` and `publish_errors` empty
+
+The script claims **at most one** job per run (`max_jobs_per_tick=1`) and publishes to **`localhost:9092`**.
+
+**5. Consume from Kafka**
+
+Confirm the dispatch event reached the topic (read from the start of the log; you may see older messages if you ran this before):
+
+```bash
+docker exec -i kernelq-kafka kafka-console-consumer \
+  --bootstrap-server kafka:29092 \
+  --topic kernelq.jobs.dispatch \
+  --from-beginning \
+  --max-messages 1
+```
+
+Look for JSON containing your **`job_id`**, **`tenant_id`**, **`priority`**, and **`payload`**. Press **Ctrl+C** if the consumer keeps waiting after printing messages.
+
+**End-to-end check:** queued job in Postgres → tick marks **`dispatched`** and publishes → message visible on **`kernelq.jobs.dispatch`**. That is the full control-plane handoff for local dev; execution on workers comes later.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

@@ -428,6 +428,36 @@ The tick records the failure in **`publish_errors`** and continues other jobs, b
 
 **Interview sound bite:** *“Claim in Postgres, publish to `kernelq.jobs.dispatch`, workers consume later—today claim-before-publish can strand rows if Kafka fails; outbox or retryable dispatch fixes that next.”*
 
+## Manual End-to-End Dispatch Smoke Test
+
+KernelQ can now **manually verify** the path from a **persisted `queued` job** to a **Kafka dispatch message** on your laptop—without Go workers running yet.
+
+**What you are proving:** the **control plane handoff** works end to end: durable row in Postgres → one scheduler tick → JSON on **`kernelq.jobs.dispatch`**.
+
+**What you are not proving:** full **worker integration** (execution, retries, exactly-once, production SLOs). Treat this as a **smoke test**, not a production readiness check.
+
+**How it works (plain English):**
+
+1. **Enqueue** a job (REST API or SQL) so Postgres has a row in state **`queued`**.
+2. Run **`control_plane/scripts/run_scheduler_tick_once.py`** — one **`SchedulerTickRunner.run_once()`** with a **real `KafkaJobProducer`** (`localhost:9092`), claiming up to one job and publishing a **`DispatchEvent`**.
+3. Read the topic with **`kafka-console-consumer`** inside the **`kernelq-kafka`** container — that CLI **stands in for future Go workers** today. If you see your `job_id` in JSON, the broker received what the tick sent.
+
+```
+API / SQL enqueue  →  Postgres (queued)
+                         ↓
+              run_scheduler_tick_once.py
+                         ↓
+              kernelq.jobs.dispatch
+                         ↓
+              kafka-console-consumer  (temporary stand-in for Go workers)
+```
+
+**Why a script instead of only unit tests:** pytest uses **fake producers** to test logic fast without a broker. The manual script uses **real Postgres + real Kafka**, so you catch wiring mistakes (bootstrap address, topic name, broker down) that fakes cannot.
+
+**Step-by-step commands:** see **Manual Scheduler-to-Kafka Smoke Test** in `docs/deploy.md`.
+
+**Interview sound bite:** *“We smoke-test queued → tick → dispatch topic with `run_scheduler_tick_once.py`; the Kafka CLI plays worker until Go consumes for real.”*
+
 ## Data Flow
 
 1. **Enqueue**: Client sends job request via REST API to control plane
