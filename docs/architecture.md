@@ -487,6 +487,24 @@ There is **no Kafka consumer** in Go yet—the manual smoke test still uses **`k
 
 **Interview sound bite:** *“Python publishes to `kernelq.jobs.dispatch`; Go worker repo has Task validation today; consumer and execution come next—Go for concurrency and long-running consume loops.”*
 
+## Cross-Language Event Contract
+
+KernelQ uses one dispatch message shape across both languages.
+
+- The **Python control plane** publishes **`DispatchEvent`** JSON to Kafka.
+- The **Go worker plane** parses the same JSON into Go **`DispatchEvent`** structs.
+
+That shared shape is a **contract** between planes: Python promises what fields it sends, and Go promises how it reads them.
+
+**Validation in both places:**
+
+- **Python** validates before publish (for example required fields and dispatch state).
+- **Go** validates after parse (`ParseDispatchEvent` + `ValidateDispatchEvent`) before execution.
+
+This two-sided validation reduces accidental **protocol drift** (for example renamed fields, wrong state values, missing IDs) and makes failures visible early instead of silently executing bad data.
+
+**Interview sound bite:** *“One JSON contract, two implementations: Python publishes it, Go parses and validates it—double validation catches drift before it becomes production behavior.”*
+
 ## Data Flow
 
 1. **Enqueue**: Client sends job request via REST API to control plane

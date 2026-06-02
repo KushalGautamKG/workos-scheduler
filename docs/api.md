@@ -253,37 +253,28 @@ Core outcomes covered:
 - `409` for duplicate enqueue and invalid retry/cancel transitions
 - `422` for schema validation errors (missing required fields)
 
-## Dispatch Event Shape
+## Kafka Dispatch Event Schema
 
-When the scheduler publishes runnable work to Kafka, it sends a **JSON dispatch event** on topic **`kernelq.jobs.dispatch`**. These are **internal broker messages**, not REST API responses—clients never see them over HTTP.
-
-**Go workers** will consume these events later, use the fields to start execution, and still verify/update job state in Postgres.
-
-Planned fields (see `DispatchEvent` in `control_plane/kernelq/kafka_producer.py`):
-
-| Field | Meaning |
-|-------|---------|
-| **`event_type`** | Message kind (for example `job.dispatch`) so consumers can filter or evolve schemas. |
-| **`job_id`** | Unique job identifier; also used as the Kafka message **key**. |
-| **`tenant_id`** | Which tenant owns the job (fairness, routing, metrics). |
-| **`priority`** | Scheduling priority copied from the job row. |
-| **`state`** | Job state at publish time (for example `dispatched`). |
-| **`payload`** | Job input data (JSON object)—what the worker actually runs. |
-
-Example message value:
+When the scheduler publishes runnable work, it writes a **DispatchEvent JSON** message to **`kernelq.jobs.dispatch`**.
 
 ```json
 {
   "event_type": "job.dispatch",
   "job_id": "job-123",
   "tenant_id": "tenant-a",
-  "priority": 10,
+  "priority": 5,
   "state": "dispatched",
-  "payload": {"kind": "billing-export"}
+  "payload": {
+    "kind": "example"
+  }
 }
 ```
 
-The producer module exists today; **scheduler tick integration** (publish after claim) is the next step.
+- **Published by Python scheduler:** the control plane emits this after making a dispatch decision.
+- **Consumed by future Go workers:** workers will parse this shape to start execution.
+- **Not execution success:** this event means “dispatch decided/sent,” not “job completed successfully.”
+
+These are internal Kafka broker messages, not REST API responses.
 
 ## Health Checks and OpenAPI
 

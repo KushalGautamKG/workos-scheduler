@@ -26,6 +26,20 @@ This is **foundation only**—not a running worker yet:
 
 There is **no Kafka consumer**, **no main entrypoint**, and **no job execution loop** yet. Those come in later milestones after this skeleton is in place.
 
+## Dispatch Event Contract
+
+Workers will eventually consume dispatch events from Kafka topic **`kernelq.jobs.dispatch`**.
+
+- **`DispatchEvent`** in `internal/worker/dispatch_event.go` matches the JSON published by the Python control plane.
+- **`ParseDispatchEvent`** parses and validates each message before execution.
+- This protects workers from malformed or invalid Kafka messages (bad JSON, missing fields, wrong state/event type).
+
+Run all worker tests (including dispatch-event parsing/validation):
+
+```bash
+go test ./...
+```
+
 ## Prerequisites
 
 - **Go 1.22+** installed (`go version`)
