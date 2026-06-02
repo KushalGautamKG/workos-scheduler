@@ -458,6 +458,35 @@ API / SQL enqueue  →  Postgres (queued)
 
 **Interview sound bite:** *“We smoke-test queued → tick → dispatch topic with `run_scheduler_tick_once.py`; the Kafka CLI plays worker until Go consumes for real.”*
 
+## Go Worker Plane
+
+KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory—a separate codebase from the Python control plane, aligned with **ADR-0001** (Python decides, Go executes).
+
+**What the control plane does today:** the Python scheduler **publishes dispatch events** to **`kernelq.jobs.dispatch`** after claiming jobs in Postgres (`SchedulerTickRunner` + `KafkaJobProducer`). Messages carry `job_id`, `tenant_id`, `priority`, `state`, and `payload`.
+
+**What Go workers will do next:** **consume** those dispatch events from Kafka (consumer group on `kernelq.jobs.dispatch`), validate each task, run job logic with **bounded concurrency**, and **update Postgres** (`dispatched` → `running` → terminal states). Retry and DLQ topics (`kernelq.jobs.retry`, `kernelq.jobs.dlq`) come later.
+
+**Why Go for workers (not Python):**
+
+- **Concurrency** — goroutines handle many in-flight jobs without the Python GIL limiting parallel execution.
+- **Efficient long-running processes** — workers are always-on consumers; Go’s small memory footprint and predictable latency suit high-throughput, 24/7 broker consumption.
+- **Clear split** — Python owns policy, API, and scheduling; Go owns the hot execution path.
+
+**What exists in `worker/` today (foundation only):**
+
+| Piece | Status |
+|-------|--------|
+| `go.mod` | Go module scaffold |
+| `internal/worker/task.go` | `Task` struct + `ValidateTask()` |
+| `internal/worker/task_test.go` | Validation unit tests |
+| Kafka consumer | **Not built yet** |
+| Job execution loop | **Not built yet** |
+| Postgres status updates from workers | **Not built yet** |
+
+There is **no Kafka consumer** in Go yet—the manual smoke test still uses **`kafka-console-consumer`** as a stand-in. The next milestones add consume → execute → report back.
+
+**Interview sound bite:** *“Python publishes to `kernelq.jobs.dispatch`; Go worker repo has Task validation today; consumer and execution come next—Go for concurrency and long-running consume loops.”*
+
 ## Data Flow
 
 1. **Enqueue**: Client sends job request via REST API to control plane

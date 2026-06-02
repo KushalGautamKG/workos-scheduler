@@ -270,6 +270,21 @@ Look for JSON containing your **`job_id`**, **`tenant_id`**, **`priority`**, and
 
 **End-to-end check:** queued job in Postgres → tick marks **`dispatched`** and publishes → message visible on **`kernelq.jobs.dispatch`**. That is the full control-plane handoff for local dev; execution on workers comes later.
 
+## Running Go Worker Tests
+
+The **`worker/`** directory holds the Go worker plane. From the **repository root**:
+
+```bash
+cd worker
+go test ./...
+```
+
+**Prerequisite:** Go **1.22+** installed (`go version`). No Docker or Kafka required for these tests.
+
+**What this runs today:** unit tests for the worker **foundation** only (for example `Task` validation in `internal/worker/`). There is **no Kafka consumer** and **no live broker** in this test suite yet—**Kafka consumer behavior** comes in a later milestone.
+
+See also **`worker/README.md`**.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

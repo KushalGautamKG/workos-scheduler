@@ -81,6 +81,14 @@ This is NOT a CRUD app or tutorial clone. It is an internal distributed work coo
 - Initial development may be slower due to setup complexity
 - Long-term maintenance balanced by appropriate tool choice
 
+## Worker Plane Started
+
+The **`worker/`** Go directory now exists (`go.mod`, `internal/worker/`). Go is reserved for **future Kafka consumers** and **bounded concurrent execution**—the hot path the control plane hands off via **`kernelq.jobs.dispatch`**.
+
+The **first Go code** validates **`Task`** shape only (`ValidateTask`: non-blank `job_id` / `tenant_id`, non-negative priority). There is **no broker consumer or execution loop** yet.
+
+This reinforces the **Python control plane / Go worker plane** split from this ADR: Python already schedules and publishes; Go scaffolding starts on the execution side without collapsing both into one language.
+
 ## How We Will Validate
 
 1. **Throughput**: Measure tasks/second processed by Go workers. Target: >1000 tasks/sec per worker instance.
