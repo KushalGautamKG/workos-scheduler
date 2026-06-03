@@ -478,14 +478,39 @@ KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory�
 |-------|--------|
 | `go.mod` | Go module scaffold |
 | `internal/worker/task.go` | `Task` struct + `ValidateTask()` |
-| `internal/worker/task_test.go` | Validation unit tests |
-| Kafka consumer | **Not built yet** |
+| `internal/worker/dispatch_event.go` | `DispatchEvent` + `ParseDispatchEvent` |
+| `internal/worker/consumer.go` | `ConsumerRunner` message-processing boundary |
+| Real Kafka client | **Not built yet** |
 | Job execution loop | **Not built yet** |
 | Postgres status updates from workers | **Not built yet** |
 
-There is **no Kafka consumer** in Go yet—the manual smoke test still uses **`kafka-console-consumer`** as a stand-in. The next milestones add consume → execute → report back.
+There is **no real Kafka client** in Go yet—the manual smoke test still uses **`kafka-console-consumer`** as a stand-in. **`ConsumerRunner`** processes message bytes in tests; broker wiring comes next.
 
-**Interview sound bite:** *“Python publishes to `kernelq.jobs.dispatch`; Go worker repo has Task validation today; consumer and execution come next—Go for concurrency and long-running consume loops.”*
+**Interview sound bite:** *“Python publishes to `kernelq.jobs.dispatch`; Go has parse/validate and a consumer boundary; real broker client and execution come next.”*
+
+## Go Worker Consumer Boundary
+
+The Go worker plane now has a **message-processing boundary** (`ConsumerRunner` in `worker/internal/worker/consumer.go`). It sits between **Kafka transport** and **job execution logic**.
+
+**Flow (one message):**
+
+```
+Raw Kafka bytes (Message.Value)
+    ↓  ParseDispatchEvent (JSON + validation)
+DispatchEvent
+    ↓  DispatchHandler.Handle(event)
+Job execution logic (later)
+```
+
+1. **Parse** — raw message bytes become a typed **`DispatchEvent`** (`ParseDispatchEvent`).
+2. **Validate** — reject malformed JSON, wrong `event_type`, blank ids, bad state, etc., before any handler runs.
+3. **Handle** — pass valid events to a **`DispatchHandler`** implementation (real executor or test fake).
+
+**Why separate this layer:** Kafka SDK code (poll, offsets, consumer groups) changes for different brokers and deployments. Parsing, validation, and execution rules should not live inside the transport loop. This boundary lets you test **“given these bytes, what happens?”** with fake messages—no broker required.
+
+**What is not wired yet:** a **real Kafka client** that reads from **`kernelq.jobs.dispatch`** and calls `ProcessMessage`. That integration is the next milestone after this boundary is tested.
+
+**Interview sound bite:** *“ConsumerRunner: bytes → parse/validate → handler—transport separate from execution; fake messages in tests, real Kafka client later.”*
 
 ## Cross-Language Event Contract
 

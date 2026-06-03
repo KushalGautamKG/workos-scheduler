@@ -23,6 +23,8 @@ This is **foundation only**—not a running worker yet:
 | `go.mod` | Go module (`github.com/KushalGautamKG/workos-scheduler/worker`, Go 1.22) |
 | `internal/worker/task.go` | `Task` struct and `ValidateTask()` |
 | `internal/worker/task_test.go` | Unit tests for task validation |
+| `internal/worker/dispatch_event.go` | `DispatchEvent`, `ParseDispatchEvent` |
+| `internal/worker/consumer.go` | `ConsumerRunner`, `ProcessMessage` |
 
 There is **no Kafka consumer**, **no main entrypoint**, and **no job execution loop** yet. Those come in later milestones after this skeleton is in place.
 
@@ -35,6 +37,19 @@ Workers will eventually consume dispatch events from Kafka topic **`kernelq.jobs
 - This protects workers from malformed or invalid Kafka messages (bad JSON, missing fields, wrong state/event type).
 
 Run all worker tests (including dispatch-event parsing/validation):
+
+```bash
+go test ./...
+```
+
+## Consumer Message Processing
+
+The worker plane now has **`ConsumerRunner`** in `internal/worker/consumer.go`. It is the **message-processing boundary**: raw **`Message.Value`** bytes go in, a validated **`DispatchEvent`** comes out, then a **`DispatchHandler`** runs.
+
+- **`ProcessMessage`** calls **`ParseDispatchEvent`** (parse + validate) before any handler logic.
+- Invalid JSON or bad field values return an error—workers do not execute malformed messages.
+- This is **not connected to real Kafka yet**; tests pass fake `Message` values in memory.
+- **Real Kafka consumption** (broker client, consumer group, offsets) comes in a later milestone.
 
 ```bash
 go test ./...

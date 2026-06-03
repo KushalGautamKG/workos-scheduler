@@ -285,6 +285,17 @@ go test ./...
 
 See also **`worker/README.md`**.
 
+## Running Worker Consumer Tests
+
+Worker tests for **`ConsumerRunner`** (message parsing → handler) use the same command:
+
+```bash
+cd worker
+go test ./...
+```
+
+These tests validate **dispatch JSON parsing**, **validation**, and **handler flow** with fake in-memory messages. They do **not** require Kafka or Docker yet—real broker consumption comes later.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.
