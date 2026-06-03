@@ -482,13 +482,14 @@ KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory�
 | `internal/worker/consumer.go` | `ConsumerRunner` message-processing boundary |
 | `internal/worker/handler.go` | `DispatchEventHandler` event → task |
 | `internal/worker/executor.go` | `Executor` interface (execution boundary) |
-| Real Kafka client | **Not built yet** |
-| Job execution loop | **Not built yet** |
+| `internal/worker/kafka_consumer.go` | `KafkaConsumer` — broker record → `Message` |
+| `cmd/consumer/main.go` | Kafka client startup (subscribe only) |
+| Poll / execution loop | **Not built yet** |
 | Postgres status updates from workers | **Not built yet** |
 
-There is **no real Kafka client** in Go yet—the manual smoke test still uses **`kafka-console-consumer`** as a stand-in. **`ConsumerRunner`** processes message bytes in tests; broker wiring comes next.
+**`cmd/consumer`** creates a confluent-kafka-go client and subscribes to **`kernelq.jobs.dispatch`**. **`KafkaConsumer`** maps broker records into **`ConsumerRunner`** messages; poll loops and wired execution come next.
 
-**Interview sound bite:** *“Python publishes to `kernelq.jobs.dispatch`; Go has parse/validate and a consumer boundary; real broker client and execution come next.”*
+**Interview sound bite:** *“Python publishes to `kernelq.jobs.dispatch`; Go owns consumption with KafkaConsumer → ConsumerRunner → handler → executor; poll loop and real execution come next.”*
 
 ## Go Worker Consumer Boundary
 
@@ -509,8 +510,6 @@ Job execution logic (later)
 3. **Handle** — pass valid events to a **`DispatchHandler`** implementation (real executor or test fake).
 
 **Why separate this layer:** Kafka SDK code (poll, offsets, consumer groups) changes for different brokers and deployments. Parsing, validation, and execution rules should not live inside the transport loop. This boundary lets you test **“given these bytes, what happens?”** with fake messages—no broker required.
-
-**What is not wired yet:** a **real Kafka client** that reads from **`kernelq.jobs.dispatch`** and calls `ProcessMessage`. That integration is the next milestone after this boundary is tested.
 
 **Interview sound bite:** *“ConsumerRunner: bytes → parse/validate → handler—transport separate from execution; fake messages in tests, real Kafka client later.”*
 
@@ -541,6 +540,38 @@ Actual job work (later)
 **What exists today:** interfaces and handlers only—tests use fake executors. **Real execution**, **concurrency caps**, and **status reporting to Postgres** come in later milestones.
 
 **Interview sound bite:** *“ConsumerRunner parses messages; DispatchEventHandler maps to Task; Executor runs work—three layers so concurrency and metrics land in one place later.”*
+
+## Worker Kafka Consumption
+
+The **Go worker plane** now **owns Kafka consumption** on **`kernelq.jobs.dispatch`**. After the Python control plane claims jobs and publishes **`DispatchEvent`** JSON, Go workers pull records from the broker and route them into the existing processing stack.
+
+**Transport vs parsing:** **`KafkaConsumer`** (confluent-kafka-go) handles **broker transport only**—topic subscription, consumer group, record keys and values. It does **not** parse JSON or execute jobs. Each `*kafka.Message` becomes an in-memory **`Message`** (`Key`, `Value`) and is passed to **`ConsumerRunner.ProcessMessage`**.
+
+**Layered flow (one record):**
+
+```
+kernelq.jobs.dispatch (*kafka.Message)
+    ↓  KafkaConsumer.ProcessKafkaMessage
+ConsumerRunner Message (Key + Value bytes)
+    ↓  ConsumerRunner.ProcessMessage (parse + validate)
+DispatchEvent
+    ↓  DispatchEventHandler.Handle (execution-independent)
+Task
+    ↓  Executor.Execute
+Job execution (later)
+```
+
+**Why this split matters in interviews:**
+
+- **Go owns consumption** — workers pull from the log; Python does not push directly to worker processes.
+- **Kafka transport is separate from message parsing** — SDK and broker config can change without touching `ParseDispatchEvent` or handlers.
+- **Kafka messages become `ConsumerRunner` messages** — one thin adapter (`ProcessKafkaMessage`) bridges confluent-kafka-go to the testable in-memory boundary.
+- **`DispatchEventHandler` stays execution-independent** — it maps validated events to **`Task`** values without caring whether bytes came from Kafka or a unit test fake.
+- **`Executor` still owns execution logic** — running work, concurrency caps, timeouts, and Postgres status updates belong there—not in the Kafka client or parser.
+
+**What exists today:** **`KafkaConsumer`**, in-memory tests, and **`cmd/consumer`** (create client, subscribe, print startup). **Poll loops**, **offset commit policy**, and **wired execution** come in later milestones.
+
+**Interview sound bite:** *“Go owns consumption: KafkaConsumer turns broker records into ConsumerRunner messages; parsing and execution stay in separate layers so tests skip the broker and execution can evolve independently.”*
 
 ## Cross-Language Event Contract
 

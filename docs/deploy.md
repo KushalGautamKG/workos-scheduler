@@ -307,6 +307,41 @@ go test ./...
 
 These tests validate **event-to-task handling** (`DispatchEventHandler`) and **executor delegation** (fake executors in tests). They do **not** execute real jobs yet—production execution, concurrency limits, and Postgres status updates come later.
 
+## Starting the Worker Consumer
+
+The Go worker can connect to local Kafka and subscribe to **`kernelq.jobs.dispatch`**. From the **repository root**:
+
+**1. Start Kafka infrastructure**
+
+```bash
+docker compose up -d kafka zookeeper
+```
+
+Create topics if you have not already (see **Creating Kafka Topics Locally**):
+
+```bash
+./infra/kafka/create-topics.sh
+```
+
+**2. Start the consumer**
+
+```bash
+cd worker
+go run ./cmd/consumer
+```
+
+You should see:
+
+```text
+KernelQ worker consumer started
+```
+
+**What this does today:** the process creates a confluent-kafka-go client (group **`kernelq-worker`**, bootstrap **`localhost:9092`**), subscribes to **`kernelq.jobs.dispatch`**, and exits after printing the startup line. It validates **broker connectivity**, **consumer creation**, and **topic subscription** only.
+
+**What is not wired yet:** a **continuous poll loop** that reads messages, calls **`KafkaConsumer.ProcessKafkaMessage`**, and executes jobs. That comes in a later milestone.
+
+**Prerequisite:** Go **1.22+** installed (`go version`).
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

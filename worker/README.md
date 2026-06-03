@@ -27,8 +27,10 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/consumer.go` | `ConsumerRunner`, `ProcessMessage` |
 | `internal/worker/handler.go` | `DispatchEventHandler` |
 | `internal/worker/executor.go` | `Executor` interface |
+| `internal/worker/kafka_consumer.go` | `KafkaConsumer`, `ProcessKafkaMessage` |
+| `cmd/consumer/main.go` | Kafka client startup (subscribe only) |
 
-There is **no Kafka consumer**, **no main entrypoint**, and **no real job execution** yet. Those come in later milestones after this skeleton is in place.
+There is **no real job execution** yet. Polling and execution loops come in later milestones.
 
 ## Dispatch Event Contract
 
@@ -50,8 +52,6 @@ The worker plane now has **`ConsumerRunner`** in `internal/worker/consumer.go`. 
 
 - **`ProcessMessage`** calls **`ParseDispatchEvent`** (parse + validate) before any handler logic.
 - Invalid JSON or bad field values return an error—workers do not execute malformed messages.
-- This is **not connected to real Kafka yet**; tests pass fake `Message` values in memory.
-- **Real Kafka consumption** (broker client, consumer group, offsets) comes in a later milestone.
 
 ```bash
 go test ./...
@@ -67,6 +67,19 @@ go test ./...
 
 ```bash
 go test ./...
+```
+
+## Kafka Consumer
+
+The worker now includes **`KafkaConsumer`** in `internal/worker/kafka_consumer.go`. It adapts confluent-kafka-go records into our in-memory **`Message`** type and passes them to **`ConsumerRunner`**.
+
+- **`ProcessKafkaMessage`** maps `*kafka.Message` key/value fields onto **`Message`**, then calls **`ConsumerRunner.ProcessMessage`**.
+- **`ConsumerRunner`** handles parsing and validation (`ParseDispatchEvent`) before any handler runs.
+- **`cmd/consumer`** creates a broker client, subscribes to **`kernelq.jobs.dispatch`**, and prints a startup line—no poll or execution loop yet.
+
+```bash
+go test ./...
+go run ./cmd/consumer
 ```
 
 ## Prerequisites
