@@ -25,8 +25,10 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/task_test.go` | Unit tests for task validation |
 | `internal/worker/dispatch_event.go` | `DispatchEvent`, `ParseDispatchEvent` |
 | `internal/worker/consumer.go` | `ConsumerRunner`, `ProcessMessage` |
+| `internal/worker/handler.go` | `DispatchEventHandler` |
+| `internal/worker/executor.go` | `Executor` interface |
 
-There is **no Kafka consumer**, **no main entrypoint**, and **no job execution loop** yet. Those come in later milestones after this skeleton is in place.
+There is **no Kafka consumer**, **no main entrypoint**, and **no real job execution** yet. Those come in later milestones after this skeleton is in place.
 
 ## Dispatch Event Contract
 
@@ -50,6 +52,18 @@ The worker plane now has **`ConsumerRunner`** in `internal/worker/consumer.go`. 
 - Invalid JSON or bad field values return an error—workers do not execute malformed messages.
 - This is **not connected to real Kafka yet**; tests pass fake `Message` values in memory.
 - **Real Kafka consumption** (broker client, consumer group, offsets) comes in a later milestone.
+
+```bash
+go test ./...
+```
+
+## Execution Handler
+
+**`DispatchEventHandler`** (`internal/worker/handler.go`) converts validated **`DispatchEvent`** values into **`Task`** objects and calls an **`Executor`**.
+
+- **`Executor`** is an interface for future job execution (`Execute(task Task) error`).
+- Current tests use a **fake executor** that records tasks and simulates failures.
+- **Real execution**, **bounded concurrency**, and **Postgres status reporting** come later.
 
 ```bash
 go test ./...

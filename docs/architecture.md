@@ -480,6 +480,8 @@ KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory�
 | `internal/worker/task.go` | `Task` struct + `ValidateTask()` |
 | `internal/worker/dispatch_event.go` | `DispatchEvent` + `ParseDispatchEvent` |
 | `internal/worker/consumer.go` | `ConsumerRunner` message-processing boundary |
+| `internal/worker/handler.go` | `DispatchEventHandler` event → task |
+| `internal/worker/executor.go` | `Executor` interface (execution boundary) |
 | Real Kafka client | **Not built yet** |
 | Job execution loop | **Not built yet** |
 | Postgres status updates from workers | **Not built yet** |
@@ -511,6 +513,34 @@ Job execution logic (later)
 **What is not wired yet:** a **real Kafka client** that reads from **`kernelq.jobs.dispatch`** and calls `ProcessMessage`. That integration is the next milestone after this boundary is tested.
 
 **Interview sound bite:** *“ConsumerRunner: bytes → parse/validate → handler—transport separate from execution; fake messages in tests, real Kafka client later.”*
+
+## Worker Execution Boundary
+
+The Go worker now **separates message processing from task execution**. Each layer has one job—easier to test, reason about, and extend.
+
+**Layered flow:**
+
+```
+Message bytes
+    ↓  ConsumerRunner.ProcessMessage
+DispatchEvent (parsed + validated)
+    ↓  DispatchEventHandler.Handle
+Task (mapped + ValidateTask)
+    ↓  Executor.Execute
+Actual job work (later)
+```
+
+| Layer | Role |
+|-------|------|
+| **`ConsumerRunner`** | Parses and validates dispatch **messages** (`ParseDispatchEvent` on raw bytes). |
+| **`DispatchEventHandler`** | Converts a validated **`DispatchEvent`** into a **`Task`** and validates again before run. |
+| **`Executor`** | **Boundary where actual execution will happen**—run the job, enforce limits, report outcomes. |
+
+**Why this split matters:** transport (Kafka), protocol (JSON contract), and execution (run payload, update Postgres) change at different rates. Keeping them separate means you can test **`DispatchEventHandler`** with a **fake executor** without a broker, and later add **bounded concurrency** and **worker metrics** inside **`Executor`** implementations without rewriting parse logic.
+
+**What exists today:** interfaces and handlers only—tests use fake executors. **Real execution**, **concurrency caps**, and **status reporting to Postgres** come in later milestones.
+
+**Interview sound bite:** *“ConsumerRunner parses messages; DispatchEventHandler maps to Task; Executor runs work—three layers so concurrency and metrics land in one place later.”*
 
 ## Cross-Language Event Contract
 
