@@ -307,38 +307,32 @@ go test ./...
 
 These tests validate **event-to-task handling** (`DispatchEventHandler`) and **executor delegation** (fake executors in tests). They do **not** execute real jobs yet—production execution, concurrency limits, and Postgres status updates come later.
 
-## Starting the Worker Consumer
+## Running the Worker Poll Loop
 
-The Go worker can connect to local Kafka and subscribe to **`kernelq.jobs.dispatch`**. From the **repository root**:
+The Go worker polls **`kernelq.jobs.dispatch`** until you stop it. From the **repository root**:
 
-**1. Start Kafka infrastructure**
+**1. Start Kafka**
 
 ```bash
 docker compose up -d kafka zookeeper
 ```
 
-Create topics if you have not already (see **Creating Kafka Topics Locally**):
+Create topics if needed (see **Creating Kafka Topics Locally**):
 
 ```bash
 ./infra/kafka/create-topics.sh
 ```
 
-**2. Start the consumer**
+**2. Run the worker**
 
 ```bash
 cd worker
 go run ./cmd/consumer
 ```
 
-You should see:
+You should see **`KernelQ worker consumer started`**. When dispatch messages arrive, the worker prints **`received task job_id=...`** via a simple logging executor (no real job execution yet).
 
-```text
-KernelQ worker consumer started
-```
-
-**What this does today:** the process creates a confluent-kafka-go client (group **`kernelq-worker`**, bootstrap **`localhost:9092`**), subscribes to **`kernelq.jobs.dispatch`**, and exits after printing the startup line. It validates **broker connectivity**, **consumer creation**, and **topic subscription** only.
-
-**What is not wired yet:** a **continuous poll loop** that reads messages, calls **`KafkaConsumer.ProcessKafkaMessage`**, and executes jobs. That comes in a later milestone.
+Press **Ctrl+C** to stop. You should see **`KernelQ worker consumer stopped`**.
 
 **Prerequisite:** Go **1.22+** installed (`go version`).
 

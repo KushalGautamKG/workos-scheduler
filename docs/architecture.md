@@ -483,13 +483,12 @@ KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory�
 | `internal/worker/handler.go` | `DispatchEventHandler` event → task |
 | `internal/worker/executor.go` | `Executor` interface (execution boundary) |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer` — broker record → `Message` |
-| `cmd/consumer/main.go` | Kafka client startup (subscribe only) |
-| Poll / execution loop | **Not built yet** |
-| Postgres status updates from workers | **Not built yet** |
+| `cmd/consumer/main.go` | Kafka consumer entrypoint (poll loop + shutdown) |
+| Offset commits / Postgres updates | **Not built yet** |
 
-**`cmd/consumer`** creates a confluent-kafka-go client and subscribes to **`kernelq.jobs.dispatch`**. **`KafkaConsumer`** maps broker records into **`ConsumerRunner`** messages; poll loops and wired execution come next.
+**`cmd/consumer`** runs a long-lived poll loop on **`kernelq.jobs.dispatch`** via **`KafkaConsumer.Run`**. Offset commits and Postgres status updates come next.
 
-**Interview sound bite:** *“Python publishes to `kernelq.jobs.dispatch`; Go owns consumption with KafkaConsumer → ConsumerRunner → handler → executor; poll loop and real execution come next.”*
+**Interview sound bite:** *“Python publishes to `kernelq.jobs.dispatch`; Go polls continuously with context-based shutdown; bounded concurrency and real execution land in Executor next.”*
 
 ## Go Worker Consumer Boundary
 
@@ -569,9 +568,49 @@ Job execution (later)
 - **`DispatchEventHandler` stays execution-independent** — it maps validated events to **`Task`** values without caring whether bytes came from Kafka or a unit test fake.
 - **`Executor` still owns execution logic** — running work, concurrency caps, timeouts, and Postgres status updates belong there—not in the Kafka client or parser.
 
-**What exists today:** **`KafkaConsumer`**, in-memory tests, and **`cmd/consumer`** (create client, subscribe, print startup). **Poll loops**, **offset commit policy**, and **wired execution** come in later milestones.
+**What exists today:** **`KafkaConsumer`**, **`Run`** poll loop, in-memory tests, and **`cmd/consumer`** (subscribe, poll, graceful shutdown). **Offset commit policy**, **retries**, and **real execution** come in later milestones.
 
 **Interview sound bite:** *“Go owns consumption: KafkaConsumer turns broker records into ConsumerRunner messages; parsing and execution stay in separate layers so tests skip the broker and execution can evolve independently.”*
+
+## Worker Poll Loop and Graceful Shutdown
+
+The Go worker can now run as a **long-lived process** that **polls Kafka** for dispatch events instead of subscribing once and exiting.
+
+**What the poll loop does:**
+
+```
+SIGINT / SIGTERM
+       ↓
+context canceled
+       ↓
+KafkaConsumer.Run(ctx)  ←── Poll(1000ms) in a loop
+       ↓
+*kafka.Message → ProcessKafkaMessage → ConsumerRunner → handler → executor
+       ↓
+close poller, return nil
+```
+
+1. **`cmd/consumer`** wires the stack: broker client → **`KafkaConsumer`** → **`ConsumerRunner`** → **`DispatchEventHandler`** → **`Executor`** (logging no-op today).
+2. **`Run(ctx, pollTimeoutMs)`** calls **`Poll`** repeatedly on **`kernelq.jobs.dispatch`**.
+3. Each **`*kafka.Message`** is handed to **`ProcessKafkaMessage`**—same path as unit tests, but driven by the broker.
+4. The loop keeps running until **`ctx`** is canceled.
+
+**Graceful shutdown with `context.Context`:**
+
+- **`signal.NotifyContext`** listens for **SIGINT** (Ctrl+C) and **SIGTERM** (container stop).
+- When the signal arrives, **`ctx`** is canceled.
+- **`Run`** stops polling, **closes the Kafka consumer**, and returns **`nil`**—no abrupt exit mid-setup.
+- **`cmd/consumer`** prints a stopped message so operators know shutdown completed cleanly.
+
+**Why this matters for later work:**
+
+- **Long-running execution** — workers stay up and drain the dispatch topic as the Python scheduler publishes.
+- **Bounded concurrency (next)** — the poll loop can stay thin; a future **`Executor`** can enqueue tasks to a fixed-size worker pool without rewriting Kafka code.
+- **Production readiness** — graceful shutdown avoids leaving consumer groups in a bad state and sets the pattern for **draining in-flight jobs** before exit.
+
+**What is not built yet:** explicit **offset commits**, **retry/DLQ handling**, **Postgres status updates**, and **concurrency limits**. Today processing errors stop the loop; production will add retries and commit-after-success.
+
+**Interview sound bite:** *“The worker polls Kafka in a loop, cancels via context on SIGTERM, closes the consumer cleanly, and keeps transport separate so bounded concurrency lands in Executor later—not in the poll loop.”*
 
 ## Cross-Language Event Contract
 

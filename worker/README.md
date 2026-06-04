@@ -28,9 +28,9 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/handler.go` | `DispatchEventHandler` |
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer`, `ProcessKafkaMessage` |
-| `cmd/consumer/main.go` | Kafka client startup (subscribe only) |
+| `cmd/consumer/main.go` | Kafka consumer entrypoint (poll loop + shutdown) |
 
-There is **no real job execution** yet. Polling and execution loops come in later milestones.
+There is **no real job execution** yet. Offset commits, retries, and Postgres updates come in later milestones.
 
 ## Dispatch Event Contract
 
@@ -75,7 +75,19 @@ The worker now includes **`KafkaConsumer`** in `internal/worker/kafka_consumer.g
 
 - **`ProcessKafkaMessage`** maps `*kafka.Message` key/value fields onto **`Message`**, then calls **`ConsumerRunner.ProcessMessage`**.
 - **`ConsumerRunner`** handles parsing and validation (`ParseDispatchEvent`) before any handler runs.
-- **`cmd/consumer`** creates a broker client, subscribes to **`kernelq.jobs.dispatch`**, and prints a startup line—no poll or execution loop yet.
+
+```bash
+go test ./...
+```
+
+## Kafka Poll Loop
+
+**`KafkaConsumer.Run`** in `internal/worker/kafka_consumer.go` polls the broker until **`context.Context`** is canceled.
+
+- **`cmd/consumer`** wires the full stack (Kafka → `ConsumerRunner` → `DispatchEventHandler` → logging executor) and runs **`Run(ctx, 1000)`**.
+- The worker **continuously polls** `kernelq.jobs.dispatch` for new messages.
+- **SIGINT / SIGTERM** cancel the context; **`Run`** closes the poller and exits cleanly.
+- **Offset commits**, **retries**, and **real execution** are still future work—today a no-op executor prints received job ids.
 
 ```bash
 go test ./...
