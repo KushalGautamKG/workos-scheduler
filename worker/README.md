@@ -28,6 +28,7 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/handler.go` | `DispatchEventHandler` |
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer`, `ProcessKafkaMessage` |
+| `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` |
 | `cmd/consumer/main.go` | Kafka consumer entrypoint (poll loop + shutdown) |
 
 There is **no real job execution** yet. Offset commits, retries, and Postgres updates come in later milestones.
@@ -100,8 +101,16 @@ The worker **no longer exits** when it sees a malformed dispatch message (bad JS
 
 - **`Run`** increments **`MessageErrors`** and **keeps polling** so one poison record does not stop the whole process.
 - **`cmd/consumer`** prints **`message_errors`** in the shutdown stats summary.
-- **Future work:** route poison messages to **`kernelq.jobs.dlq`** instead of only skipping them.
+- **Future work:** route poison messages to **`kernelq.jobs.dlq`** (see **Dead Letter Queue Boundary**).
 - **Kafka broker errors** (`kafka.Error`) still **stop the worker** for now.
+
+## Dead Letter Queue Boundary
+
+The worker defines a **`DeadLetterEvent`** shape in `internal/worker/dlq.go` for messages that cannot be processed on **`kernelq.jobs.dispatch`**.
+
+- Fields include **`reason`**, original key/value, **`source_topic`**, and **`worker`** identity.
+- **`DeadLetterProducer`** is the publish boundary—tests use fakes; **real Kafka publishing to `kernelq.jobs.dlq` comes later**.
+- Invalid or poison messages are **counted and skipped** today (see **Invalid Message Handling**); DLQ wiring will publish them instead of only dropping them.
 
 ## Prerequisites
 

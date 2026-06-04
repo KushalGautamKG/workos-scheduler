@@ -144,20 +144,34 @@
 - Healthy messages on **`kernelq.jobs.dispatch`** can still be processed
 
 **Current behavior:**
-- Invalid messages increment **`MessageErrors`** in **`ConsumerStats`** (also **`messages_seen`**)
-- Bad records are **not** published to **`kernelq.jobs.dlq`** yet—only counted and skipped
+- Invalid messages are **counted and skipped**: **`MessageErrors`** and **`messages_seen`** in **`ConsumerStats`** (printed on shutdown from **`cmd/consumer`**)
+- **`DeadLetterEvent`** shape exists in `worker/internal/worker/dlq.go` (`reason`, `source_topic`, `worker`, `original_key`, `original_value`)—**not published to Kafka yet**
+- Bad records are **not** on **`kernelq.jobs.dlq`** today
 - **`kafka.Error`** (broker/connection failures) still **stops** the worker
 
+**Future behavior:**
+- On processing failure, the worker will build a **`DeadLetterEvent`** and **`PublishDeadLetter`** to **`kernelq.jobs.dlq`** so failures are durable, not only counted
+
+**What operators should inspect:**
+- **`reason`** (when DLQ is wired)—why the worker rejected the message
+- **`original_value`**—the raw payload as received from dispatch
+- **`original_key`**—often `job_id` when the producer set a key
+- Compare payload to **`DispatchEvent`** in `worker/internal/worker/dispatch_event.go`
+
+**Common causes:**
+- **Schema drift** — Python publish fields or values no longer match Go validation
+- **Manual test messages** — ad hoc JSON on `kernelq.jobs.dispatch` (console producer, old smoke tests)
+- **Corrupt producer payloads** — truncated JSON, wrong `event_type`, blank ids, invalid `state`
+
 **Checks:**
-- Inspect the failing message payload (console consumer or broker tools)
-- Compare JSON to the **`DispatchEvent`** contract in `worker/internal/worker/dispatch_event.go`
-- Check for **producer/schema drift** (Python publish path vs Go parse rules)
-- Look for old test/seed traffic on the topic with invalid bodies
+- Read the message from **`kernelq.jobs.dispatch`** (console consumer or broker tools)
+- Compare JSON to the dispatch contract; check **`message_errors`** vs **`messages_processed`** on worker shutdown
+- Search topic history for non-production traffic after incidents
 
 **Follow-up:**
-- Fix the publisher or retire bad records on the topic if safe in dev
-- Align control-plane publish validation with worker validation
-- Plan **DLQ handling** and offset/commit policy before production
+- Fix the publisher or remove bad records on the topic if safe in dev
+- Align control-plane publish validation with worker rules
+- When DLQ publishing lands, monitor **`kernelq.jobs.dlq`** depth and replay only after fixing root cause
 
 **Future improvement:**
-- Route poison messages to **`kernelq.jobs.dlq`** for inspection, alerting, and manual replay instead of only skipping on the dispatch topic
+- Automatic **`DeadLetterEvent`** publish to **`kernelq.jobs.dlq`** for inspection, alerting, and manual replay

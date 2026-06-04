@@ -383,6 +383,25 @@ The Go worker’s poll loop (`KafkaConsumer.Run` in `worker/internal/worker/kafk
 
 **Interview sound bite:** *“Log messages_seen, messages_processed, message_errors, and invalid_message_rate = errors/seen—should be near zero when healthy; Prometheus and DLQ come later.”*
 
+## DLQ Metrics Planned
+
+When workers publish **`DeadLetterEvent`** records to **`kernelq.jobs.dlq`**, we plan DLQ-specific counters alongside **Worker Message Error Metrics**. **No numeric results or dashboards exist yet**—names only.
+
+| Metric | What it means | Why it matters |
+|--------|---------------|----------------|
+| `dlq_publish_count` | Dead-letter events **successfully** published to **`kernelq.jobs.dlq`** | Confirms poison traffic is leaving the dispatch topic with evidence preserved |
+| `dlq_publish_error_count` | DLQ publish attempts that **failed** (broker down, serialization, validation) | Bad messages might still be skipped on dispatch with **no** durable DLQ record—alert on this |
+| `invalid_message_rate` | **`message_errors / messages_seen`** (same derived rate as above) | Early signal of **schema drift** or **bad producers** before DLQ depth grows |
+| `poison_message_count` | Messages classified as permanently bad (eligible for DLQ, not worth retry on dispatch) | Tracks volume of “will never succeed as-is” records; pairs with `dlq_publish_count` |
+
+**Why DLQ metrics matter:**
+
+- Rising **`invalid_message_rate`** with low **`dlq_publish_count`** suggests failures are counted but not durably recorded (misconfiguration or publish failures).
+- Rising **`dlq_publish_count`** points to **producer bugs**, **manual test traffic**, or **contract drift**—inspect **`reason`** and **`original_value`** on DLQ messages.
+- **`dlq_publish_error_count`** separates “message was bad” from “we failed to record that it was bad.”
+
+We have **not** measured these in production or defined SLOs yet.
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

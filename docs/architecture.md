@@ -483,6 +483,7 @@ KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory�
 | `internal/worker/handler.go` | `DispatchEventHandler` event → task |
 | `internal/worker/executor.go` | `Executor` interface (execution boundary) |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer` — broker record → `Message` |
+| `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` boundary |
 | `cmd/consumer/main.go` | Kafka consumer entrypoint (poll loop + shutdown) |
 | Offset commits / Postgres updates | **Not built yet** |
 
@@ -639,12 +640,54 @@ keep polling (do not exit Run)
 
 **What is still fatal today:** **`kafka.Error`** events from the broker (connection problems, etc.) still **return from `Run`** and stop the process—infra failures are treated differently from bad payloads.
 
-**Future work — DLQ:**
-
-- Poison messages should leave the hot path on **`kernelq.jobs.dispatch`** and land on **`kernelq.jobs.dlq`** for inspection, alerting, and manual replay (see **Kafka Topics**).
-- Until then, invalid messages are **counted and skipped**—good enough for local dev and learning; not the final production policy.
+**Future work — DLQ:** see **Dead Letter Queue Boundary** (event shape exists; Kafka publish and poll-loop wiring come next).
 
 **Interview sound bite:** *“Invalid dispatch messages increment MessageErrors and the poll loop continues; one poison record doesn’t kill the worker—later we route permanent failures to kernelq.jobs.dlq.”*
+
+## Dead Letter Queue Boundary
+
+KernelQ defines a dedicated DLQ topic: **`kernelq.jobs.dlq`**. It is the **failure lane** for messages that should **not** keep retrying on **`kernelq.jobs.dispatch`** (see **Kafka Topics**).
+
+**Why a DLQ exists:**
+
+- **Dispatch** is the happy path—runnable work for Go workers.
+- **DLQ** holds **malformed or poison messages** and (later) permanently failed jobs so ops can **inspect, alert, and replay** without blocking healthy traffic.
+
+**`DeadLetterEvent` (Go worker contract today):**
+
+The worker plane defines **`DeadLetterEvent`** in `worker/internal/worker/dlq.go`. Each record preserves **failure evidence** instead of silently dropping bad bytes:
+
+| Field | Purpose |
+|-------|---------|
+| **`reason`** | Why processing failed (parse error, validation, handler failure, …) |
+| **`source_topic`** | Where the message came from (usually **`kernelq.jobs.dispatch`**) |
+| **`worker`** | Which consumer identity saw the failure (for example **`kernelq-worker`**) |
+| **`original_key`** | Kafka message key when present (often `job_id`; may be blank) |
+| **`original_value`** | Raw message body as received—enables debugging and replay |
+
+**`DeadLetterProducer`** is the publish boundary (`PublishDeadLetter`). Tests use **fake producers**; **real Kafka publishing to `kernelq.jobs.dlq` is not wired yet**.
+
+**How this connects to invalid-message handling:**
+
+```
+*kafka.Message on kernelq.jobs.dispatch
+    ↓  ProcessKafkaMessage fails
+MessageErrors++ (today)
+    ↓  (next) build DeadLetterEvent → PublishDeadLetter → kernelq.jobs.dlq
+keep polling
+```
+
+Day 38 stopped poison messages from **killing the worker**. The DLQ boundary stops them from **disappearing**—operators get a durable record on a separate topic.
+
+**What exists today vs later:**
+
+| Today | Later |
+|-------|-------|
+| `DeadLetterEvent` + `Validate()` + `ToJSON()` | Poll loop calls producer on `MessageErrors` |
+| `DeadLetterProducer` interface | confluent-kafka-go publish to **`kernelq.jobs.dlq`** |
+| Invalid messages **counted and skipped** | Poison messages **published** to DLQ |
+
+**Interview sound bite:** *“kernelq.jobs.dlq is the failure lane; DeadLetterEvent stores reason, source topic, worker, and original key/value so bad dispatch messages leave evidence instead of vanishing—publish wiring comes next.”*
 
 ## Cross-Language Event Contract
 
