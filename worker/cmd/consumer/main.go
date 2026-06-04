@@ -43,7 +43,7 @@ func main() {
 	}
 
 	// Wire the worker stack: Kafka → parse/validate → handler → executor.
-	kafkaConsumer := worker.KafkaConsumer{
+	kafkaConsumer := &worker.KafkaConsumer{
 		Poller: brokerConsumer,
 		Runner: worker.ConsumerRunner{
 			Handler: worker.DispatchEventHandler{
@@ -63,4 +63,8 @@ func main() {
 	}
 
 	fmt.Println("KernelQ worker consumer stopped")
+	fmt.Printf("messages_seen=%d\n", kafkaConsumer.Stats.MessagesSeen)
+	fmt.Printf("messages_processed=%d\n", kafkaConsumer.Stats.MessagesProcessed)
+	fmt.Printf("message_errors=%d\n", kafkaConsumer.Stats.MessageErrors)
+	fmt.Printf("kafka_errors=%d\n", kafkaConsumer.Stats.KafkaErrors)
 }

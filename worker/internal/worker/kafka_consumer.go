@@ -21,6 +21,16 @@ type KafkaPoller interface {
 	Close() error
 }
 
+// ConsumerStats counts poll-loop outcomes for observability.
+//
+// Future metrics can expose these fields (messages polled, errors, and so on).
+type ConsumerStats struct {
+	MessagesSeen      int
+	MessagesProcessed int
+	MessageErrors     int
+	KafkaErrors       int
+}
+
 // KafkaConsumer wraps a broker poller and our message-processing runner.
 //
 // The Kafka SDK delivers *kafka.Message values; ConsumerRunner knows how to
@@ -29,6 +39,7 @@ type KafkaPoller interface {
 type KafkaConsumer struct {
 	Poller KafkaPoller
 	Runner ConsumerRunner
+	Stats  ConsumerStats
 }
 
 // ProcessKafkaMessage handles one record from the Kafka client.
@@ -52,9 +63,11 @@ func (c KafkaConsumer) ProcessKafkaMessage(msg *kafka.Message) error {
 
 // Run polls the broker until ctx is canceled.
 //
-// Each *kafka.Message is passed to ProcessKafkaMessage. Offset commits and
-// retries are not implemented yet.
-func (c KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
+// Invalid or unprocessable messages are tolerated for now: MessageErrors is
+// incremented and polling continues. Future work will route poison messages
+// to the DLQ topic (kernelq.jobs.dlq). Offset commits and retries are not
+// implemented yet.
+func (c *KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 	if pollTimeoutMs <= 0 {
 		return fmt.Errorf("poll timeout must be positive, got %d", pollTimeoutMs)
 	}
@@ -78,10 +91,16 @@ func (c KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 
 		switch e := event.(type) {
 		case *kafka.Message:
+			c.Stats.MessagesSeen++
 			if err := c.ProcessKafkaMessage(e); err != nil {
-				return err
+				// Bad JSON, validation failures, and handler errors stay in the
+				// loop for now. Later we will send poison messages to DLQ.
+				c.Stats.MessageErrors++
+				continue
 			}
+			c.Stats.MessagesProcessed++
 		case kafka.Error:
+			c.Stats.KafkaErrors++
 			return e
 		}
 	}

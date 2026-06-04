@@ -123,17 +123,10 @@ func (poller *fakePoller) Close() error {
 	return nil
 }
 
-func TestRunProcessesOneKafkaMessageAndCallsHandler(t *testing.T) {
-	handler := &fakeDispatchHandler{}
-	poller := &fakePoller{
-		events: []kafka.Event{
-			newKafkaMessage("job-123", validDispatchJSON()),
-		},
-	}
-	consumer := KafkaConsumer{
-		Poller: poller,
-		Runner: ConsumerRunner{Handler: handler},
-	}
+// runUntilEventsDelivered runs consumer.Run in a goroutine, waits until the
+// fake poller has returned eventCount events, then cancels ctx so Run exits.
+func runUntilEventsDelivered(t *testing.T, consumer *KafkaConsumer, poller *fakePoller, eventCount int) {
+	t.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -143,64 +136,130 @@ func TestRunProcessesOneKafkaMessageAndCallsHandler(t *testing.T) {
 		done <- consumer.Run(ctx, 100)
 	}()
 
-	for !handler.called {
+	for poller.index < eventCount {
 		runtime.Gosched()
 	}
 	cancel()
 
-	err := <-done
-	if err != nil {
+	if err := <-done; err != nil {
 		t.Fatalf("expected nil on cancel, got error: %v", err)
 	}
-	if !handler.called {
-		t.Fatal("expected handler to be called")
-	}
 }
 
-func TestRunReturnsNilWhenContextIsCanceled(t *testing.T) {
-	poller := &fakePoller{}
-	consumer := KafkaConsumer{
-		Poller: poller,
-		Runner: ConsumerRunner{Handler: &fakeDispatchHandler{}},
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-
-	err := consumer.Run(ctx, 100)
-	if err != nil {
-		t.Fatalf("expected nil on canceled context, got error: %v", err)
-	}
-}
-
-func TestRunReturnsErrorForInvalidMessage(t *testing.T) {
+func TestRunProcessesValidMessageAndIncrementsMessagesProcessed(t *testing.T) {
 	handler := &fakeDispatchHandler{}
 	poller := &fakePoller{
 		events: []kafka.Event{
-			newKafkaMessage("job-123", []byte(`{"event_type":`)),
+			newKafkaMessage("job-123", validDispatchJSON()),
 		},
 	}
-	consumer := KafkaConsumer{
+	consumer := &KafkaConsumer{
 		Poller: poller,
 		Runner: ConsumerRunner{Handler: handler},
 	}
 
-	ctx := context.Background()
-	err := consumer.Run(ctx, 100)
-	if err == nil {
-		t.Fatal("expected error for invalid message, got nil")
+	runUntilEventsDelivered(t, consumer, poller, 1)
+
+	if !handler.called {
+		t.Fatal("expected handler to be called")
 	}
-	if handler.called {
-		t.Fatal("handler should not be called for invalid message")
+	if consumer.Stats.MessagesSeen != 1 {
+		t.Fatalf("expected MessagesSeen 1, got %d", consumer.Stats.MessagesSeen)
+	}
+	if consumer.Stats.MessagesProcessed != 1 {
+		t.Fatalf("expected MessagesProcessed 1, got %d", consumer.Stats.MessagesProcessed)
+	}
+	if consumer.Stats.MessageErrors != 0 {
+		t.Fatalf("expected MessageErrors 0, got %d", consumer.Stats.MessageErrors)
 	}
 }
 
-func TestRunReturnsErrorForKafkaError(t *testing.T) {
+func TestRunIncrementsMessageErrorsForInvalidJSONAndContinues(t *testing.T) {
+	handler := &fakeDispatchHandler{}
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessage("job-bad", []byte(`{"event_type":`)),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller: poller,
+		Runner: ConsumerRunner{Handler: handler},
+	}
+
+	runUntilEventsDelivered(t, consumer, poller, 1)
+
+	if handler.called {
+		t.Fatal("handler should not be called for invalid JSON")
+	}
+	if consumer.Stats.MessagesSeen != 1 {
+		t.Fatalf("expected MessagesSeen 1, got %d", consumer.Stats.MessagesSeen)
+	}
+	if consumer.Stats.MessageErrors != 1 {
+		t.Fatalf("expected MessageErrors 1, got %d", consumer.Stats.MessageErrors)
+	}
+	if consumer.Stats.MessagesProcessed != 0 {
+		t.Fatalf("expected MessagesProcessed 0, got %d", consumer.Stats.MessagesProcessed)
+	}
+}
+
+func TestRunProcessesValidMessageAfterInvalidMessage(t *testing.T) {
+	handler := &fakeDispatchHandler{}
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessage("job-bad", []byte(`{"event_type":`)),
+			newKafkaMessage("job-good", validDispatchJSON()),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller: poller,
+		Runner: ConsumerRunner{Handler: handler},
+	}
+
+	runUntilEventsDelivered(t, consumer, poller, 2)
+
+	if !handler.called {
+		t.Fatal("expected handler to be called for valid message after invalid")
+	}
+	if handler.received.JobID != "job-123" {
+		t.Fatalf("expected job id job-123, got %q", handler.received.JobID)
+	}
+	if consumer.Stats.MessagesSeen != 2 {
+		t.Fatalf("expected MessagesSeen 2, got %d", consumer.Stats.MessagesSeen)
+	}
+	if consumer.Stats.MessageErrors != 1 {
+		t.Fatalf("expected MessageErrors 1, got %d", consumer.Stats.MessageErrors)
+	}
+	if consumer.Stats.MessagesProcessed != 1 {
+		t.Fatalf("expected MessagesProcessed 1, got %d", consumer.Stats.MessagesProcessed)
+	}
+}
+
+func TestRunIncrementsMessagesSeenForEveryKafkaMessage(t *testing.T) {
+	handler := &fakeDispatchHandler{}
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessage("job-1", validDispatchJSON()),
+			newKafkaMessage("job-2", []byte(`{"event_type":`)),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller: poller,
+		Runner: ConsumerRunner{Handler: handler},
+	}
+
+	runUntilEventsDelivered(t, consumer, poller, 2)
+
+	if consumer.Stats.MessagesSeen != 2 {
+		t.Fatalf("expected MessagesSeen 2, got %d", consumer.Stats.MessagesSeen)
+	}
+}
+
+func TestRunReturnsErrorForKafkaErrorAndIncrementsKafkaErrors(t *testing.T) {
 	brokerErr := kafka.NewError(kafka.ErrAllBrokersDown, "simulated broker error", false)
 	poller := &fakePoller{
 		events: []kafka.Event{brokerErr},
 	}
-	consumer := KafkaConsumer{
+	consumer := &KafkaConsumer{
 		Poller: poller,
 		Runner: ConsumerRunner{Handler: &fakeDispatchHandler{}},
 	}
@@ -209,29 +268,17 @@ func TestRunReturnsErrorForKafkaError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected kafka error, got nil")
 	}
+	if consumer.Stats.KafkaErrors != 1 {
+		t.Fatalf("expected KafkaErrors 1, got %d", consumer.Stats.KafkaErrors)
+	}
 	if err.Error() != brokerErr.Error() {
 		t.Fatalf("expected %v, got %v", brokerErr, err)
 	}
 }
 
-func TestRunRejectsNonPositivePollTimeout(t *testing.T) {
-	consumer := KafkaConsumer{
-		Poller: &fakePoller{},
-		Runner: ConsumerRunner{Handler: &fakeDispatchHandler{}},
-	}
-
-	err := consumer.Run(context.Background(), 0)
-	if err == nil {
-		t.Fatal("expected error for zero poll timeout, got nil")
-	}
-	if !strings.Contains(err.Error(), "poll timeout") {
-		t.Fatalf("expected poll timeout error, got: %v", err)
-	}
-}
-
-func TestRunClosesPollerWhenContextIsCanceled(t *testing.T) {
+func TestRunClosesPollerOnContextCancellation(t *testing.T) {
 	poller := &fakePoller{}
-	consumer := KafkaConsumer{
+	consumer := &KafkaConsumer{
 		Poller: poller,
 		Runner: ConsumerRunner{Handler: &fakeDispatchHandler{}},
 	}
@@ -245,5 +292,20 @@ func TestRunClosesPollerWhenContextIsCanceled(t *testing.T) {
 	}
 	if !poller.closed {
 		t.Fatal("expected poller to be closed on context cancel")
+	}
+}
+
+func TestRunRejectsNonPositivePollTimeout(t *testing.T) {
+	consumer := &KafkaConsumer{
+		Poller: &fakePoller{},
+		Runner: ConsumerRunner{Handler: &fakeDispatchHandler{}},
+	}
+
+	err := consumer.Run(context.Background(), 0)
+	if err == nil {
+		t.Fatal("expected error for zero poll timeout, got nil")
+	}
+	if !strings.Contains(err.Error(), "poll timeout") {
+		t.Fatalf("expected poll timeout error, got: %v", err)
 	}
 }

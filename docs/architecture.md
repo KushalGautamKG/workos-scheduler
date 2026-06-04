@@ -608,9 +608,43 @@ close poller, return nil
 - **Bounded concurrency (next)** — the poll loop can stay thin; a future **`Executor`** can enqueue tasks to a fixed-size worker pool without rewriting Kafka code.
 - **Production readiness** — graceful shutdown avoids leaving consumer groups in a bad state and sets the pattern for **draining in-flight jobs** before exit.
 
-**What is not built yet:** explicit **offset commits**, **retry/DLQ handling**, **Postgres status updates**, and **concurrency limits**. Today processing errors stop the loop; production will add retries and commit-after-success.
+**What is not built yet:** explicit **offset commits**, **Postgres status updates**, and **concurrency limits**. Invalid dispatch messages are tolerated (see **Worker Invalid Message Handling**); **Kafka broker errors** still stop the loop.
 
 **Interview sound bite:** *“The worker polls Kafka in a loop, cancels via context on SIGTERM, closes the consumer cleanly, and keeps transport separate so bounded concurrency lands in Executor later—not in the poll loop.”*
+
+## Worker Invalid Message Handling
+
+The Go worker now **tolerates invalid dispatch messages** instead of crashing the whole process when one record is bad.
+
+**What happens today (one bad record on `kernelq.jobs.dispatch`):**
+
+```
+*kafka.Message
+    ↓  ProcessKafkaMessage (parse / validate / handle)
+error returned
+    ↓
+ConsumerStats.MessageErrors++
+    ↓
+keep polling (do not exit Run)
+```
+
+- **Bad JSON**, **validation failures** (wrong `event_type`, blank `job_id`, bad `state`), and **handler errors** increment **`MessageErrors`** and the worker **keeps polling**.
+- **`ConsumerStats`** also tracks **`MessagesSeen`**, **`MessagesProcessed`**, and **`KafkaErrors`**—printed on clean shutdown from **`cmd/consumer`**.
+
+**Why one malformed message must not kill the worker:**
+
+- A **poison message** is a record that will **keep failing** if you retry it the same way.
+- If the worker **exits on first failure**, every job **behind** that offset waits while the process is down—**head-of-line blocking** and growing **consumer lag**.
+- Production workers should stay **available** for healthy messages even when **some** records are bad.
+
+**What is still fatal today:** **`kafka.Error`** events from the broker (connection problems, etc.) still **return from `Run`** and stop the process—infra failures are treated differently from bad payloads.
+
+**Future work — DLQ:**
+
+- Poison messages should leave the hot path on **`kernelq.jobs.dispatch`** and land on **`kernelq.jobs.dlq`** for inspection, alerting, and manual replay (see **Kafka Topics**).
+- Until then, invalid messages are **counted and skipped**—good enough for local dev and learning; not the final production policy.
+
+**Interview sound bite:** *“Invalid dispatch messages increment MessageErrors and the poll loop continues; one poison record doesn’t kill the worker—later we route permanent failures to kernelq.jobs.dlq.”*
 
 ## Cross-Language Event Contract
 

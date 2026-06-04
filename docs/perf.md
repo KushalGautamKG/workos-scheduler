@@ -344,6 +344,45 @@ Compare output to a **before-seed** run on a small table. Also compare **before 
 
 **Interview sound bite:** *“We seeded ~5k jobs locally, reran EXPLAIN, and compared plans—small tables seq-scan; at scale the planner may pick our composite index if statistics say it is cheaper.”*
 
+## Worker Message Error Metrics
+
+The Go worker’s poll loop (`KafkaConsumer.Run` in `worker/internal/worker/kafka_consumer.go`) already maintains **`ConsumerStats`** counters. **`cmd/consumer`** prints them on clean shutdown. We have **not** exported them to Prometheus or dashboards yet—this section names the metrics we plan to expose.
+
+**Counters today (in-process):**
+
+| Metric | What it means | Why it matters |
+|--------|---------------|----------------|
+| `messages_seen` | Every **`*kafka.Message`** received from the poll loop (before success/failure) | Baseline volume—how much traffic the worker touched |
+| `messages_processed` | Messages that passed parse, validation, and handler/executor without error | Healthy throughput on **`kernelq.jobs.dispatch`** |
+| `message_errors` | Messages where **`ProcessKafkaMessage`** failed (bad JSON, validation, handler error) | Poison or drift traffic; worker keeps polling but work was not executed |
+| `kafka_errors` | Broker **`kafka.Error`** events that stopped **`Run`** | Infra/client problems—different from bad payloads |
+
+**Derived rate (future):**
+
+| Metric | What it means | Why it matters |
+|--------|---------------|----------------|
+| `invalid_message_rate` | **`message_errors / messages_seen`** (when `messages_seen > 0`) | Single number for “how much of our intake is garbage?” |
+
+**How to read `invalid_message_rate`:**
+
+- It is the share of seen records that failed processing—not the same as end-to-end job failure rate.
+- In **healthy operation**, this rate should stay **near 0**. Any sustained increase usually means **producer bugs**, **schema drift**, **stale test data on the topic**, or a **poison message** that will never parse.
+- We have **not** set numeric SLO thresholds yet; treat “near 0” as an operational goal, not a measured target in this doc.
+
+**Today vs later:**
+
+- **Today:** stats live **in-process** on **`KafkaConsumer.Stats`** and appear in logs when the consumer stops cleanly.
+- **Later:** promote the same names to **Prometheus** (or similar) counters/gauges, add histograms for processing latency, and alert when **`invalid_message_rate`** or **`kafka_errors`** rise.
+
+**Future metrics (not measured yet):**
+
+| Metric | What it means | Why it matters |
+|--------|---------------|----------------|
+| `processing_latency` | Time per message from poll to handler/executor completion (p50 / p95 / p99) | Shows whether execution is keeping up with publish rate |
+| `shutdown_count` | How many clean shutdowns (SIGINT/SIGTERM) vs crash exits | Separates operator stops from fatal broker failures |
+
+**Interview sound bite:** *“Log messages_seen, messages_processed, message_errors, and invalid_message_rate = errors/seen—should be near zero when healthy; Prometheus and DLQ come later.”*
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

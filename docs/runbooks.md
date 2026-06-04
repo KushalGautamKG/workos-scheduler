@@ -132,3 +132,32 @@
 - Add better error handling and graceful degradation
 - Improve worker health checks
 - Review monitoring and alerting
+
+## Worker Encounters Invalid Kafka Message
+
+**Symptoms:**
+- Worker logs parse or validation errors (malformed JSON, wrong `event_type`, blank `job_id`, invalid `state`)
+- Shutdown stats show **`message_errors`** increasing while the process stays up
+
+**Immediate impact:**
+- The worker **skips the bad record** and **continues polling**—it does **not** exit on a single bad dispatch message
+- Healthy messages on **`kernelq.jobs.dispatch`** can still be processed
+
+**Current behavior:**
+- Invalid messages increment **`MessageErrors`** in **`ConsumerStats`** (also **`messages_seen`**)
+- Bad records are **not** published to **`kernelq.jobs.dlq`** yet—only counted and skipped
+- **`kafka.Error`** (broker/connection failures) still **stops** the worker
+
+**Checks:**
+- Inspect the failing message payload (console consumer or broker tools)
+- Compare JSON to the **`DispatchEvent`** contract in `worker/internal/worker/dispatch_event.go`
+- Check for **producer/schema drift** (Python publish path vs Go parse rules)
+- Look for old test/seed traffic on the topic with invalid bodies
+
+**Follow-up:**
+- Fix the publisher or retire bad records on the topic if safe in dev
+- Align control-plane publish validation with worker validation
+- Plan **DLQ handling** and offset/commit policy before production
+
+**Future improvement:**
+- Route poison messages to **`kernelq.jobs.dlq`** for inspection, alerting, and manual replay instead of only skipping on the dispatch topic

@@ -94,6 +94,15 @@ go test ./...
 go run ./cmd/consumer
 ```
 
+## Invalid Message Handling
+
+The worker **no longer exits** when it sees a malformed dispatch message (bad JSON, failed validation, handler error).
+
+- **`Run`** increments **`MessageErrors`** and **keeps polling** so one poison record does not stop the whole process.
+- **`cmd/consumer`** prints **`message_errors`** in the shutdown stats summary.
+- **Future work:** route poison messages to **`kernelq.jobs.dlq`** instead of only skipping them.
+- **Kafka broker errors** (`kafka.Error`) still **stop the worker** for now.
+
 ## Prerequisites
 
 - **Go 1.22+** installed (`go version`)
