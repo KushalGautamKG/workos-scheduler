@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"strings"
 	"testing"
@@ -292,6 +293,190 @@ func TestRunClosesPollerOnContextCancellation(t *testing.T) {
 	}
 	if !poller.closed {
 		t.Fatal("expected poller to be closed on context cancel")
+	}
+}
+
+// fakeDeadLetterProducer captures published DeadLetterEvent values for tests.
+// Set err to simulate a publish failure.
+type fakeDeadLetterProducer struct {
+	events []DeadLetterEvent
+	err    error
+}
+
+func (producer *fakeDeadLetterProducer) PublishDeadLetter(event DeadLetterEvent) error {
+	if producer.err != nil {
+		return producer.err
+	}
+	producer.events = append(producer.events, event)
+	return nil
+}
+
+func newKafkaMessageWithTopic(topic, key string, value []byte) *kafka.Message {
+	msg := newKafkaMessage(key, value)
+	msg.TopicPartition.Topic = &topic
+	return msg
+}
+
+// invalidDispatchEventJSON is valid JSON but fails DispatchEvent validation.
+func invalidDispatchEventJSON() []byte {
+	return []byte(`{
+		"event_type":"job.retry",
+		"job_id":"job-123",
+		"tenant_id":"tenant-a",
+		"priority":5,
+		"state":"dispatched"
+	}`)
+}
+
+func TestRunInvalidJSONPublishesOneDeadLetterEventWhenDLQConfigured(t *testing.T) {
+	dlqProducer := &fakeDeadLetterProducer{}
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessageWithTopic("kernelq.jobs.dispatch", "job-bad", []byte(`{"event_type":`)),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller:             poller,
+		Runner:             ConsumerRunner{Handler: &fakeDispatchHandler{}},
+		DeadLetterProducer: dlqProducer,
+	}
+
+	runUntilEventsDelivered(t, consumer, poller, 1)
+
+	if len(dlqProducer.events) != 1 {
+		t.Fatalf("expected 1 dead-letter event, got %d", len(dlqProducer.events))
+	}
+}
+
+func TestRunInvalidDispatchEventPublishesOneDeadLetterEvent(t *testing.T) {
+	dlqProducer := &fakeDeadLetterProducer{}
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessageWithTopic("kernelq.jobs.dispatch", "job-bad", invalidDispatchEventJSON()),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller:             poller,
+		Runner:             ConsumerRunner{Handler: &fakeDispatchHandler{}},
+		DeadLetterProducer: dlqProducer,
+	}
+
+	runUntilEventsDelivered(t, consumer, poller, 1)
+
+	if len(dlqProducer.events) != 1 {
+		t.Fatalf("expected 1 dead-letter event, got %d", len(dlqProducer.events))
+	}
+	if !strings.Contains(dlqProducer.events[0].Reason, "event_type") {
+		t.Fatalf("expected validation reason, got: %q", dlqProducer.events[0].Reason)
+	}
+}
+
+func TestRunDeadLetterEventIncludesAllRequiredFields(t *testing.T) {
+	const (
+		topic   = "kernelq.jobs.dispatch"
+		key     = "job-dlq-fields"
+		payload = `{"event_type":`
+	)
+	dlqProducer := &fakeDeadLetterProducer{}
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessageWithTopic(topic, key, []byte(payload)),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller:             poller,
+		Runner:             ConsumerRunner{Handler: &fakeDispatchHandler{}},
+		DeadLetterProducer: dlqProducer,
+	}
+
+	runUntilEventsDelivered(t, consumer, poller, 1)
+
+	event := dlqProducer.events[0]
+	if event.Reason == "" {
+		t.Fatal("expected non-empty reason")
+	}
+	if event.OriginalKey != key {
+		t.Fatalf("expected original key %q, got %q", key, event.OriginalKey)
+	}
+	if event.OriginalValue != payload {
+		t.Fatalf("expected original value %q, got %q", payload, event.OriginalValue)
+	}
+	if event.SourceTopic != topic {
+		t.Fatalf("expected source topic %q, got %q", topic, event.SourceTopic)
+	}
+	if event.Worker != "kernelq-go-worker" {
+		t.Fatalf("expected worker kernelq-go-worker, got %q", event.Worker)
+	}
+}
+
+func TestRunDeadLettersPublishedIncrementsOnSuccessfulDLQPublish(t *testing.T) {
+	dlqProducer := &fakeDeadLetterProducer{}
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessage("job-bad", []byte(`{"event_type":`)),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller:             poller,
+		Runner:             ConsumerRunner{Handler: &fakeDispatchHandler{}},
+		DeadLetterProducer: dlqProducer,
+	}
+
+	runUntilEventsDelivered(t, consumer, poller, 1)
+
+	if consumer.Stats.DeadLettersPublished != 1 {
+		t.Fatalf("expected DeadLettersPublished 1, got %d", consumer.Stats.DeadLettersPublished)
+	}
+	if consumer.Stats.DeadLetterPublishErrors != 0 {
+		t.Fatalf("expected DeadLetterPublishErrors 0, got %d", consumer.Stats.DeadLetterPublishErrors)
+	}
+}
+
+func TestRunDeadLetterPublishErrorsIncrementsWhenProducerFails(t *testing.T) {
+	dlqProducer := &fakeDeadLetterProducer{err: fmt.Errorf("simulated dlq publish failure")}
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessage("job-bad", []byte(`{"event_type":`)),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller:             poller,
+		Runner:             ConsumerRunner{Handler: &fakeDispatchHandler{}},
+		DeadLetterProducer: dlqProducer,
+	}
+
+	runUntilEventsDelivered(t, consumer, poller, 1)
+
+	if consumer.Stats.DeadLetterPublishErrors != 1 {
+		t.Fatalf("expected DeadLetterPublishErrors 1, got %d", consumer.Stats.DeadLetterPublishErrors)
+	}
+	if consumer.Stats.DeadLettersPublished != 0 {
+		t.Fatalf("expected DeadLettersPublished 0, got %d", consumer.Stats.DeadLettersPublished)
+	}
+}
+
+func TestRunWithoutDLQProducerIncrementsMessageErrorsOnly(t *testing.T) {
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessage("job-bad", []byte(`{"event_type":`)),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller:             poller,
+		Runner:             ConsumerRunner{Handler: &fakeDispatchHandler{}},
+		DeadLetterProducer: nil,
+	}
+
+	runUntilEventsDelivered(t, consumer, poller, 1)
+
+	if consumer.Stats.MessageErrors != 1 {
+		t.Fatalf("expected MessageErrors 1, got %d", consumer.Stats.MessageErrors)
+	}
+	if consumer.Stats.DeadLettersPublished != 0 {
+		t.Fatalf("expected DeadLettersPublished 0, got %d", consumer.Stats.DeadLettersPublished)
+	}
+	if consumer.Stats.DeadLetterPublishErrors != 0 {
+		t.Fatalf("expected DeadLetterPublishErrors 0, got %d", consumer.Stats.DeadLetterPublishErrors)
 	}
 }
 

@@ -100,8 +100,8 @@ go run ./cmd/consumer
 The worker **no longer exits** when it sees a malformed dispatch message (bad JSON, failed validation, handler error).
 
 - **`Run`** increments **`MessageErrors`** and **keeps polling** so one poison record does not stop the whole process.
-- **`cmd/consumer`** prints **`message_errors`** in the shutdown stats summary.
-- **Future work:** route poison messages to **`kernelq.jobs.dlq`** (see **Dead Letter Queue Boundary**).
+- When **`DeadLetterProducer`** is wired, failures also publish a **`DeadLetterEvent`** (see **DLQ Routing Boundary**).
+- **`cmd/consumer`** prints **`message_errors`** and DLQ stats in the shutdown summary.
 - **Kafka broker errors** (`kafka.Error`) still **stop the worker** for now.
 
 ## Dead Letter Queue Boundary
@@ -109,8 +109,16 @@ The worker **no longer exits** when it sees a malformed dispatch message (bad JS
 The worker defines a **`DeadLetterEvent`** shape in `internal/worker/dlq.go` for messages that cannot be processed on **`kernelq.jobs.dispatch`**.
 
 - Fields include **`reason`**, original key/value, **`source_topic`**, and **`worker`** identity.
-- **`DeadLetterProducer`** is the publish boundary—tests use fakes; **real Kafka publishing to `kernelq.jobs.dlq` comes later**.
-- Invalid or poison messages are **counted and skipped** today (see **Invalid Message Handling**); DLQ wiring will publish them instead of only dropping them.
+- **`DeadLetterProducer`** is the publish interface—see **DLQ Routing Boundary** for how **`KafkaConsumer.Run`** uses it.
+
+## DLQ Routing Boundary
+
+When processing fails, **`KafkaConsumer.Run`** can route invalid messages through **`DeadLetterProducer`**.
+
+- On **`ProcessKafkaMessage`** error: increment **`MessageErrors`**, build **`DeadLetterEvent`**, call **`PublishDeadLetter`**, then **keep polling**.
+- Stats track **`DeadLettersPublished`** and **`DeadLetterPublishErrors`**.
+- **Tests** use a **fake producer** that captures events without a broker.
+- **`cmd/consumer`** does not wire a real producer yet—**Kafka publishing to `kernelq.jobs.dlq` comes later**.
 
 ## Prerequisites
 

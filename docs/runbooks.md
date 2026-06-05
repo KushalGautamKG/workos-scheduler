@@ -144,18 +144,18 @@
 - Healthy messages on **`kernelq.jobs.dispatch`** can still be processed
 
 **Current behavior:**
-- Invalid messages are **counted and skipped**: **`MessageErrors`** and **`messages_seen`** in **`ConsumerStats`** (printed on shutdown from **`cmd/consumer`**)
-- **`DeadLetterEvent`** shape exists in `worker/internal/worker/dlq.go` (`reason`, `source_topic`, `worker`, `original_key`, `original_value`)—**not published to Kafka yet**
-- Bad records are **not** on **`kernelq.jobs.dlq`** today
+- Invalid messages increment **`MessageErrors`** and the worker **keeps polling**
+- When **`DeadLetterProducer`** is configured, failures also build **`DeadLetterEvent`** objects (`reason`, original key/value, `source_topic`, `worker`) and call **`PublishDeadLetter`**
+- **`DeadLettersPublished`** increases on successful DLQ publish; **`DeadLetterPublishErrors`** increases if publish fails—watch both on shutdown stats
+- **Tests** use a **fake DLQ producer** (captures events, no broker); **`cmd/consumer`** does not wire a real producer yet
+- **Real publishing to `kernelq.jobs.dlq`** is still coming later—bad records are not on the DLQ topic in production today
 - **`kafka.Error`** (broker/connection failures) still **stops** the worker
 
-**Future behavior:**
-- On processing failure, the worker will build a **`DeadLetterEvent`** and **`PublishDeadLetter`** to **`kernelq.jobs.dlq`** so failures are durable, not only counted
-
 **What operators should inspect:**
-- **`reason`** (when DLQ is wired)—why the worker rejected the message
-- **`original_value`**—the raw payload as received from dispatch
-- **`original_key`**—often `job_id` when the producer set a key
+- **`reason`** — why the worker rejected the message (in DLQ events when producer is wired)
+- **`original_value`** — raw dispatch payload as received
+- **`original_key`** — often `job_id` when the producer set a key
+- Shutdown stats from **`cmd/consumer`**: `message_errors` (and `messages_seen`, `messages_processed`); DLQ counters **`DeadLettersPublished`** / **`DeadLetterPublishErrors`** exist in **`ConsumerStats`** when a producer is wired
 - Compare payload to **`DispatchEvent`** in `worker/internal/worker/dispatch_event.go`
 
 **Common causes:**
@@ -165,13 +165,14 @@
 
 **Checks:**
 - Read the message from **`kernelq.jobs.dispatch`** (console consumer or broker tools)
-- Compare JSON to the dispatch contract; check **`message_errors`** vs **`messages_processed`** on worker shutdown
+- Compare JSON to the dispatch contract; check shutdown stats (`message_errors`, DLQ publish counters)
+- If **`DeadLetterPublishErrors`** (or publish failures in logs) rises, DLQ routing failed—the message may not reach **`kernelq.jobs.dlq`**
 - Search topic history for non-production traffic after incidents
 
 **Follow-up:**
 - Fix the publisher or remove bad records on the topic if safe in dev
 - Align control-plane publish validation with worker rules
-- When DLQ publishing lands, monitor **`kernelq.jobs.dlq`** depth and replay only after fixing root cause
+- When real **`kernelq.jobs.dlq`** Kafka publishing lands, monitor DLQ depth and replay only after fixing root cause
 
 **Future improvement:**
-- Automatic **`DeadLetterEvent`** publish to **`kernelq.jobs.dlq`** for inspection, alerting, and manual replay
+- Real Kafka **`DeadLetterProducer`** in **`cmd/consumer`** so events land on **`kernelq.jobs.dlq`** automatically

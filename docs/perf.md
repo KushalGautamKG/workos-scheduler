@@ -385,22 +385,33 @@ The Go worker’s poll loop (`KafkaConsumer.Run` in `worker/internal/worker/kafk
 
 ## DLQ Metrics Planned
 
-When workers publish **`DeadLetterEvent`** records to **`kernelq.jobs.dlq`**, we plan DLQ-specific counters alongside **Worker Message Error Metrics**. **No numeric results or dashboards exist yet**—names only.
+When workers route failures through **`DeadLetterProducer`**, we track DLQ outcomes alongside **Worker Message Error Metrics**. **No numeric results, dashboards, or SLOs exist yet** for production.
+
+**In-process today (`ConsumerStats` in `kafka_consumer.go`):**
+
+| Stat | What it means | Why it matters |
+|------|---------------|----------------|
+| `dead_letters_published` | **`DeadLetterEvent`** successfully passed to **`PublishDeadLetter`** | Confirms routing ran; pairs with **`message_errors`** |
+| `dead_letter_publish_errors` | DLQ publish attempts that **failed** (producer error, validation, future broker failure) | **Target should be 0** in healthy operation—non-zero means bad messages may lack a durable DLQ record |
+
+These counters are printed from tests and available on shutdown when **`cmd/consumer`** wires a producer and exports stats. **Later** they become **Prometheus counters** (names may align with `dlq_publish_count` / `dlq_publish_error_count` below).
+
+**Future metrics (not measured in production yet):**
 
 | Metric | What it means | Why it matters |
 |--------|---------------|----------------|
-| `dlq_publish_count` | Dead-letter events **successfully** published to **`kernelq.jobs.dlq`** | Confirms poison traffic is leaving the dispatch topic with evidence preserved |
-| `dlq_publish_error_count` | DLQ publish attempts that **failed** (broker down, serialization, validation) | Bad messages might still be skipped on dispatch with **no** durable DLQ record—alert on this |
+| `dlq_publish_count` | Prometheus name for successful DLQ publishes (maps to **`dead_letters_published`**) | Confirms poison traffic is leaving the dispatch topic with evidence preserved |
+| `dlq_publish_error_count` | Prometheus name for failed DLQ publishes (maps to **`dead_letter_publish_errors`**) | Alert when we cannot record failures—**target 0** |
 | `invalid_message_rate` | **`message_errors / messages_seen`** (same derived rate as above) | Early signal of **schema drift** or **bad producers** before DLQ depth grows |
-| `poison_message_count` | Messages classified as permanently bad (eligible for DLQ, not worth retry on dispatch) | Tracks volume of “will never succeed as-is” records; pairs with `dlq_publish_count` |
+| `poison_message_count` | Messages classified as permanently bad (eligible for DLQ, not worth retry on dispatch) | Tracks volume of “will never succeed as-is” records; pairs with DLQ publish counters |
 
 **Why DLQ metrics matter:**
 
-- Rising **`invalid_message_rate`** with low **`dlq_publish_count`** suggests failures are counted but not durably recorded (misconfiguration or publish failures).
-- Rising **`dlq_publish_count`** points to **producer bugs**, **manual test traffic**, or **contract drift**—inspect **`reason`** and **`original_value`** on DLQ messages.
-- **`dlq_publish_error_count`** separates “message was bad” from “we failed to record that it was bad.”
+- Rising **`invalid_message_rate`** with low **`dead_letters_published`** suggests failures are counted but not durably recorded (no producer wired, or publish failures).
+- Rising **`dead_letters_published`** points to **producer bugs**, **manual test traffic**, or **contract drift**—inspect **`reason`** and **`original_value`** on DLQ messages.
+- **`dead_letter_publish_errors`** should stay **0**; any sustained increase means “message was bad” but “we failed to record it on DLQ.”
 
-We have **not** measured these in production or defined SLOs yet.
+We have **not** measured these in production or defined numeric thresholds yet.
 
 ## Load Testing Methodology
 
