@@ -42,7 +42,13 @@ func main() {
 		log.Fatalf("subscribe to topic %q: %v", dispatchTopic, err)
 	}
 
-	// Wire the worker stack: Kafka → parse/validate → handler → executor.
+	dlqProducer, err := worker.NewKafkaDeadLetterProducer(bootstrapServers)
+	if err != nil {
+		_ = brokerConsumer.Close()
+		log.Fatalf("create dlq producer: %v", err)
+	}
+
+	// Wire the worker stack: Kafka → parse/validate → handler → executor → DLQ.
 	kafkaConsumer := &worker.KafkaConsumer{
 		Poller: brokerConsumer,
 		Runner: worker.ConsumerRunner{
@@ -50,6 +56,7 @@ func main() {
 				Executor: loggingExecutor{},
 			},
 		},
+		DeadLetterProducer: dlqProducer,
 	}
 
 	fmt.Println("KernelQ worker consumer started")

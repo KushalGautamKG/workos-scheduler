@@ -484,7 +484,8 @@ KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory�
 | `internal/worker/executor.go` | `Executor` interface (execution boundary) |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer` — broker record → `Message` |
 | `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` boundary |
-| `cmd/consumer/main.go` | Kafka consumer entrypoint (poll loop + shutdown) |
+| `internal/worker/kafka_dlq_producer.go` | `KafkaDeadLetterProducer` → **`kernelq.jobs.dlq`** |
+| `cmd/consumer/main.go` | Kafka consumer entrypoint (poll loop + DLQ publish) |
 | Offset commits / Postgres updates | **Not built yet** |
 
 **`cmd/consumer`** runs a long-lived poll loop on **`kernelq.jobs.dispatch`** via **`KafkaConsumer.Run`**. Offset commits and Postgres status updates come next.
@@ -640,7 +641,7 @@ keep polling (do not exit Run)
 
 **What is still fatal today:** **`kafka.Error`** events from the broker (connection problems, etc.) still **return from `Run`** and stop the process—infra failures are treated differently from bad payloads.
 
-**Future work — DLQ:** see **Worker DLQ Routing Boundary** (poll loop wired; real Kafka producer comes next).
+**Future work — DLQ:** see **Kafka DLQ Publishing** (real broker publish wired in **`cmd/consumer`**).
 
 **Interview sound bite:** *“Invalid dispatch messages increment MessageErrors and the poll loop continues; one poison record doesn’t kill the worker—DLQ routing preserves failure evidence.”*
 
@@ -683,11 +684,11 @@ Day 38 stopped poison messages from **killing the worker**. The DLQ boundary sto
 
 | Today | Later |
 |-------|-------|
-| `DeadLetterEvent` + `Validate()` + `ToJSON()` | Real Kafka producer in **`cmd/consumer`** |
-| `DeadLetterProducer` interface + poll-loop routing | Publish JSON to **`kernelq.jobs.dlq`** on broker |
-| Fake producers in tests | Metrics and alerting on DLQ depth |
+| `DeadLetterEvent` + `Validate()` + `ToJSON()` | DLQ metrics and alerting |
+| `KafkaDeadLetterProducer` → **`kernelq.jobs.dlq`** | Offset commit policy after DLQ publish |
+| Fake producer clients in tests | Replay tooling and ops dashboards |
 
-**Interview sound bite:** *“kernelq.jobs.dlq is the failure lane; DeadLetterEvent stores reason, source topic, worker, and original key/value—routing is wired; real Kafka publish comes next.”*
+**Interview sound bite:** *“kernelq.jobs.dlq is the failure lane; DeadLetterEvent stores reason, source topic, worker, and original key/value—KafkaDeadLetterProducer writes them to the broker.”*
 
 ## Worker DLQ Routing Boundary
 
@@ -709,14 +710,53 @@ Invalid-message handling in **`KafkaConsumer.Run`** is now **connected to `DeadL
 
 - **Tests** inject a **fake `DeadLetterProducer`** that captures events—no Kafka broker required.
 - **Transport stays separate** from the poll loop—same pattern as **`KafkaPoller`** and Python’s **`KafkaJobProducer`**.
-- **Real DLQ Kafka publishing** (confluent-kafka-go → **`kernelq.jobs.dlq`**) will be added later without rewriting error handling in **`Run`**.
+- **`KafkaDeadLetterProducer`** implements real broker publish (see **Kafka DLQ Publishing**).
 
-**What is not wired in production yet:**
+**What is not built yet:**
 
-- **`cmd/consumer`** does not pass a real Kafka DLQ producer today—only tests wire fakes.
-- **Offset commits** after DLQ publish are still future work.
+- **Offset commits** after DLQ publish.
+- **DLQ publish retries** beyond synchronous produce + flush.
 
-**Interview sound bite:** *“On ProcessKafkaMessage failure, MessageErrors++ and optionally PublishDeadLetter with reason plus original payload—interface for tests, real kernelq.jobs.dlq Kafka producer later, poll loop never stops on bad JSON.”*
+**Interview sound bite:** *“On ProcessKafkaMessage failure, MessageErrors++ and PublishDeadLetter with reason plus original payload—poll loop never stops on bad JSON.”*
+
+## Kafka DLQ Publishing
+
+Go workers **consume** runnable jobs from **`kernelq.jobs.dispatch`**. When a record cannot be parsed, validated, or handled, the worker builds a **`DeadLetterEvent`** and **`KafkaDeadLetterProducer`** writes it to **`kernelq.jobs.dlq`**.
+
+**End-to-end flow:**
+
+```
+kernelq.jobs.dispatch (*kafka.Message)
+    ↓  KafkaConsumer.Run → ProcessKafkaMessage fails
+DeadLetterEvent { reason, original_key, original_value, source_topic, worker }
+    ↓  KafkaDeadLetterProducer.PublishDeadLetter
+kernelq.jobs.dlq (JSON on broker)
+    ↓
+keep polling dispatch topic
+```
+
+**What `KafkaDeadLetterProducer` does (`worker/internal/worker/kafka_dlq_producer.go`):**
+
+1. **Validate** the **`DeadLetterEvent`**.
+2. **JSON-encode** the event.
+3. **Produce** to **`kernelq.jobs.dlq`** with **`OriginalKey`** as the Kafka message key.
+4. **Flush** synchronously (simple local-dev behavior for now).
+
+**Why this matters:**
+
+- **Preserves original payload** — **`original_value`** is the raw dispatch body for replay and drift debugging.
+- **Preserves failure reason** — **`reason`** explains parse vs validation vs handler failure.
+- **Separates lanes** — poison traffic leaves **`kernelq.jobs.dispatch`** without stopping healthy consumption.
+
+**DLQ publish failures are counted separately:**
+
+- **`DeadLettersPublished`** — broker accepted the DLQ record.
+- **`DeadLetterPublishErrors`** — validate, JSON, produce, or flush failed; **target should be 0** in healthy operation.
+- Processing still failed (**`MessageErrors++`**); a publish error means evidence may **not** be on **`kernelq.jobs.dlq`**.
+
+**`cmd/consumer`** wires **`NewKafkaDeadLetterProducer("localhost:9092")`** into **`KafkaConsumer.DeadLetterProducer`**. Tests use a **fake `KafkaProducerClient`**—no broker required.
+
+**Interview sound bite:** *“Consume dispatch, on failure build DeadLetterEvent with reason and original bytes, KafkaDeadLetterProducer writes to kernelq.jobs.dlq—DeadLetterPublishErrors separate from MessageErrors.”*
 
 ## Cross-Language Event Contract
 

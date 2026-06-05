@@ -336,6 +336,45 @@ Press **Ctrl+C** to stop. You should see **`KernelQ worker consumer stopped`**.
 
 **Prerequisite:** Go **1.22+** installed (`go version`).
 
+## Worker DLQ Publishing
+
+The worker consumer now wires a **DLQ producer** at startup. When a dispatch message cannot be parsed, validated, or handled, the worker publishes a **`DeadLetterEvent`** to **`kernelq.jobs.dlq`** (original payload + failure reason) and keeps polling.
+
+From the **repository root**:
+
+**1. Start Kafka**
+
+```bash
+docker compose up -d kafka zookeeper
+```
+
+**2. Create topics**
+
+```bash
+./infra/kafka/create-topics.sh
+```
+
+**3. Run the worker**
+
+```bash
+cd worker
+go run ./cmd/consumer
+```
+
+Produce or leave invalid messages on **`kernelq.jobs.dispatch`** (malformed JSON, missing fields, etc.). The worker should tolerate them and route failures to the DLQ topic.
+
+**4. Inspect DLQ messages**
+
+```bash
+docker exec -i kernelq-kafka kafka-console-consumer \
+  --bootstrap-server kafka:29092 \
+  --topic kernelq.jobs.dlq \
+  --from-beginning \
+  --max-messages 1
+```
+
+You should see JSON with **`reason`**, **`original_value`**, **`source_topic`**, and **`worker`**. Press **Ctrl+C** if the consumer keeps waiting after one message.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

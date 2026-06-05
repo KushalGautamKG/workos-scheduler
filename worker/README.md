@@ -29,6 +29,7 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer`, `ProcessKafkaMessage` |
 | `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` |
+| `internal/worker/kafka_dlq_producer.go` | `KafkaDeadLetterProducer` |
 | `cmd/consumer/main.go` | Kafka consumer entrypoint (poll loop + shutdown) |
 
 There is **no real job execution** yet. Offset commits, retries, and Postgres updates come in later milestones.
@@ -118,7 +119,21 @@ When processing fails, **`KafkaConsumer.Run`** can route invalid messages throug
 - On **`ProcessKafkaMessage`** error: increment **`MessageErrors`**, build **`DeadLetterEvent`**, call **`PublishDeadLetter`**, then **keep polling**.
 - Stats track **`DeadLettersPublished`** and **`DeadLetterPublishErrors`**.
 - **Tests** use a **fake producer** that captures events without a broker.
-- **`cmd/consumer`** does not wire a real producer yet—**Kafka publishing to `kernelq.jobs.dlq` comes later**.
+- **`cmd/consumer`** wires **`KafkaDeadLetterProducer`** (see **Kafka DLQ Producer**).
+
+## Kafka DLQ Producer
+
+**`KafkaDeadLetterProducer`** in `internal/worker/kafka_dlq_producer.go` publishes **`DeadLetterEvent`** JSON to **`kernelq.jobs.dlq`**.
+
+- Invalid dispatch messages can be **preserved** on the DLQ topic—not only counted and skipped.
+- **`PublishDeadLetter`** validates, encodes JSON, produces with **`OriginalKey`** as the Kafka key, and flushes.
+- **Tests** use a **fake `KafkaProducerClient`** (no real broker).
+- **`cmd/consumer`** creates the real DLQ producer at **`localhost:9092`** and passes it to **`KafkaConsumer`**.
+
+```bash
+go test ./...
+go run ./cmd/consumer
+```
 
 ## Prerequisites
 
