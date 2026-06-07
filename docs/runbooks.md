@@ -180,3 +180,29 @@ docker exec -i kernelq-kafka kafka-console-consumer \
 - Fix the publisher or remove bad records on the topic if safe in dev
 - Align control-plane publish validation with worker rules
 - Monitor DLQ depth; replay only after fixing root cause
+
+## Worker Reports Retryable Failure
+
+**What it means:**
+
+A **`retryable_failure`** **`ExecutionResult`** means the job attempt failed, but **retrying later may succeed**. These are **temporary execution issues**—not poison Kafka messages and not permanent job failures.
+
+**Examples:**
+
+- **Transient dependency outage** — downstream API or database briefly unavailable
+- **Temporary network issue** — connection reset or timeout between worker and dependency
+- **Rate limiting** — upstream returned 429 or throttled the worker; backoff may help
+
+**Current behavior:**
+
+- Workers classify this outcome in **`ExecutionResult`** (`status: retryable_failure`, optional **`message`**).
+- **Automatic retry workflows are not wired yet**—no publish to **`kernelq.jobs.retry`**, no Postgres **`failed → retry_scheduled`** from worker reports today.
+
+**Future behavior:**
+
+- Scheduler/retry path will use **`retryable_failure`** to trigger **`failed → retry_scheduled → queued`**, honor **`retry_count` / `max_retries`**, and re-publish to **`kernelq.jobs.retry`**.
+
+**What operators should do today:**
+
+- Treat rising retryable failures as **dependency or capacity signals**—check downstream health, network, and rate limits before jobs stall or exhaust retries.
+- Distinguish from **invalid dispatch messages** (DLQ on **`kernelq.jobs.dlq`**) and **terminal failures** (no auto-retry).

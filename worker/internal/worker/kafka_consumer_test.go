@@ -16,10 +16,10 @@ type fakeDispatchHandler struct {
 	called   bool
 }
 
-func (handler *fakeDispatchHandler) Handle(event DispatchEvent) error {
+func (handler *fakeDispatchHandler) Handle(event DispatchEvent) (ExecutionResult, error) {
 	handler.received = event
 	handler.called = true
-	return nil
+	return SuccessResult(), nil
 }
 
 // newKafkaMessage builds a broker record in memory (no real Kafka connection).

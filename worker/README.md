@@ -27,6 +27,8 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/consumer.go` | `ConsumerRunner`, `ProcessMessage` |
 | `internal/worker/handler.go` | `DispatchEventHandler` |
 | `internal/worker/executor.go` | `Executor` interface |
+| `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
+| `internal/worker/execution_result_test.go` | Unit tests for execution results |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer`, `ProcessKafkaMessage` |
 | `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` |
 | `internal/worker/kafka_dlq_producer.go` | `KafkaDeadLetterProducer` |
@@ -63,9 +65,25 @@ go test ./...
 
 **`DispatchEventHandler`** (`internal/worker/handler.go`) converts validated **`DispatchEvent`** values into **`Task`** objects and calls an **`Executor`**.
 
-- **`Executor`** is an interface for future job execution (`Execute(task Task) error`).
-- Current tests use a **fake executor** that records tasks and simulates failures.
+- **`Executor`** is an interface for job execution (`Execute(task Task) (ExecutionResult, error)`).
+- Current tests use a **fake executor** that records tasks and simulates outcomes.
 - **Real execution**, **bounded concurrency**, and **Postgres status reporting** come later.
+
+```bash
+go test ./...
+```
+
+## Execution Results
+
+**`ExecutionResult`** in `internal/worker/execution_result.go` classifies how a job attempt finished. Workers now return one of three outcomes:
+
+- **`succeeded`** — the job completed successfully.
+- **`retryable_failure`** — the job failed but may succeed on a later attempt (for example a transient timeout).
+- **`terminal_failure`** — the job failed and should not be retried automatically (for example invalid payload or max retries exhausted).
+
+**`DispatchEventHandler.Handle`** validates the executor’s result before returning it upstream. A plain Go **`error`** still means infrastructure failure (for example Postgres unreachable)—not a retry decision.
+
+These structured results prepare **future retry logic** (publish to **`kernelq.jobs.retry`**, honor `retry_count` / `max_retries`) and **Postgres job-state updates** (`succeeded`, `failed`, `dead_lettered`) without guessing from error strings.
 
 ```bash
 go test ./...

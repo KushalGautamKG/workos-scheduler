@@ -276,6 +276,23 @@ When the scheduler publishes runnable work, it writes a **DispatchEvent JSON** m
 
 These are internal Kafka broker messages, not REST API responses.
 
+## Future Worker Execution Results
+
+Go workers define **`ExecutionResult`** in `worker/internal/worker/execution_result.go` for structured job outcomes:
+
+| Field | Purpose |
+|-------|---------|
+| **`status`** | How the attempt finished |
+| **`message`** | Optional detail for logs and debugging (may be blank) |
+
+**Possible `status` values:**
+
+- **`succeeded`** — job completed successfully
+- **`retryable_failure`** — transient failure; scheduler may retry later
+- **`terminal_failure`** — permanent failure; stop auto-retry
+
+**Not yet exposed through FastAPI.** There is no REST endpoint for worker execution results today. **Future worker status reporting** (Postgres updates, retry routing, metrics) will use this model so the control plane can distinguish business outcomes from infrastructure errors.
+
 ## Health Checks and OpenAPI
 
 **`GET /health`** answers a simple question: *Can this control-plane HTTP process accept requests right now?* If it returns successfully, callers know the API process is up—not that every dependency in the wider system is healthy.

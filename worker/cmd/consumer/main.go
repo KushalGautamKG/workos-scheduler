@@ -22,9 +22,9 @@ const (
 // It prints the job id so we can see messages flowing through the stack.
 type loggingExecutor struct{}
 
-func (loggingExecutor) Execute(task worker.Task) error {
+func (loggingExecutor) Execute(task worker.Task) (worker.ExecutionResult, error) {
 	fmt.Printf("received task job_id=%s\n", task.JobID)
-	return nil
+	return worker.SuccessResult(), nil
 }
 
 func main() {

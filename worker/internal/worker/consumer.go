@@ -21,7 +21,7 @@ type Message struct {
 // A future execution pipeline will implement this interface. Tests can use a
 // small fake handler that records events or returns errors on purpose.
 type DispatchHandler interface {
-	Handle(event DispatchEvent) error
+	Handle(event DispatchEvent) (ExecutionResult, error)
 }
 
 // ConsumerRunner connects "message bytes in" to "handler logic out".
@@ -50,7 +50,7 @@ func (runner ConsumerRunner) ProcessMessage(message Message) error {
 	}
 
 	// Hand off to execution logic (real or test fake).
-	if err := runner.Handler.Handle(event); err != nil {
+	if _, err := runner.Handler.Handle(event); err != nil {
 		return err
 	}
 

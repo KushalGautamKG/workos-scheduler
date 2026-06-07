@@ -482,6 +482,7 @@ KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory�
 | `internal/worker/consumer.go` | `ConsumerRunner` message-processing boundary |
 | `internal/worker/handler.go` | `DispatchEventHandler` event → task |
 | `internal/worker/executor.go` | `Executor` interface (execution boundary) |
+| `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer` — broker record → `Message` |
 | `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` boundary |
 | `internal/worker/kafka_dlq_producer.go` | `KafkaDeadLetterProducer` → **`kernelq.jobs.dlq`** |
@@ -527,7 +528,7 @@ DispatchEvent (parsed + validated)
     ↓  DispatchEventHandler.Handle
 Task (mapped + ValidateTask)
     ↓  Executor.Execute
-Actual job work (later)
+ExecutionResult + error (outcome vs infra)
 ```
 
 | Layer | Role |
@@ -541,6 +542,45 @@ Actual job work (later)
 **What exists today:** interfaces and handlers only—tests use fake executors. **Real execution**, **concurrency caps**, and **status reporting to Postgres** come in later milestones.
 
 **Interview sound bite:** *“ConsumerRunner parses messages; DispatchEventHandler maps to Task; Executor runs work—three layers so concurrency and metrics land in one place later.”*
+
+## Worker Execution Result Model
+
+Go workers now report **structured execution outcomes** via **`ExecutionResult`** (`worker/internal/worker/execution_result.go`). A plain Go **`error`** is not enough: the same `error` shape could mean “Postgres was down” or “job failed but retry later.” **`ExecutionResult`** separates those concerns.
+
+**Two return values from `Executor.Execute`:**
+
+| Return | Meaning | Example |
+|--------|---------|---------|
+| **`ExecutionResult`** | **Business execution outcome** — the job attempt finished and reported a status | succeeded, dependency timeout (retryable), invalid payload (terminal) |
+| **`error`** | **Infrastructure failure** — execution could not complete reliably | Postgres unreachable, executor crashed before reporting outcome |
+
+When **`error` is non-nil**, callers should **ignore** the **`ExecutionResult`** and treat the failure as operational (alert, reconnect, do not guess retry vs dead-letter from the error string alone).
+
+**Status values (`ExecutionStatus`):**
+
+| Status | Value | Meaning |
+|--------|-------|---------|
+| **`ExecutionSucceeded`** | `succeeded` | Job completed successfully → Postgres **`succeeded`** |
+| **`ExecutionRetryableFailure`** | `retryable_failure` | Transient failure; another attempt may work → **`failed`** → **`retry_scheduled`** |
+| **`ExecutionTerminalFailure`** | `terminal_failure` | Permanent failure or policy says stop → **`dead_lettered`** (and/or DLQ) |
+
+**`DispatchEventHandler.Handle`** validates the executor’s result before returning it upstream. Invalid status values are rejected like bad JSON—executors must use the defined constants.
+
+**How this connects to scheduler retries (future):**
+
+```
+Worker runs job → ExecutionRetryableFailure
+    ↓  Postgres: running → failed
+Scheduler / retry path: failed → retry_scheduled → (backoff) → queued
+    ↓  publish to kernelq.jobs.retry
+Worker consumes retry message → run again
+```
+
+**Future scheduler retry behavior will use `retryable_failure`**—not generic errors. The control plane already owns **`retry_count`**, **`max_retries`**, and transitions **`FAILED → RETRY_SCHEDULED → QUEUED`**. Workers supply the **outcome**; the scheduler supplies **policy** (when to re-queue, backoff, publish to **`kernelq.jobs.retry`**, or move to **`dead_lettered`** when retries are exhausted).
+
+**`terminal_failure`** aligns with stop-auto-retry paths; **`succeeded`** aligns with normal completion. **Protocol/parse failures** on the dispatch topic remain separate (DLQ on **`kernelq.jobs.dlq`**)—they are not execution outcomes.
+
+**Interview sound bite:** *“ExecutionResult is business outcome—succeeded, retryable_failure, terminal_failure; error is infra; scheduler retries use retryable_failure, not error strings.”*
 
 ## Worker Kafka Consumption
 
