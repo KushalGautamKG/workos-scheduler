@@ -485,6 +485,7 @@ KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory�
 | `internal/worker/executor.go` | `Executor` interface (execution boundary) |
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
 | `internal/worker/result_event.go` | `WorkerResultEvent` → **`kernelq.jobs.results`** |
+| `internal/worker/result_producer.go` | `ResultProducer`, `RecordingResultProducer` |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer` — broker record → `Message` |
 | `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` boundary |
 | `internal/worker/kafka_dlq_producer.go` | `KafkaDeadLetterProducer` → **`kernelq.jobs.dlq`** |
@@ -627,6 +628,39 @@ Python control plane                    Go workers
 Postgres stays the **system of record**; **`kernelq.jobs.results`** is the **feedback lane** that closes the loop after dispatch.
 
 **Interview sound bite:** *“Dispatch out on kernelq.jobs.dispatch, results back on kernelq.jobs.results—WorkerResultEvent carries job_id, status, message, worker; status matches ExecutionResult; control plane updates Postgres later.”*
+
+## Worker Result Producer Boundary
+
+KernelQ splits **what workers report** from **how they send it**—the same pattern as **`DeadLetterProducer`** for DLQ and **`KafkaJobProducer`** on the Python side.
+
+| Piece | Role |
+|-------|------|
+| **`WorkerResultEvent`** | **What** workers report—JSON contract (`job.result`, `job_id`, `status`, `message`, `worker`) |
+| **`ResultProducer`** | **How** workers publish—`PublishResult(event WorkerResultEvent) error` |
+
+**Flow (target):**
+
+```
+Executor.Execute → ExecutionResult
+    ↓  NewWorkerResultEvent(job_id, result, worker)
+WorkerResultEvent
+    ↓  ResultProducer.PublishResult
+kernelq.jobs.results (Kafka, later)
+```
+
+**What exists today:**
+
+- **`RecordingResultProducer`** in `worker/internal/worker/result_producer.go` is a **fake / in-memory** implementation for tests.
+- It **validates** each event and appends to **`Published`**—no broker, no network.
+- **Real Kafka publishing to `kernelq.jobs.results`** comes later (mirroring **`KafkaDeadLetterProducer`**).
+
+**Why separate execution from transport:**
+
+- **Handler and executor** should not embed confluent-kafka-go calls—execution rules change at a different rate than broker wiring.
+- **Tests** inject **`RecordingResultProducer`** and assert “given this outcome, we published this event”—no Docker Kafka required.
+- **Production** swaps in a Kafka-backed **`ResultProducer`** without rewriting **`DispatchEventHandler`** or **`Executor`**.
+
+**Interview sound bite:** *“WorkerResultEvent is the payload; ResultProducer is the publish boundary—RecordingResultProducer in tests today, Kafka to kernelq.jobs.results later; execution stays off the transport layer.”*
 
 ## Worker Kafka Consumption
 

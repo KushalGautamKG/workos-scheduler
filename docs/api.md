@@ -292,6 +292,8 @@ When a worker finishes a job attempt, it will publish **WorkerResultEvent JSON**
 
 - **Internal Kafka message**, not a REST API response.
 - **Published by Go workers** after execution (`worker/internal/worker/result_event.go`).
+- **`ResultProducer`** is the worker-side publishing boundary (`worker/internal/worker/result_producer.go`); tests use in-memory **`RecordingResultProducer`** today.
+- **Real Kafka publishing to `kernelq.jobs.results`** is planned next (schema and interface exist; broker wiring does not yet).
 - **`status`** uses the same values as **`ExecutionResult`**: `succeeded`, `retryable_failure`, `terminal_failure`.
 - **Future Python control plane result consumer** will read this topic and **update durable job state** in Postgres.
 

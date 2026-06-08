@@ -31,6 +31,8 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/execution_result_test.go` | Unit tests for execution results |
 | `internal/worker/result_event.go` | `WorkerResultEvent`, result topic contract |
 | `internal/worker/result_event_test.go` | Unit tests for result events |
+| `internal/worker/result_producer.go` | `ResultProducer`, `RecordingResultProducer` |
+| `internal/worker/result_producer_test.go` | Unit tests for result producer |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer`, `ProcessKafkaMessage` |
 | `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` |
 | `internal/worker/kafka_dlq_producer.go` | `KafkaDeadLetterProducer` |
@@ -98,6 +100,18 @@ Workers will publish **`WorkerResultEvent`** messages after execution. **`NewWor
 - Result events go to **`kernelq.jobs.results`** (see `ResultTopic` in `internal/worker/result_event.go`).
 - The **control plane will later consume** these events and **update Postgres job state** (`succeeded`, `failed`, `dead_lettered`, retry scheduling).
 - **Today:** schema + **`Validate()`** / **`ToJSON()`** + unit tests only—no Kafka producer wired in **`cmd/consumer`** yet.
+
+```bash
+go test ./...
+```
+
+## Result Producer Boundary
+
+Workers now have a **`ResultProducer`** interface (`PublishResult(event WorkerResultEvent) error`) in `internal/worker/result_producer.go`.
+
+- It will publish validated **`WorkerResultEvent`** records to **`kernelq.jobs.results`** once a real Kafka producer is wired.
+- **`RecordingResultProducer`** is an **in-memory** implementation for tests—it validates and appends events to **`Published`** without a broker.
+- **Real Kafka result producer** comes later (same pattern as **`KafkaDeadLetterProducer`** for DLQ).
 
 ```bash
 go test ./...

@@ -230,7 +230,9 @@ A **`retryable_failure`** **`ExecutionResult`** means the job attempt failed, bu
 **Current status:**
 
 - **`WorkerResultEvent`** schema exists in Go (`worker/internal/worker/result_event.go`) with tests
-- **Real result publishing and consuming are not wired yet**—no automatic Postgres update from **`kernelq.jobs.results`** today
+- **`ResultProducer`** boundary exists (`worker/internal/worker/result_producer.go`); tests use in-memory **`RecordingResultProducer`**
+- **Real Kafka producer implementation is not wired yet**—**`cmd/consumer`** does not publish to **`kernelq.jobs.results`**
+- **If result events are missing today, that is expected** until Kafka result publishing is implemented; no automatic Postgres update from the results topic yet
 
 **Follow-up (when result pipeline lands):**
 
