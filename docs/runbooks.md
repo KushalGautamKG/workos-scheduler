@@ -206,3 +206,33 @@ A **`retryable_failure`** **`ExecutionResult`** means the job attempt failed, bu
 
 - Treat rising retryable failures as **dependency or capacity signals**—check downstream health, network, and rate limits before jobs stall or exhaust retries.
 - Distinguish from **invalid dispatch messages** (DLQ on **`kernelq.jobs.dlq`**) and **terminal failures** (no auto-retry).
+
+## Worker Result Event Missing
+
+**Symptoms:**
+
+- Job stays **`dispatched`** or **`running`** in Postgres with **no terminal update** (`succeeded`, `failed`, `dead_lettered`, `canceled`)
+- Dispatch message was consumed but lifecycle never closed the loop
+
+**Possible causes:**
+
+- **Worker crashed before publishing result** — execution started or finished in-process but no **`WorkerResultEvent`** reached **`kernelq.jobs.results`**
+- **Result topic unavailable** — **`kernelq.jobs.results`** missing or broker unreachable from worker (`./infra/kafka/create-topics.sh`)
+- **Result consumer not running** — Python control plane is not yet consuming results (expected today)
+- **Invalid result event rejected** — malformed JSON or bad **`status`** / **`event_type`** dropped by future consumer validation
+
+**Checks:**
+
+- Confirm worker process was up when the job was dispatched
+- List **`kernelq.jobs.results`** and inspect for a record with matching **`job_id`** (when publishing is wired)
+- Check worker logs and shutdown stats; compare with **`kernelq.jobs.dispatch`** / DLQ traffic
+
+**Current status:**
+
+- **`WorkerResultEvent`** schema exists in Go (`worker/internal/worker/result_event.go`) with tests
+- **Real result publishing and consuming are not wired yet**—no automatic Postgres update from **`kernelq.jobs.results`** today
+
+**Follow-up (when result pipeline lands):**
+
+- Alert on jobs stuck in **`dispatched`** / **`running`** past SLA
+- Monitor result-topic lag and consumer errors alongside dispatch lag

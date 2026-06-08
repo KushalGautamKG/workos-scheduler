@@ -276,6 +276,25 @@ When the scheduler publishes runnable work, it writes a **DispatchEvent JSON** m
 
 These are internal Kafka broker messages, not REST API responses.
 
+## Kafka Worker Result Event Schema
+
+When a worker finishes a job attempt, it will publish **WorkerResultEvent JSON** to **`kernelq.jobs.results`**.
+
+```json
+{
+  "event_type": "job.result",
+  "job_id": "job-123",
+  "status": "succeeded",
+  "message": "completed",
+  "worker": "kernelq-go-worker"
+}
+```
+
+- **Internal Kafka message**, not a REST API response.
+- **Published by Go workers** after execution (`worker/internal/worker/result_event.go`).
+- **`status`** uses the same values as **`ExecutionResult`**: `succeeded`, `retryable_failure`, `terminal_failure`.
+- **Future Python control plane result consumer** will read this topic and **update durable job state** in Postgres.
+
 ## Future Worker Execution Results
 
 Go workers define **`ExecutionResult`** in `worker/internal/worker/execution_result.go` for structured job outcomes:

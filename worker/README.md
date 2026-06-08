@@ -29,6 +29,8 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
 | `internal/worker/execution_result_test.go` | Unit tests for execution results |
+| `internal/worker/result_event.go` | `WorkerResultEvent`, result topic contract |
+| `internal/worker/result_event_test.go` | Unit tests for result events |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer`, `ProcessKafkaMessage` |
 | `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` |
 | `internal/worker/kafka_dlq_producer.go` | `KafkaDeadLetterProducer` |
@@ -84,6 +86,18 @@ go test ./...
 **`DispatchEventHandler.Handle`** validates the executor’s result before returning it upstream. A plain Go **`error`** still means infrastructure failure (for example Postgres unreachable)—not a retry decision.
 
 These structured results prepare **future retry logic** (publish to **`kernelq.jobs.retry`**, honor `retry_count` / `max_retries`) and **Postgres job-state updates** (`succeeded`, `failed`, `dead_lettered`) without guessing from error strings.
+
+```bash
+go test ./...
+```
+
+## Worker Result Events
+
+Workers will publish **`WorkerResultEvent`** messages after execution. **`NewWorkerResultEvent`** maps an **`ExecutionResult`** onto JSON (`event_type: job.result`, `job_id`, `status`, `message`, `worker`).
+
+- Result events go to **`kernelq.jobs.results`** (see `ResultTopic` in `internal/worker/result_event.go`).
+- The **control plane will later consume** these events and **update Postgres job state** (`succeeded`, `failed`, `dead_lettered`, retry scheduling).
+- **Today:** schema + **`Validate()`** / **`ToJSON()`** + unit tests only—no Kafka producer wired in **`cmd/consumer`** yet.
 
 ```bash
 go test ./...

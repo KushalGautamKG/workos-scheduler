@@ -332,17 +332,18 @@ Go Workers
 
 ## Kafka Topics
 
-KernelQ uses **three named topics** so normal work, retries, and permanent failures follow **separate lanes** instead of one mixed queue. Create them locally with `infra/kafka/create-topics.sh` (3 partitions each, replication factor 1 for dev).
+KernelQ uses **four named topics** so normal work, retries, results, and permanent failures follow **separate lanes** instead of one mixed queue. Create them locally with `infra/kafka/create-topics.sh` (3 partitions each, replication factor 1 for dev).
 
 ### Topic roles
 
 | Topic | Purpose | Who produces | Who consumes |
 |-------|---------|--------------|--------------|
 | **`kernelq.jobs.dispatch`** | **Normal runnable work** — after a scheduler tick claims a job in Postgres, the control plane publishes a dispatch event here for Go workers to pick up. | Python control plane (scheduler) | Go worker consumer group |
+| **`kernelq.jobs.results`** | **Execution outcomes** — after a worker runs a job, it publishes a result event here so the control plane can update Postgres and drive retries. | Go workers | Python control plane (later) |
 | **`kernelq.jobs.retry`** | **Retry flow** — jobs that **failed but can run again** (retries remain, backoff elapsed) are re-published here instead of competing with first-time dispatch traffic. Aligns with `RETRY_SCHEDULED` → back to `QUEUED` in the lifecycle. | Control plane / retry dispatcher | Go retry workers (or same workers, different consumer group) |
 | **`kernelq.jobs.dlq`** | **Dead-letter queue (DLQ)** — **poison messages** (always crash the consumer) or jobs that **permanently failed** (max retries exhausted) land here for inspection, alerting, or manual replay—not for automatic execution. Aligns with `DEAD_LETTERED`. | Control plane / worker error handler | Ops tooling, dashboards, manual replay jobs |
 
-**Plain English:** *dispatch* is the happy path; *retry* is “try again later”; *dlq* is “stop auto-running this and let a human look.”
+**Plain English:** *dispatch* is “run this job”; *results* is “here’s what happened”; *retry* is “try again later”; *dlq* is “stop auto-running this and let a human look.”
 
 ### Why separate topics (not one big queue)
 
@@ -369,7 +370,7 @@ Partitions are how KernelQ scales workers **without** changing scheduler code: a
 
 **In production:** replication factor would be **3** (or higher per ops policy) so each partition is copied to multiple brokers. If one broker dies, another replica still serves reads and can become leader—**durability and availability** under real failures.
 
-**Interview sound bite:** *“Three topics—dispatch, retry, DLQ—so happy path, retries, and poison jobs don’t share one lane; three partitions for parallel Go consumers locally; replication 1 in dev, 3+ in prod.”*
+**Interview sound bite:** *“Four topics—dispatch, results, retry, DLQ—dispatch out, results back, retries and poison on their own lanes; three partitions for parallel consumers locally; replication 1 in dev, 3+ in prod.”*
 
 ## Kafka Dispatch Producer
 
@@ -483,6 +484,7 @@ KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory�
 | `internal/worker/handler.go` | `DispatchEventHandler` event → task |
 | `internal/worker/executor.go` | `Executor` interface (execution boundary) |
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
+| `internal/worker/result_event.go` | `WorkerResultEvent` → **`kernelq.jobs.results`** |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer` — broker record → `Message` |
 | `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` boundary |
 | `internal/worker/kafka_dlq_producer.go` | `KafkaDeadLetterProducer` → **`kernelq.jobs.dlq`** |
@@ -581,6 +583,50 @@ Worker consumes retry message → run again
 **`terminal_failure`** aligns with stop-auto-retry paths; **`succeeded`** aligns with normal completion. **Protocol/parse failures** on the dispatch topic remain separate (DLQ on **`kernelq.jobs.dlq`**)—they are not execution outcomes.
 
 **Interview sound bite:** *“ExecutionResult is business outcome—succeeded, retryable_failure, terminal_failure; error is infra; scheduler retries use retryable_failure, not error strings.”*
+
+## Worker Result Event Contract
+
+KernelQ separates **work orders** from **completion reports** on Kafka:
+
+```
+Python control plane                    Go workers
+        │                                      │
+        │  DispatchEvent (job.dispatch)        │
+        ├──────── kernelq.jobs.dispatch ──────►│ consume, execute
+        │                                      │
+        │  WorkerResultEvent (job.result)      │
+        │◄──────── kernelq.jobs.results ───────┤ publish outcome
+        │                                      │
+   update Postgres job state              (later: result producer)
+```
+
+**Dispatch events flow control plane → workers.** After a scheduler tick claims a job, Python publishes **`DispatchEvent`** JSON to **`kernelq.jobs.dispatch`**—“run this job now.”
+
+**Result events flow workers → control plane.** After execution, Go workers will publish **`WorkerResultEvent`** JSON to **`kernelq.jobs.results`**—“here’s what happened.”
+
+**`WorkerResultEvent` (`worker/internal/worker/result_event.go`):**
+
+| Field | Purpose |
+|-------|---------|
+| **`event_type`** | Always **`job.result`** |
+| **`job_id`** | Which job finished (Kafka message key in future producer) |
+| **`status`** | Outcome: **`succeeded`**, **`retryable_failure`**, or **`terminal_failure`** |
+| **`message`** | Optional detail for logs and debugging (may be blank) |
+| **`worker`** | Which consumer identity reported the outcome (for example **`kernelq-go-worker`**) |
+
+**Status values match `ExecutionResult`**—same strings as **`ExecutionStatus`** in Go (`succeeded`, `retryable_failure`, `terminal_failure`). The in-process model and the on-wire event share one vocabulary so Python consumers do not reinterpret outcomes.
+
+**`NewWorkerResultEvent`**, **`Validate()`**, and **`ToJSON()`** exist today; **Kafka publishing and control-plane consumption are not wired yet.**
+
+**The control plane will later consume results and update job state:**
+
+- **`succeeded`** → Postgres **`succeeded`**
+- **`retryable_failure`** → **`failed`** → **`retry_scheduled`** (when retries remain)
+- **`terminal_failure`** → **`dead_lettered`** (or policy-driven terminal handling)
+
+Postgres stays the **system of record**; **`kernelq.jobs.results`** is the **feedback lane** that closes the loop after dispatch.
+
+**Interview sound bite:** *“Dispatch out on kernelq.jobs.dispatch, results back on kernelq.jobs.results—WorkerResultEvent carries job_id, status, message, worker; status matches ExecutionResult; control plane updates Postgres later.”*
 
 ## Worker Kafka Consumption
 

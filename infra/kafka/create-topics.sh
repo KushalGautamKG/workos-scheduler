@@ -21,13 +21,15 @@ KAFKA_CONTAINER="kernelq-kafka"
 BOOTSTRAP_SERVER="kafka:29092"
 
 # Topic layout for KernelQ job handoff:
-#   dispatch — normal runnable work after scheduler claim
+#   dispatch — normal runnable work after scheduler claim (control plane → workers)
 #   retry    — jobs that failed but should run again (backoff / retry policy)
-#   dlq      — dead-letter queue for jobs that exhausted retries or are poison
+#   dlq      — dead-letter queue for poison messages or permanently failed jobs
+#   results  — worker execution outcomes back to the control plane (workers → control plane)
 TOPICS=(
   "kernelq.jobs.dispatch"
   "kernelq.jobs.retry"
   "kernelq.jobs.dlq"
+  "kernelq.jobs.results"
 )
 
 PARTITIONS=3
