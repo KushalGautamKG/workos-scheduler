@@ -375,6 +375,25 @@ docker exec -i kernelq-kafka kafka-console-consumer \
 
 You should see JSON with **`reason`**, **`original_value`**, **`source_topic`**, and **`worker`**. Press **Ctrl+C** if the consumer keeps waiting after one message.
 
+## Worker Result Producer
+
+The worker now includes a **Kafka result producer** for **`kernelq.jobs.results`**. **`cmd/consumer`** creates **`KafkaResultProducer`** at startup alongside the dispatch consumer and DLQ producer. Full **execution → PublishResult** wiring comes next—today the producer is ready but the logging executor does not publish result events yet.
+
+From the **repository root**, ensure topics exist (includes **`kernelq.jobs.results`**):
+
+```bash
+docker compose up -d kafka zookeeper
+./infra/kafka/create-topics.sh
+```
+
+Run tests and start the worker:
+
+```bash
+cd worker
+go test ./...
+go run ./cmd/consumer
+```
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

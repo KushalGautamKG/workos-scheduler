@@ -486,6 +486,7 @@ KernelQ now has a **Go worker-plane foundation** in the **`worker/`** directory�
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
 | `internal/worker/result_event.go` | `WorkerResultEvent` → **`kernelq.jobs.results`** |
 | `internal/worker/result_producer.go` | `ResultProducer`, `RecordingResultProducer` |
+| `internal/worker/kafka_result_producer.go` | `KafkaResultProducer` → **`kernelq.jobs.results`** |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer` — broker record → `Message` |
 | `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` boundary |
 | `internal/worker/kafka_dlq_producer.go` | `KafkaDeadLetterProducer` → **`kernelq.jobs.dlq`** |
@@ -645,22 +646,61 @@ Executor.Execute → ExecutionResult
     ↓  NewWorkerResultEvent(job_id, result, worker)
 WorkerResultEvent
     ↓  ResultProducer.PublishResult
-kernelq.jobs.results (Kafka, later)
+kernelq.jobs.results (Kafka)
 ```
 
 **What exists today:**
 
 - **`RecordingResultProducer`** in `worker/internal/worker/result_producer.go` is a **fake / in-memory** implementation for tests.
-- It **validates** each event and appends to **`Published`**—no broker, no network.
-- **Real Kafka publishing to `kernelq.jobs.results`** comes later (mirroring **`KafkaDeadLetterProducer`**).
+- **`KafkaResultProducer`** is the real broker implementation—see **Kafka Result Publishing**.
+- **`cmd/consumer`** creates the result producer at startup; **execution → PublishResult** wiring comes next.
 
 **Why separate execution from transport:**
 
 - **Handler and executor** should not embed confluent-kafka-go calls—execution rules change at a different rate than broker wiring.
-- **Tests** inject **`RecordingResultProducer`** and assert “given this outcome, we published this event”—no Docker Kafka required.
-- **Production** swaps in a Kafka-backed **`ResultProducer`** without rewriting **`DispatchEventHandler`** or **`Executor`**.
+- **Tests** inject **`RecordingResultProducer`** or a **fake `KafkaProducerClient`**—no Docker Kafka required.
+- **Production** uses **`KafkaResultProducer`** without rewriting **`DispatchEventHandler`** or **`Executor`**.
 
-**Interview sound bite:** *“WorkerResultEvent is the payload; ResultProducer is the publish boundary—RecordingResultProducer in tests today, Kafka to kernelq.jobs.results later; execution stays off the transport layer.”*
+**Interview sound bite:** *“WorkerResultEvent is the payload; ResultProducer is the publish boundary—RecordingResultProducer in tests, KafkaResultProducer in cmd/consumer; execution stays off the transport layer.”*
+
+## Kafka Result Publishing
+
+Go workers will publish **`WorkerResultEvent`** messages to **`kernelq.jobs.results`** after job attempts finish. That closes the loop opened by dispatch on **`kernelq.jobs.dispatch`**.
+
+**End-to-end flow (target):**
+
+```
+kernelq.jobs.dispatch
+    ↓  worker consumes, executes
+ExecutionResult
+    ↓  NewWorkerResultEvent(job_id, result, worker)
+WorkerResultEvent
+    ↓  KafkaResultProducer.PublishResult
+kernelq.jobs.results
+    ↓  (future) Python result consumer
+Postgres job state updated
+```
+
+**`KafkaResultProducer`** (`worker/internal/worker/kafka_result_producer.go`) is the **real Kafka implementation** of the **`ResultProducer`** boundary:
+
+1. **Validate** the **`WorkerResultEvent`**
+2. **JSON-encode** via **`ToJSON()`**
+3. **Produce** to **`kernelq.jobs.results`** with **`JobID`** as the Kafka message key
+4. **Flush** synchronously (simple local-dev behavior for now)
+
+**Result events carry execution outcomes back to the Python control plane**—not raw dispatch bytes, not DLQ poison records. Each message says *how the job finished* (`succeeded`, `retryable_failure`, `terminal_failure`) so the control plane can apply lifecycle policy.
+
+**What is wired vs future:**
+
+| Today | Later |
+|-------|-------|
+| **`KafkaResultProducer`** + tests with fake client | Handler/poll loop calls **`PublishResult`** after successful execution |
+| **`cmd/consumer`** creates producer at **`localhost:9092`** | Result publish success/failure metrics |
+| Topic **`kernelq.jobs.results`** in `create-topics.sh` | **Python result consumer** reads topic and **updates Postgres** |
+
+**The Python result consumer is still future work.** Go can publish outcomes; the control plane does not yet subscribe to **`kernelq.jobs.results`** or move rows from **`running`** / **`dispatched`** to terminal states based on **`status`**.
+
+**Interview sound bite:** *“KafkaResultProducer writes WorkerResultEvent to kernelq.jobs.results—outcomes back to Python; producer wired in cmd/consumer; Python consumer and execution hook-up next.”*
 
 ## Worker Kafka Consumption
 

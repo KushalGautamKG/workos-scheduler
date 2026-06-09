@@ -33,6 +33,8 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/result_event_test.go` | Unit tests for result events |
 | `internal/worker/result_producer.go` | `ResultProducer`, `RecordingResultProducer` |
 | `internal/worker/result_producer_test.go` | Unit tests for result producer |
+| `internal/worker/kafka_result_producer.go` | `KafkaResultProducer` |
+| `internal/worker/kafka_result_producer_test.go` | Unit tests for Kafka result producer |
 | `internal/worker/kafka_consumer.go` | `KafkaConsumer`, `ProcessKafkaMessage` |
 | `internal/worker/dlq.go` | `DeadLetterEvent`, `DeadLetterProducer` |
 | `internal/worker/kafka_dlq_producer.go` | `KafkaDeadLetterProducer` |
@@ -99,7 +101,7 @@ Workers will publish **`WorkerResultEvent`** messages after execution. **`NewWor
 
 - Result events go to **`kernelq.jobs.results`** (see `ResultTopic` in `internal/worker/result_event.go`).
 - The **control plane will later consume** these events and **update Postgres job state** (`succeeded`, `failed`, `dead_lettered`, retry scheduling).
-- **Today:** schema + **`Validate()`** / **`ToJSON()`** + unit tests only—no Kafka producer wired in **`cmd/consumer`** yet.
+- **Today:** schema + **`Validate()`** / **`ToJSON()`** + unit tests; Kafka producer wired in **`cmd/consumer`** (see **Kafka Result Producer**).
 
 ```bash
 go test ./...
@@ -111,10 +113,23 @@ Workers now have a **`ResultProducer`** interface (`PublishResult(event WorkerRe
 
 - It will publish validated **`WorkerResultEvent`** records to **`kernelq.jobs.results`** once a real Kafka producer is wired.
 - **`RecordingResultProducer`** is an **in-memory** implementation for tests—it validates and appends events to **`Published`** without a broker.
-- **Real Kafka result producer** comes later (same pattern as **`KafkaDeadLetterProducer`** for DLQ).
+- **`KafkaResultProducer`** publishes to the broker (see **Kafka Result Producer**).
 
 ```bash
 go test ./...
+```
+
+## Kafka Result Producer
+
+**`KafkaResultProducer`** in `internal/worker/kafka_result_producer.go` publishes **`WorkerResultEvent`** JSON to **`kernelq.jobs.results`**.
+
+- **`PublishResult`** validates, encodes JSON, produces with **`JobID`** as the Kafka key, and flushes.
+- **Tests** use a **fake `KafkaProducerClient`** (no real broker).
+- **`cmd/consumer`** creates the real result producer at **`localhost:9092`**; full **execution → PublishResult** wiring comes next.
+
+```bash
+go test ./...
+go run ./cmd/consumer
 ```
 
 ## Kafka Consumer

@@ -48,6 +48,15 @@ func main() {
 		log.Fatalf("create dlq producer: %v", err)
 	}
 
+	resultProducer, err := worker.NewKafkaResultProducer(bootstrapServers)
+	if err != nil {
+		_ = brokerConsumer.Close()
+		log.Fatalf("create result producer: %v", err)
+	}
+	// Result producer is wired for kernelq.jobs.results. Full execution →
+	// WorkerResultEvent → PublishResult will connect in the next milestone.
+	_ = resultProducer
+
 	// Wire the worker stack: Kafka → parse/validate → handler → executor → DLQ.
 	kafkaConsumer := &worker.KafkaConsumer{
 		Poller: brokerConsumer,

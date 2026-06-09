@@ -413,6 +413,19 @@ These counters are printed from tests and available on shutdown when **`cmd/cons
 
 We have **not** measured these in production or defined numeric thresholds yet.
 
+## Worker Result Publishing Metrics Planned
+
+When workers publish **`WorkerResultEvent`** JSON to **`kernelq.jobs.results`** via **`KafkaResultProducer`**, we will track result handoff alongside dispatch and DLQ metrics. **No numeric measurements, dashboards, or SLOs exist yet.**
+
+| Metric | What it means | Why it matters |
+|--------|---------------|----------------|
+| `result_publish_count` | **`WorkerResultEvent`** successfully published to **`kernelq.jobs.results`** | Confirms execution outcomes are reaching the control-plane feedback lane |
+| `result_publish_error_count` | Result publish attempts that failed (validate, JSON, produce, flush) | **Target should be 0**—non-zero means Postgres may never learn the job outcome |
+| `result_publish_latency` | Time from **`PublishResult`** call to broker flush completion | Surfaces slow or stuck result producer behavior |
+| `dispatch_to_result_latency` | Time from dispatch consume/handoff to result publish | End-to-end worker turnaround; pairs with queue wait and processing latency |
+
+**`cmd/consumer`** wires **`KafkaResultProducer`** today; counters and histograms land when execution → **`PublishResult`** is connected and exported to logs or Prometheus.
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

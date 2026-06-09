@@ -224,15 +224,17 @@ A **`retryable_failure`** **`ExecutionResult`** means the job attempt failed, bu
 **Checks:**
 
 - Confirm worker process was up when the job was dispatched
-- List **`kernelq.jobs.results`** and inspect for a record with matching **`job_id`** (when publishing is wired)
+- Inspect **`kernelq.jobs.results`** for a record with matching **`job_id`** (once execution publishing is wired)
 - Check worker logs and shutdown stats; compare with **`kernelq.jobs.dispatch`** / DLQ traffic
+- **If result publishing fails later** — confirm **`kernelq.jobs.results`** exists (`./infra/kafka/create-topics.sh`) and **Kafka producer connectivity** from the worker host (`localhost:9092`)
 
 **Current status:**
 
-- **`WorkerResultEvent`** schema exists in Go (`worker/internal/worker/result_event.go`) with tests
-- **`ResultProducer`** boundary exists (`worker/internal/worker/result_producer.go`); tests use in-memory **`RecordingResultProducer`**
-- **Real Kafka producer implementation is not wired yet**—**`cmd/consumer`** does not publish to **`kernelq.jobs.results`**
-- **If result events are missing today, that is expected** until Kafka result publishing is implemented; no automatic Postgres update from the results topic yet
+- **Result event schema exists** — **`WorkerResultEvent`** in `worker/internal/worker/result_event.go` with tests
+- **`KafkaResultProducer` exists** — real broker client in `worker/internal/worker/kafka_result_producer.go`; **`cmd/consumer`** creates it at startup
+- **Full execution → result publishing will be wired next** — producer is ready; handler/executor path does not call **`PublishResult`** yet
+- **Python result consumer** not built — no automatic Postgres update from **`kernelq.jobs.results`** today
+- **Missing result events are still expected** until execution publishing and the control-plane consumer land
 
 **Follow-up (when result pipeline lands):**
 
