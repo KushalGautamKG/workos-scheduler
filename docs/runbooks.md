@@ -224,17 +224,20 @@ A **`retryable_failure`** **`ExecutionResult`** means the job attempt failed, bu
 **Checks:**
 
 - Confirm worker process was up when the job was dispatched
-- Inspect **`kernelq.jobs.results`** for a record with matching **`job_id`** (once execution publishing is wired)
-- Check worker logs and shutdown stats; compare with **`kernelq.jobs.dispatch`** / DLQ traffic
-- **If result publishing fails later** — confirm **`kernelq.jobs.results`** exists (`./infra/kafka/create-topics.sh`) and **Kafka producer connectivity** from the worker host (`localhost:9092`)
+- Inspect **`kernelq.jobs.results`** for a record with matching **`job_id`**
+- If result events are missing, check:
+  - **`ResultProducer` wiring** — **`cmd/consumer`** passes **`KafkaResultProducer`** into **`DispatchEventHandler`**
+  - **`kernelq.jobs.results` topic exists** — `./infra/kafka/create-topics.sh`
+  - **Kafka producer connectivity** — worker can reach broker (`localhost:9092`)
+  - **Handler publish errors** — **`PublishResult`** failure returns error from **`Handle`** (may increment **`message_errors`**)
+- Compare worker logs and shutdown stats with **`kernelq.jobs.dispatch`** / DLQ traffic
 
 **Current status:**
 
-- **Result event schema exists** — **`WorkerResultEvent`** in `worker/internal/worker/result_event.go` with tests
-- **`KafkaResultProducer` exists** — real broker client in `worker/internal/worker/kafka_result_producer.go`; **`cmd/consumer`** creates it at startup
-- **Full execution → result publishing will be wired next** — producer is ready; handler/executor path does not call **`PublishResult`** yet
+- **Worker handler publishes result events** when **`ResultProducer`** is configured (**`DispatchEventHandler`** → **`PublishResult`** after **`Execute`**)
+- **`KafkaResultProducer`** wired in **`cmd/consumer`** with **`WorkerName: kernelq-go-worker`**
 - **Python result consumer** not built — no automatic Postgres update from **`kernelq.jobs.results`** today
-- **Missing result events are still expected** until execution publishing and the control-plane consumer land
+- Jobs may stay **`dispatched`** / **`running`** in Postgres even when results publish successfully until the control-plane consumer lands
 
 **Follow-up (when result pipeline lands):**
 

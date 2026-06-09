@@ -111,7 +111,7 @@ go test ./...
 
 Workers now have a **`ResultProducer`** interface (`PublishResult(event WorkerResultEvent) error`) in `internal/worker/result_producer.go`.
 
-- It will publish validated **`WorkerResultEvent`** records to **`kernelq.jobs.results`** once a real Kafka producer is wired.
+- It publishes validated **`WorkerResultEvent`** records to **`kernelq.jobs.results`** when wired on **`DispatchEventHandler`**.
 - **`RecordingResultProducer`** is an **in-memory** implementation for tests—it validates and appends events to **`Published`** without a broker.
 - **`KafkaResultProducer`** publishes to the broker (see **Kafka Result Producer**).
 
@@ -125,7 +125,21 @@ go test ./...
 
 - **`PublishResult`** validates, encodes JSON, produces with **`JobID`** as the Kafka key, and flushes.
 - **Tests** use a **fake `KafkaProducerClient`** (no real broker).
-- **`cmd/consumer`** creates the real result producer at **`localhost:9092`**; full **execution → PublishResult** wiring comes next.
+- **`cmd/consumer`** creates the real result producer at **`localhost:9092`** and passes it to **`DispatchEventHandler`** (see **Execution Result Publishing**).
+
+```bash
+go test ./...
+go run ./cmd/consumer
+```
+
+## Execution Result Publishing
+
+**`DispatchEventHandler`** can now publish **`WorkerResultEvent`** after **`Executor.Execute`** when a **`ResultProducer`** is configured.
+
+- After a valid **`ExecutionResult`**, the handler calls **`NewWorkerResultEvent`** and **`PublishResult`**.
+- **`ResultProducer`** is **optional**—tests use **`RecordingResultProducer`** or omit it entirely.
+- **`cmd/consumer`** wires **`KafkaResultProducer`** with **`WorkerName: kernelq-go-worker`**.
+- **Python control-plane result consumer** comes later (read **`kernelq.jobs.results`**, update Postgres).
 
 ```bash
 go test ./...

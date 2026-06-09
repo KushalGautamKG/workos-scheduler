@@ -40,6 +40,23 @@ func validDispatchEventForHandler() DispatchEvent {
 	}
 }
 
+// fakeResultProducer records published events and can simulate publish failures.
+type fakeResultProducer struct {
+	Published []WorkerResultEvent
+	err       error
+}
+
+func (producer *fakeResultProducer) PublishResult(event WorkerResultEvent) error {
+	if producer.err != nil {
+		return producer.err
+	}
+	if err := event.Validate(); err != nil {
+		return err
+	}
+	producer.Published = append(producer.Published, event)
+	return nil
+}
+
 func TestHandleSuccessResultFlowsThroughHandler(t *testing.T) {
 	executor := &fakeExecutor{result: SuccessResult()}
 	handler := DispatchEventHandler{Executor: executor}
@@ -159,5 +176,147 @@ func TestHandleInvalidExecutionResultReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "status") {
 		t.Fatalf("expected status validation error, got: %v", err)
+	}
+}
+
+func TestHandleSuccessfulExecutionPublishesWorkerResultEvent(t *testing.T) {
+	producer := &RecordingResultProducer{}
+	handler := DispatchEventHandler{
+		Executor:       &fakeExecutor{result: SuccessResult()},
+		ResultProducer: producer,
+	}
+	event := validDispatchEventForHandler()
+
+	result, err := handler.Handle(event)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if result.Status != ExecutionSucceeded {
+		t.Fatalf("expected status %q, got %q", ExecutionSucceeded, result.Status)
+	}
+	if len(producer.Published) != 1 {
+		t.Fatalf("expected 1 published result event, got %d", len(producer.Published))
+	}
+	if producer.Published[0].JobID != event.JobID {
+		t.Fatalf("expected job_id %q, got %q", event.JobID, producer.Published[0].JobID)
+	}
+	if producer.Published[0].Status != ExecutionSucceeded {
+		t.Fatalf("expected published status %q, got %q", ExecutionSucceeded, producer.Published[0].Status)
+	}
+}
+
+func TestHandleRetryableFailurePublishesWorkerResultEvent(t *testing.T) {
+	expected := RetryableFailureResult("dependency timeout")
+	producer := &RecordingResultProducer{}
+	handler := DispatchEventHandler{
+		Executor:       &fakeExecutor{result: expected},
+		ResultProducer: producer,
+	}
+
+	_, err := handler.Handle(validDispatchEventForHandler())
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if len(producer.Published) != 1 {
+		t.Fatalf("expected 1 published result event, got %d", len(producer.Published))
+	}
+	if producer.Published[0].Status != ExecutionRetryableFailure {
+		t.Fatalf("expected status %q, got %q", ExecutionRetryableFailure, producer.Published[0].Status)
+	}
+	if producer.Published[0].Message != "dependency timeout" {
+		t.Fatalf("expected message %q, got %q", "dependency timeout", producer.Published[0].Message)
+	}
+}
+
+func TestHandleTerminalFailurePublishesWorkerResultEvent(t *testing.T) {
+	expected := TerminalFailureResult("max retries exhausted")
+	producer := &RecordingResultProducer{}
+	handler := DispatchEventHandler{
+		Executor:       &fakeExecutor{result: expected},
+		ResultProducer: producer,
+	}
+
+	_, err := handler.Handle(validDispatchEventForHandler())
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if len(producer.Published) != 1 {
+		t.Fatalf("expected 1 published result event, got %d", len(producer.Published))
+	}
+	if producer.Published[0].Status != ExecutionTerminalFailure {
+		t.Fatalf("expected status %q, got %q", ExecutionTerminalFailure, producer.Published[0].Status)
+	}
+}
+
+func TestHandlePublishesWorkerResultEventWithCustomWorkerName(t *testing.T) {
+	producer := &RecordingResultProducer{}
+	handler := DispatchEventHandler{
+		Executor:       &fakeExecutor{result: SuccessResult()},
+		ResultProducer: producer,
+		WorkerName:     "custom-worker-1",
+	}
+
+	_, err := handler.Handle(validDispatchEventForHandler())
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if producer.Published[0].Worker != "custom-worker-1" {
+		t.Fatalf("expected worker %q, got %q", "custom-worker-1", producer.Published[0].Worker)
+	}
+}
+
+func TestHandleDefaultsBlankWorkerNameToKernelqGoWorker(t *testing.T) {
+	producer := &RecordingResultProducer{}
+	handler := DispatchEventHandler{
+		Executor:       &fakeExecutor{result: SuccessResult()},
+		ResultProducer: producer,
+		WorkerName:     "   ",
+	}
+
+	_, err := handler.Handle(validDispatchEventForHandler())
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if producer.Published[0].Worker != workerIdentity {
+		t.Fatalf("expected worker %q, got %q", workerIdentity, producer.Published[0].Worker)
+	}
+}
+
+func TestHandleReturnsResultProducerPublishError(t *testing.T) {
+	expectedErr := errors.New("simulated result publish failure")
+	expectedResult := SuccessResult()
+	producer := &fakeResultProducer{err: expectedErr}
+	handler := DispatchEventHandler{
+		Executor:       &fakeExecutor{result: expectedResult},
+		ResultProducer: producer,
+	}
+
+	result, err := handler.Handle(validDispatchEventForHandler())
+	if err == nil {
+		t.Fatal("expected publish error, got nil")
+	}
+	if !errors.Is(err, expectedErr) {
+		t.Fatalf("expected %v, got %v", expectedErr, err)
+	}
+	if result.Status != ExecutionSucceeded {
+		t.Fatalf("expected result status %q, got %q", ExecutionSucceeded, result.Status)
+	}
+	if len(producer.Published) != 0 {
+		t.Fatalf("expected no published events, got %d", len(producer.Published))
+	}
+}
+
+func TestHandleReturnsExecutionResultWhenResultProducerNil(t *testing.T) {
+	handler := DispatchEventHandler{
+		Executor:       &fakeExecutor{result: SuccessResult()},
+		ResultProducer: nil,
+	}
+
+	result, err := handler.Handle(validDispatchEventForHandler())
+	if err != nil {
+		t.Fatalf("expected success without producer, got error: %v", err)
+	}
+	if result.Status != ExecutionSucceeded {
+		t.Fatalf("expected status %q, got %q", ExecutionSucceeded, result.Status)
 	}
 }

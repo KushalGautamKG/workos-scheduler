@@ -5,16 +5,21 @@
 // and calls an Executor.
 package worker
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // DispatchEventHandler implements DispatchHandler by mapping events to Tasks
 // and delegating to an Executor.
 //
 // This sits between "message is valid" and "job actually runs":
 //
-//	DispatchEvent → Task → Executor.Execute → ExecutionResult
+//	DispatchEvent → Task → Executor.Execute → ExecutionResult → (optional) WorkerResultEvent
 type DispatchEventHandler struct {
-	Executor Executor
+	Executor       Executor
+	ResultProducer ResultProducer // optional: publish outcomes to kernelq.jobs.results
+	WorkerName     string         // optional: worker identity on result events
 }
 
 // Handle converts one dispatch event into a Task and runs it.
@@ -22,7 +27,7 @@ type DispatchEventHandler struct {
 // Returns:
 //   - ExecutionResult — structured job outcome when execution completes normally
 //     (success, retryable failure, or terminal failure)
-//   - error — configuration, validation, infrastructure, or invalid-outcome errors
+//   - error — configuration, validation, infrastructure, publish, or invalid-outcome errors
 //
 // DispatchEvent was already validated at parse time (ParseDispatchEvent).
 // We validate Task again as a safety check before execution.
@@ -58,6 +63,22 @@ func (handler DispatchEventHandler) Handle(event DispatchEvent) (ExecutionResult
 	// Executors must return one of the known ExecutionStatus constants.
 	if err := result.Validate(); err != nil {
 		return ExecutionResult{}, err
+	}
+
+	// Step 6: optionally publish a WorkerResultEvent for the control plane.
+	// Tests and early wiring can leave ResultProducer nil and skip this step.
+	if handler.ResultProducer != nil {
+		workerName := handler.WorkerName
+		if strings.TrimSpace(workerName) == "" {
+			workerName = workerIdentity
+		}
+
+		resultEvent := NewWorkerResultEvent(event.JobID, result, workerName)
+		if err := handler.ResultProducer.PublishResult(resultEvent); err != nil {
+			// Execution succeeded from the executor's perspective, but we could
+			// not hand the outcome to Kafka—return the result plus the error.
+			return result, err
+		}
 	}
 
 	return result, nil

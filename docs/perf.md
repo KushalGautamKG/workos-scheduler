@@ -415,16 +415,17 @@ We have **not** measured these in production or defined numeric thresholds yet.
 
 ## Worker Result Publishing Metrics Planned
 
-When workers publish **`WorkerResultEvent`** JSON to **`kernelq.jobs.results`** via **`KafkaResultProducer`**, we will track result handoff alongside dispatch and DLQ metrics. **No numeric measurements, dashboards, or SLOs exist yet.**
+**`DispatchEventHandler`** now calls **`PublishResult`** after **`Executor.Execute`** when **`ResultProducer`** is wired. We will track result handoff alongside dispatch and DLQ metrics. **No numeric measurements, dashboards, or SLOs exist yet.**
 
 | Metric | What it means | Why it matters |
 |--------|---------------|----------------|
-| `result_publish_count` | **`WorkerResultEvent`** successfully published to **`kernelq.jobs.results`** | Confirms execution outcomes are reaching the control-plane feedback lane |
-| `result_publish_error_count` | Result publish attempts that failed (validate, JSON, produce, flush) | **Target should be 0**—non-zero means Postgres may never learn the job outcome |
-| `result_publish_latency` | Time from **`PublishResult`** call to broker flush completion | Surfaces slow or stuck result producer behavior |
-| `dispatch_to_result_latency` | Time from dispatch consume/handoff to result publish | End-to-end worker turnaround; pairs with queue wait and processing latency |
+| `handler_result_publish_success_total` | **`WorkerResultEvent`** successfully published from the handler to **`kernelq.jobs.results`** | Confirms execution outcomes reached the control-plane feedback lane |
+| `handler_result_publish_error_total` | Handler **`PublishResult`** failures (validate, JSON, produce, flush) | **Target should be 0**—non-zero means Postgres may never learn the job outcome |
+| `execution_to_result_publish_latency` | Time from **`Execute`** completion to successful **`PublishResult`** | Surfaces delay or stalls between outcome and broker handoff |
+| `result_publish_latency` | Time inside **`PublishResult`** (produce + flush) | Kafka producer slowness isolated from executor time |
+| `dispatch_to_result_latency` | Time from dispatch consume to result publish | End-to-end worker turnaround |
 
-**`cmd/consumer`** wires **`KafkaResultProducer`** today; counters and histograms land when execution → **`PublishResult`** is connected and exported to logs or Prometheus.
+Prometheus names may align with **`handler_result_publish_success_total`** / **`handler_result_publish_error_total`** above; counters and histograms land when **`cmd/consumer`** exports stats from the handler path.
 
 ## Load Testing Methodology
 
