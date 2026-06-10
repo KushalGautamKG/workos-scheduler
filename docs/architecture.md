@@ -735,6 +735,43 @@ Postgres job state updated
 
 **Interview sound bite:** *“Consume dispatch, Task, Execute, WorkerResultEvent, PublishResult to kernelq.jobs.results—Python consumer closes the loop in Postgres later.”*
 
+## Worker Result Smoke Test
+
+KernelQ can now **verify the worker-side Kafka loop** on your laptop—without the Python API or Postgres in the path.
+
+**What you are proving:** a **valid `DispatchEvent`** on **`kernelq.jobs.dispatch`** is **consumed by the Go worker**, executed (logging executor today), and the handler **publishes a `WorkerResultEvent`** to **`kernelq.jobs.results`** with the same **`job_id`**.
+
+**What you are not proving:** **Postgres updates** or **Python control-plane result consumption**—that is **future work**. The smoke test stops at the results topic; rows in Postgres stay unchanged.
+
+**How it works (plain English):**
+
+1. Start **local Kafka** and create topics.
+2. Build and run **`cmd/consumer`** in the background.
+3. Produce one valid dispatch JSON (unique **`job_id`**, e.g. `day47-smoke-…`).
+4. Read **`kernelq.jobs.results`** and confirm a result record with that **`job_id`**.
+
+```
+valid DispatchEvent  →  kernelq.jobs.dispatch
+                              ↓
+                       Go worker (consume + execute)
+                              ↓
+                       WorkerResultEvent  →  kernelq.jobs.results
+                              ↓
+                       (future) Python result consumer  →  Postgres
+```
+
+**Why a script instead of only unit tests:** Go tests use **fake producers and in-memory messages** to stay fast. **`worker/scripts/smoke_worker_result.sh`** uses **real Kafka** so you catch broker wiring mistakes (topic names, bootstrap address, consumer group) that mocks miss.
+
+**Run from the repository root:**
+
+```bash
+./worker/scripts/smoke_worker_result.sh
+```
+
+**Step-by-step commands:** see **Worker Result Smoke Test** in `docs/deploy.md` and **`worker/README.md`**.
+
+**Interview sound bite:** *“Smoke script proves dispatch → Go worker → kernelq.jobs.results with matching job_id; Python result consumer and Postgres are the next loop to close.”*
+
 ## Worker Kafka Consumption
 
 The **Go worker plane** now **owns Kafka consumption** on **`kernelq.jobs.dispatch`**. After the Python control plane claims jobs and publishes **`DispatchEvent`** JSON, Go workers pull records from the broker and route them into the existing processing stack.

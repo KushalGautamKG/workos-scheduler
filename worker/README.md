@@ -146,6 +146,16 @@ go test ./...
 go run ./cmd/consumer
 ```
 
+## Worker Result Smoke Test
+
+**`worker/scripts/smoke_worker_result.sh`** verifies the Kafka path from **`kernelq.jobs.dispatch`** to **`kernelq.jobs.results`**. Run it from the **repository root** (requires Docker, Go, and local Kafka on `localhost:9092`).
+
+The script starts Kafka, builds and runs the worker, produces a valid **`DispatchEvent`**, consumes from the results topic, and checks for a matching **`job_id`**. It does **not** update Postgres—that requires the Python **result consumer** (not built yet).
+
+```bash
+./worker/scripts/smoke_worker_result.sh
+```
+
 ## Kafka Consumer
 
 The worker now includes **`KafkaConsumer`** in `internal/worker/kafka_consumer.go`. It adapts confluent-kafka-go records into our in-memory **`Message`** type and passes them to **`ConsumerRunner`**.

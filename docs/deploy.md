@@ -394,6 +394,16 @@ go test ./...
 go run ./cmd/consumer
 ```
 
+## Worker Result Smoke Test
+
+From the **repository root**, this script validates **`kernelq.jobs.dispatch` → Go worker → `kernelq.jobs.results`** using **real local Kafka**. It does **not** require the Python API and does **not** update Postgres yet.
+
+```bash
+./worker/scripts/smoke_worker_result.sh
+```
+
+The script starts Kafka, builds and runs the worker, produces a valid dispatch event, consumes from the results topic, and checks for a matching **`job_id`**. See **`worker/README.md`** for details.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

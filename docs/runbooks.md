@@ -223,6 +223,12 @@ A **`retryable_failure`** **`ExecutionResult`** means the job attempt failed, bu
 
 **Checks:**
 
+- Run **`./worker/scripts/smoke_worker_result.sh`** (from repo root) to verify worker-side result publishing end to end
+- If the smoke test fails, inspect:
+  - **Worker logs** — `/tmp/kernelq-worker-smoke.log` (script output) or your running consumer process
+  - **`kernelq.jobs.dispatch`** — dispatch message present and valid JSON
+  - **`kernelq.jobs.results`** — result event with matching **`job_id`**
+  - **Kafka connectivity** — broker up (`docker compose up -d kafka zookeeper`), topics exist (`./infra/kafka/create-topics.sh`), worker reaches **`localhost:9092`**
 - Confirm worker process was up when the job was dispatched
 - Inspect **`kernelq.jobs.results`** for a record with matching **`job_id`**
 - If result events are missing, check:
