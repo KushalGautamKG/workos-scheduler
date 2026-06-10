@@ -139,6 +139,12 @@ KernelQ has a Python **`KafkaJobProducer`** wrapper in **`kernelq/kafka_producer
 
 **`scripts/run_scheduler_tick_once.py`** runs **one** scheduler tick with a **real `KafkaJobProducer`**: it claims **one** **`queued`** job from Postgres and publishes a **`DispatchEvent`** to **`kernelq.jobs.dispatch`**. You need a queued job already (API or SQL)—the script does not create one. Use the **Kafka CLI consumer** to read the message locally; **Go workers** will consume the topic later. Full steps: **`docs/deploy.md`** (Manual Scheduler-to-Kafka Smoke Test).
 
+## Worker Result Event Contract
+
+The Python control plane now includes a **`WorkerResultEvent`** model (`kernelq/result_event.py`). It **parses JSON messages** from **`kernelq.jobs.results`**—the topic where Go workers report execution outcomes.
+
+Before any future **Postgres state update**, the model **validates** `event_type`, `job_id`, `status`, and `worker` (allowed statuses: `succeeded`, `retryable_failure`, `terminal_failure`). **Real Kafka result consumption** (subscribe, process, update job state) comes in a later step.
+
 ## Responsibilities
 
 The control plane is responsible for:

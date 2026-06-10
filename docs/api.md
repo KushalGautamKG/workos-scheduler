@@ -290,12 +290,11 @@ When a worker finishes a job attempt, it will publish **WorkerResultEvent JSON**
 }
 ```
 
-- **Internal Kafka message**, not a REST API response.
-- **Published by Go workers** after execution (`worker/internal/worker/result_event.go`).
-- **`ResultProducer`** is the worker-side publishing boundary (`worker/internal/worker/result_producer.go`); tests use in-memory **`RecordingResultProducer`** today.
-- **Real Kafka publishing to `kernelq.jobs.results`** is planned next (schema and interface exist; broker wiring does not yet).
-- **`status`** uses the same values as **`ExecutionResult`**: `succeeded`, `retryable_failure`, `terminal_failure`.
-- **Future Python control plane result consumer** will read this topic and **update durable job state** in Postgres.
+- **Internal Kafka contract only** — not a REST API response or public HTTP endpoint.
+- **Published by Go workers** after execution (`worker/internal/worker/result_event.go`); **`KafkaResultProducer`** writes to **`kernelq.jobs.results`** when the consumer runs with a broker.
+- **Python control plane** has a matching parser/validator in **`control_plane/kernelq/result_event.py`** (`parse_worker_result_event`, **`WorkerResultEvent.validate()`**).
+- **`status`** must be one of **`succeeded`**, **`retryable_failure`**, or **`terminal_failure`** — validated on both sides **before** any future Postgres state update.
+- **Kafka result consumption** (subscribe, apply transitions in Postgres) is still future work; the schema and cross-language validation exist today.
 
 ## Future Worker Execution Results
 

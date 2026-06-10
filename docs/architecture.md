@@ -772,6 +772,18 @@ valid DispatchEvent  →  kernelq.jobs.dispatch
 
 **Interview sound bite:** *“Smoke script proves dispatch → Go worker → kernelq.jobs.results with matching job_id; Python result consumer and Postgres are the next loop to close.”*
 
+## Python Result Consumer Contract
+
+**Go workers publish `WorkerResultEvent` messages to `kernelq.jobs.results`** when a job attempt finishes (`event_type`: **`job.result`**, plus **`job_id`**, **`status`**, **`message`**, **`worker`**).
+
+The **Python control plane** now has a **matching parser and validator** in **`control_plane/kernelq/result_event.py`**: **`parse_worker_result_event`** decodes JSON and **`WorkerResultEvent.validate()`** checks required fields and allowed statuses (`succeeded`, `retryable_failure`, `terminal_failure`).
+
+Together with the Go **`WorkerResultEvent`** in **`worker/internal/worker/result_event.go`**, this **completes the cross-language return contract**—the same JSON shape on the wire, validated on both sides before anyone trusts it.
+
+**What is not wired yet:** a **Kafka result consumer** that subscribes to **`kernelq.jobs.results`**, parses events, and **updates Postgres job state** (for example **`succeeded` → SUCCEEDED**, retryable failures toward **RETRY_SCHEDULED**, terminal failures toward **DEAD_LETTERED**). That consumer is the next step to **close the loop** opened by dispatch on **`kernelq.jobs.dispatch`**.
+
+**Interview sound bite:** *“Go publishes WorkerResultEvent to kernelq.jobs.results; Python parses and validates the same contract today; tomorrow’s consumer turns status into Postgres transitions.”*
+
 ## Worker Kafka Consumption
 
 The **Go worker plane** now **owns Kafka consumption** on **`kernelq.jobs.dispatch`**. After the Python control plane claims jobs and publishes **`DispatchEvent`** JSON, Go workers pull records from the broker and route them into the existing processing stack.
