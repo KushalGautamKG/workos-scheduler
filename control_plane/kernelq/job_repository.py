@@ -138,6 +138,28 @@ class JobRepository:
         self._conn.commit()
         return _row_to_record(row)
 
+    def update_job_state_from_worker_result(self, job_id: str, new_state: str) -> bool:
+        """
+        Set ``state`` from a worker result event (no retry logic here).
+
+        The result handler decides *which* ``new_state`` to apply (for example
+        ``succeeded`` or ``failed``). This method only writes that state and
+        bumps ``updated_at``. Returns True if the job row existed and was
+        updated, False if ``job_id`` was not found.
+        """
+        sql = """
+            UPDATE jobs
+            SET state = %(new_state)s, updated_at = NOW()
+            WHERE job_id = %(job_id)s
+        """
+
+        with self._conn.cursor() as cur:
+            cur.execute(sql, {"job_id": job_id, "new_state": new_state})
+            updated = cur.rowcount > 0
+
+        self._conn.commit()
+        return updated
+
     def delete_job(self, job_id: str) -> bool:
         """Delete a job by id. Returns True if a row was removed (handy for tests)."""
         sql = "DELETE FROM jobs WHERE job_id = %(job_id)s"

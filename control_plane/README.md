@@ -151,6 +151,16 @@ KernelQ’s control plane now includes **`ResultConsumerRunner`** (`kernelq/resu
 
 Tests use a **fake handler** so parsing and dispatch can be checked without a broker. **Real Kafka subscription** and **Postgres job-state updates** from result events come later.
 
+## Result-to-State Handler
+
+KernelQ’s control plane now includes **`ResultStateHandler`** (`kernelq/result_handler.py`). It maps validated **`WorkerResultEvent`** statuses to **`jobs.state`** in Postgres via **`JobRepository.update_job_state_from_worker_result`**.
+
+- **`succeeded`** → **`SUCCEEDED`**
+- **`retryable_failure`** → **`FAILED`** (for now)
+- **`terminal_failure`** → **`FAILED`** (for now)
+
+**Retry scheduling** (`RETRY_SCHEDULED`, `DEAD_LETTERED`, backoff) is future work.
+
 ## Responsibilities
 
 The control plane is responsible for:

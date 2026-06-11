@@ -244,10 +244,24 @@ A **`retryable_failure`** **`ExecutionResult`** means the job attempt failed, bu
 - **`KafkaResultProducer`** wired in **`cmd/consumer`** with **`WorkerName: kernelq-go-worker`**
 - **Python result event parser exists** — **`control_plane/kernelq/result_event.py`** validates **`WorkerResultEvent`** JSON (including allowed **`status`** values)
 - **`ResultConsumerRunner` exists** (`control_plane/kernelq/result_consumer.py`) — parses raw result bytes and delegates to a **`ResultHandler`**, but **real Kafka polling is not wired yet**
-- **If result events exist in Kafka but Postgres does not change, that is currently expected**; jobs may stay **`dispatched`** / **`running`** even when publishing succeeds
-- **Next step:** implement **result-to-state handling** (handler maps **`status`** → Postgres transitions, then wire Kafka subscribe/poll on **`kernelq.jobs.results`**)
+- **`ResultStateHandler` exists** (`control_plane/kernelq/result_handler.py`) — maps **`status`** → **`jobs.state`** via **`JobRepository.update_job_state_from_worker_result`**
+- **If result events exist in Kafka but Postgres does not change, that is still expected** until the result consumer is subscribed to **`kernelq.jobs.results`** and wired to **`ResultStateHandler`**
+- **`retryable_failure`** and **`terminal_failure`** both map to **`failed`** (**FAILED**) today — **retry scheduling** (`RETRY_SCHEDULED`, **`DEAD_LETTERED`**) is not implemented yet
 
 **Follow-up (when result pipeline lands):**
 
 - Alert on jobs stuck in **`dispatched`** / **`running`** past SLA
 - Monitor result-topic lag and consumer errors alongside dispatch lag
+
+## Result Event Consumed but Job State Unchanged
+
+Use this when a **`WorkerResultEvent`** was parsed/handled but **`jobs.state`** in Postgres did not move.
+
+**Check:**
+
+- **`job_id` exists in Postgres** — **`ResultStateHandler`** raises if **`update_job_state_from_worker_result`** returns **`False`**
+- **Repository update returned `True`** — confirm the row was found and updated (not a silent no-op)
+- **`status` mapping is supported** — today: **`succeeded`** → **`succeeded`**; **`retryable_failure`** / **`terminal_failure`** → **`failed`**
+- **Result consumer is wired to the handler** — **`ResultConsumerRunner`** must use **`ResultStateHandler(repository)`**, not a no-op fake (Kafka subscribe/poll still future work for production)
+
+**Note:** **`retryable_failure`** currently lands on **FAILED** only; do not expect **`retry_scheduled`** or automatic re-dispatch until retry scheduling is implemented.

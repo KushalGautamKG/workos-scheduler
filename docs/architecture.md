@@ -808,6 +808,35 @@ WorkerResultEvent (validated)
 
 **Interview sound bite:** *“ResultConsumerRunner parses and validates; ResultHandler owns state—Kafka transport stays outside so tests and Postgres logic evolve independently.”*
 
+## Result-to-State Handling
+
+KernelQ now **maps worker result events into durable job state** in Postgres. **`ResultStateHandler`** (`control_plane/kernelq/result_handler.py`) takes a validated **`WorkerResultEvent`** and writes **`jobs.state`** through **`JobRepository.update_job_state_from_worker_result`**.
+
+**Who owns what:**
+
+- **Workers (Go)** execute jobs and **report outcomes on Kafka** (`kernelq.jobs.results`). They **do not** write lifecycle state to Postgres directly.
+- **Control plane (Python)** owns **durable job state**—the system of record for orchestration, retries, and API visibility.
+
+**Current mapping (simple first step):**
+
+| Worker `status` | Postgres `jobs.state` (today) |
+|-----------------|-------------------------------|
+| `succeeded` | `succeeded` (**SUCCEEDED**) |
+| `retryable_failure` | `failed` (**FAILED**) |
+| `terminal_failure` | `failed` (**FAILED**) |
+
+**Retry scheduling comes later:** choosing **`RETRY_SCHEDULED`** vs **`DEAD_LETTERED`**, incrementing **`retry_count`**, backoff, and re-queue/re-publish are **not** implemented in the handler yet—both failure statuses land on **FAILED** for now so the loop is testable end-to-end before policy grows.
+
+**End-to-end path (when wired):**
+
+```
+kernelq.jobs.results → ResultConsumerRunner → ResultStateHandler → Postgres jobs.state
+```
+
+**Real Kafka polling** on the results topic is still future work; today the **handler + repository** path is tested with fakes and integration tests.
+
+**Interview sound bite:** *“Workers publish outcomes; control plane owns Postgres—ResultStateHandler maps succeeded to SUCCEEDED and failures to FAILED today; RETRY_SCHEDULED and DLQ policy come next.”*
+
 ## Worker Kafka Consumption
 
 The **Go worker plane** now **owns Kafka consumption** on **`kernelq.jobs.dispatch`**. After the Python control plane claims jobs and publishes **`DispatchEvent`** JSON, Go workers pull records from the broker and route them into the existing processing stack.

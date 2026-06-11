@@ -147,6 +147,41 @@ def test_update_job_state_changes_state() -> None:
             repo.delete_job(job_id)
 
 
+def test_update_job_state_from_worker_result_succeeds_and_persists() -> None:
+    job_id = _unique_job_id("test_jr_worker_result_ok")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        try:
+            repo.create_job(job_id, "tenant-a", 1, JobState.RUNNING.value)
+
+            updated = repo.update_job_state_from_worker_result(
+                job_id,
+                JobState.SUCCEEDED.value,
+            )
+
+            assert updated is True
+
+            loaded = repo.get_job(job_id)
+            assert loaded is not None
+            assert loaded.state == JobState.SUCCEEDED.value
+        finally:
+            repo.delete_job(job_id)
+
+
+def test_update_job_state_from_worker_result_missing_returns_false() -> None:
+    missing_id = _unique_job_id("test_jr_worker_result_missing")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        assert (
+            repo.update_job_state_from_worker_result(
+                missing_id,
+                JobState.SUCCEEDED.value,
+            )
+            is False
+        )
+        assert repo.get_job(missing_id) is None
+
+
 def test_delete_job_removes_job() -> None:
     job_id = _unique_job_id("test_jr_delete")
     with connect() as conn:

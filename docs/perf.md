@@ -441,6 +441,19 @@ The Python control plane has a **`ResultConsumerRunner`** skeleton (`control_pla
 
 **No numeric measurements, dashboards, or SLOs exist yet.**
 
+## Result-to-State Update Metrics Planned
+
+**`ResultStateHandler`** (`control_plane/kernelq/result_handler.py`) can write **`jobs.state`** from worker results today; **Kafka subscribe/poll** on **`kernelq.jobs.results`** is still future work. When the full path is live, we plan to track:
+
+| Metric | What it means |
+|--------|---------------|
+| `result_state_updates_total` | Successful Postgres state writes from result events (by target state) |
+| `result_state_update_errors_total` | Handler/repository failures (DB errors, unexpected exceptions) |
+| `result_to_state_latency` | Time from result event handling start to committed Postgres update |
+| `missing_job_result_count` | Results for **`job_id`** not found in Postgres (**`update_job_state_from_worker_result`** returned **`False`**) |
+
+**No numeric measurements, dashboards, or SLOs exist yet.**
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.
