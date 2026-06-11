@@ -404,6 +404,20 @@ From the **repository root**, this script validates **`kernelq.jobs.dispatch` �
 
 The script starts Kafka, builds and runs the worker, produces a valid dispatch event, consumes from the results topic, and checks for a matching **`job_id`**. See **`worker/README.md`** for details.
 
+## Consuming One Worker Result
+
+From the **repository root**, the control plane can **poll one message** from **`kernelq.jobs.results`** and **update Postgres** if the **`job_id`** exists:
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/consume_result_once.py
+```
+
+**Requires:** **Kafka** and **Postgres** running, topics created (`./infra/kafka/create-topics.sh`), and **at least one `WorkerResultEvent`** on **`kernelq.jobs.results`** (for example after **`./worker/scripts/smoke_worker_result.sh`**). The matching job row must exist in Postgres for a state change.
+
+**What it does:** subscribes to the results topic, **polls once** (10s timeout), parses the event, and runs **`ResultStateHandler`** (`succeeded` → **`succeeded`**, failures → **`failed`** today). Prints **`poll_result: processed_message=true`** or **`false`**.
+
+**Not included yet:** a **long-running result consumer** loop (continuous poll, graceful shutdown).
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

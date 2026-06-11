@@ -161,6 +161,12 @@ KernelQ’s control plane now includes **`ResultStateHandler`** (`kernelq/result
 
 **Retry scheduling** (`RETRY_SCHEDULED`, `DEAD_LETTERED`, backoff) is future work.
 
+## Kafka Result Consumer Skeleton
+
+KernelQ’s control plane now includes **`KafkaResultConsumer`** (`kernelq/kafka_result_consumer.py`) for **`kernelq.jobs.results`**. It **polls one result message** at a time and passes bytes through **`ResultConsumerRunner`** → **`ResultStateHandler`**, which can **update Postgres `jobs.state`**.
+
+Manual try: **`control_plane/scripts/consume_result_once.py`**. A **long-running result consumer loop** (continuous poll, graceful shutdown) comes later.
+
 ## Responsibilities
 
 The control plane is responsible for:

@@ -830,12 +830,34 @@ KernelQ now **maps worker result events into durable job state** in Postgres. **
 **End-to-end path (when wired):**
 
 ```
-kernelq.jobs.results → ResultConsumerRunner → ResultStateHandler → Postgres jobs.state
+kernelq.jobs.results → KafkaResultConsumer → ResultConsumerRunner → ResultStateHandler → Postgres jobs.state
 ```
 
-**Real Kafka polling** on the results topic is still future work; today the **handler + repository** path is tested with fakes and integration tests.
-
 **Interview sound bite:** *“Workers publish outcomes; control plane owns Postgres—ResultStateHandler maps succeeded to SUCCEEDED and failures to FAILED today; RETRY_SCHEDULED and DLQ policy come next.”*
+
+## Kafka Result Consumer Skeleton
+
+The **Python control plane** can now **consume from `kernelq.jobs.results`** using **`KafkaResultConsumer`** (`control_plane/kernelq/kafka_result_consumer.py`). This connects **worker result events** on Kafka to **durable state update logic** in Postgres.
+
+**Layered flow (one record):**
+
+```
+kernelq.jobs.results (confluent_kafka.Message)
+    ↓  KafkaResultConsumer.process_kafka_message / poll_once
+ResultMessage (key + JSON bytes)
+    ↓  ResultConsumerRunner.process_message
+WorkerResultEvent (validated)
+    ↓  ResultStateHandler.handle
+Postgres jobs.state
+```
+
+**Why the layers stay separate:** **`KafkaResultConsumer`** owns **broker transport** (subscribe, poll, close). **`ResultConsumerRunner`** owns **parse + validate**. **`ResultStateHandler`** owns **Postgres updates**. Tests inject **fake Kafka messages** so each layer can be verified without a running broker.
+
+**What exists today:** **`poll_once`** reads **at most one message** per call. Manual integration: **`control_plane/scripts/consume_result_once.py`** (10s timeout, prints whether a message was processed).
+
+**Future work:** a **long-running daemon loop** (continuous poll, graceful shutdown, offset commits, metrics)—same pattern as the Go worker poll loop on dispatch.
+
+**Interview sound bite:** *“Python polls kernelq.jobs.results once—KafkaResultConsumer → runner → ResultStateHandler → Postgres; daemon loop and retry policy come next.”*
 
 ## Worker Kafka Consumption
 

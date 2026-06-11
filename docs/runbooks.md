@@ -224,6 +224,9 @@ A **`retryable_failure`** **`ExecutionResult`** means the job attempt failed, bu
 **Checks:**
 
 - Run **`./worker/scripts/smoke_worker_result.sh`** (from repo root) to verify worker-side result publishing end to end
+- Run **`PYTHONPATH=. python3 control_plane/scripts/consume_result_once.py`** to poll **one** result message and update Postgres
+  - **`poll_result: processed_message=false`** — no message on **`kernelq.jobs.results`** before the timeout (produce a result first, or increase wait)
+  - **Message processed but state unchanged** — check **`job_id` exists in Postgres** and **`ResultStateHandler`** mapping (**`succeeded`** → **`succeeded`**; failures → **`failed`** today)
 - If the smoke test fails, inspect:
   - **Worker logs** — `/tmp/kernelq-worker-smoke.log` (script output) or your running consumer process
   - **`kernelq.jobs.dispatch`** — dispatch message present and valid JSON
@@ -243,9 +246,10 @@ A **`retryable_failure`** **`ExecutionResult`** means the job attempt failed, bu
 - **Worker handler publishes result events** when **`ResultProducer`** is configured (**`DispatchEventHandler`** → **`PublishResult`** after **`Execute`**)
 - **`KafkaResultProducer`** wired in **`cmd/consumer`** with **`WorkerName: kernelq-go-worker`**
 - **Python result event parser exists** — **`control_plane/kernelq/result_event.py`** validates **`WorkerResultEvent`** JSON (including allowed **`status`** values)
-- **`ResultConsumerRunner` exists** (`control_plane/kernelq/result_consumer.py`) — parses raw result bytes and delegates to a **`ResultHandler`**, but **real Kafka polling is not wired yet**
-- **`ResultStateHandler` exists** (`control_plane/kernelq/result_handler.py`) — maps **`status`** → **`jobs.state`** via **`JobRepository.update_job_state_from_worker_result`**
-- **If result events exist in Kafka but Postgres does not change, that is still expected** until the result consumer is subscribed to **`kernelq.jobs.results`** and wired to **`ResultStateHandler`**
+- **`ResultConsumerRunner` exists** (`control_plane/kernelq/result_consumer.py`) — parses raw result bytes and delegates to a **`ResultHandler`**
+- **`ResultStateHandler` exists** (`control_plane/kernelq/result_handler.py`) — maps **`status`** → **`jobs.state`**
+- **`KafkaResultConsumer` exists** (`control_plane/kernelq/kafka_result_consumer.py`) — **`poll_once`** on **`kernelq.jobs.results`**; manual script **`consume_result_once.py`**
+- **Long-running result consumer loop** is not implemented yet
 - **`retryable_failure`** and **`terminal_failure`** both map to **`failed`** (**FAILED**) today — **retry scheduling** (`RETRY_SCHEDULED`, **`DEAD_LETTERED`**) is not implemented yet
 
 **Follow-up (when result pipeline lands):**

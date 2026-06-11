@@ -429,21 +429,25 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 ## Result Consumer Metrics Planned
 
-The Python control plane has a **`ResultConsumerRunner`** skeleton (`control_plane/kernelq/result_consumer.py`); **real Kafka polling and Postgres updates are not wired yet**. When the result consumer lands, we plan to track:
+**`KafkaResultConsumer.poll_once`** and **`consume_result_once.py`** exist today; a **long-running loop** and dashboards are not wired yet. When the result consumer path is instrumented, we plan to track:
 
 | Metric | What it means |
 |--------|---------------|
 | `result_messages_seen` | Raw records read from **`kernelq.jobs.results`** |
 | `result_messages_processed` | Valid events that reached **`ResultHandler.handle`** |
+| `poll_result_processed_count` | **`poll_once`** returned **`True`** (message received and handled) |
+| `poll_result_empty_count` | **`poll_once`** returned **`False`** (timeout, no message) |
+| `result_consumer_poll_errors` | Kafka poll/consumer errors (**`message.error()`**, broker failures) |
 | `invalid_result_messages` | Parse/validation failures (bad JSON, wrong `event_type`, unknown `status`) |
-| `result_handler_errors` | Handler failures after validation (e.g. Postgres update errors) |
+| `result_handler_errors` | Handler failures after validation |
+| `result_state_update_errors` | Postgres update failures from **`ResultStateHandler`** (missing **`job_id`**, DB errors) |
 | `result_consumer_lag` | How far behind the consumer is on the results topic |
 
 **No numeric measurements, dashboards, or SLOs exist yet.**
 
 ## Result-to-State Update Metrics Planned
 
-**`ResultStateHandler`** (`control_plane/kernelq/result_handler.py`) can write **`jobs.state`** from worker results today; **Kafka subscribe/poll** on **`kernelq.jobs.results`** is still future work. When the full path is live, we plan to track:
+**`ResultStateHandler`** can write **`jobs.state`** from worker results; **continuous polling** is not wired yet. When the full path is instrumented, we plan to track:
 
 | Metric | What it means |
 |--------|---------------|
