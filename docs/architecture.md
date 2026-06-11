@@ -784,6 +784,30 @@ Together with the Go **`WorkerResultEvent`** in **`worker/internal/worker/result
 
 **Interview sound bite:** *“Go publishes WorkerResultEvent to kernelq.jobs.results; Python parses and validates the same contract today; tomorrow’s consumer turns status into Postgres transitions.”*
 
+## Python Result Consumer Boundary
+
+KernelQ now has a **Python result consumer skeleton** in **`control_plane/kernelq/result_consumer.py`**. It is the control-plane mirror of the Go worker pattern: **one layer for bytes, another for business logic**.
+
+**What it does today:**
+
+```
+ResultMessage (key + raw JSON bytes)
+    ↓  parse_worker_result_event
+WorkerResultEvent (validated)
+    ↓  ResultHandler.handle
+(state updates, metrics — your hook)
+```
+
+- **`ResultConsumerRunner.process_message`** turns a raw **`ResultMessage`** into a validated **`WorkerResultEvent`**.
+- **Valid events** are passed to **`ResultHandler`** — a small interface where **Postgres transitions**, retries, and metrics will live later.
+- **Invalid JSON or invalid fields** fail during parse/validate **before** any handler runs.
+
+**Why separate transport from state updates:** Kafka client code (subscribe, poll, commit offsets) changes for different brokers and deployments. **Job state rules** should not be tangled inside that transport. Tests can call **`process_message`** with fake bytes and a **fake handler** without a running broker or database.
+
+**Future work:** **real Kafka consumption** on **`kernelq.jobs.results`** and **Postgres updates** that map **`status`** to lifecycle transitions (**SUCCEEDED**, **FAILED** → **RETRY_SCHEDULED** / **DEAD_LETTERED**, etc.).
+
+**Interview sound bite:** *“ResultConsumerRunner parses and validates; ResultHandler owns state—Kafka transport stays outside so tests and Postgres logic evolve independently.”*
+
 ## Worker Kafka Consumption
 
 The **Go worker plane** now **owns Kafka consumption** on **`kernelq.jobs.dispatch`**. After the Python control plane claims jobs and publishes **`DispatchEvent`** JSON, Go workers pull records from the broker and route them into the existing processing stack.

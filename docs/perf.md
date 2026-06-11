@@ -427,6 +427,20 @@ We have **not** measured these in production or defined numeric thresholds yet.
 
 Prometheus names may align with **`handler_result_publish_success_total`** / **`handler_result_publish_error_total`** above; counters and histograms land when **`cmd/consumer`** exports stats from the handler path.
 
+## Result Consumer Metrics Planned
+
+The Python control plane has a **`ResultConsumerRunner`** skeleton (`control_plane/kernelq/result_consumer.py`); **real Kafka polling and Postgres updates are not wired yet**. When the result consumer lands, we plan to track:
+
+| Metric | What it means |
+|--------|---------------|
+| `result_messages_seen` | Raw records read from **`kernelq.jobs.results`** |
+| `result_messages_processed` | Valid events that reached **`ResultHandler.handle`** |
+| `invalid_result_messages` | Parse/validation failures (bad JSON, wrong `event_type`, unknown `status`) |
+| `result_handler_errors` | Handler failures after validation (e.g. Postgres update errors) |
+| `result_consumer_lag` | How far behind the consumer is on the results topic |
+
+**No numeric measurements, dashboards, or SLOs exist yet.**
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

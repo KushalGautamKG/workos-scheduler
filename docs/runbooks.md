@@ -243,8 +243,9 @@ A **`retryable_failure`** **`ExecutionResult`** means the job attempt failed, bu
 - **Worker handler publishes result events** when **`ResultProducer`** is configured (**`DispatchEventHandler`** → **`PublishResult`** after **`Execute`**)
 - **`KafkaResultProducer`** wired in **`cmd/consumer`** with **`WorkerName: kernelq-go-worker`**
 - **Python result event parser exists** — **`control_plane/kernelq/result_event.py`** validates **`WorkerResultEvent`** JSON (including allowed **`status`** values)
-- **Real Kafka result consumer is not implemented yet** — nothing in the control plane subscribes to **`kernelq.jobs.results`**
-- **If result events appear in Kafka but Postgres does not update, that is expected** until the result consumer is added; jobs may stay **`dispatched`** / **`running`** even when publishing succeeds
+- **`ResultConsumerRunner` exists** (`control_plane/kernelq/result_consumer.py`) — parses raw result bytes and delegates to a **`ResultHandler`**, but **real Kafka polling is not wired yet**
+- **If result events exist in Kafka but Postgres does not change, that is currently expected**; jobs may stay **`dispatched`** / **`running`** even when publishing succeeds
+- **Next step:** implement **result-to-state handling** (handler maps **`status`** → Postgres transitions, then wire Kafka subscribe/poll on **`kernelq.jobs.results`**)
 
 **Follow-up (when result pipeline lands):**
 

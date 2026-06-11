@@ -145,6 +145,12 @@ The Python control plane now includes a **`WorkerResultEvent`** model (`kernelq/
 
 Before any future **Postgres state update**, the model **validates** `event_type`, `job_id`, `status`, and `worker` (allowed statuses: `succeeded`, `retryable_failure`, `terminal_failure`). **Real Kafka result consumption** (subscribe, process, update job state) comes in a later step.
 
+## Result Consumer Skeleton
+
+KernelQ’s control plane now includes **`ResultConsumerRunner`** (`kernelq/result_consumer.py`). It takes a raw **`ResultMessage`** (Kafka key + JSON bytes), **parses and validates** it into a **`WorkerResultEvent`**, then **delegates** to a **`ResultHandler`**.
+
+Tests use a **fake handler** so parsing and dispatch can be checked without a broker. **Real Kafka subscription** and **Postgres job-state updates** from result events come later.
+
 ## Responsibilities
 
 The control plane is responsible for:
