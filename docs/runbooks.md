@@ -268,7 +268,34 @@ Use this when a **`WorkerResultEvent`** was parsed/handled but **`jobs.state`** 
 - **`status` mapping is supported** — today: **`succeeded`** → **`succeeded`**; **`retryable_failure`** / **`terminal_failure`** → **`failed`**
 - **Result consumer is wired to the handler** — **`ResultConsumerRunner`** must use **`ResultStateHandler(repository)`**, not a no-op fake (Kafka subscribe/poll still future work for production)
 
-**Note:** **`retryable_failure`** currently lands on **FAILED** only; do not expect **`retry_scheduled`** or automatic re-dispatch until retry scheduling is implemented.
+**Note:** **`retryable_failure`** uses **`schedule_retry_from_worker_result`** — see **Retryable Worker Failure** below. **`terminal_failure`** still maps to **`failed`** today.
+
+## Retryable Worker Failure
+
+Use this when a consumed **`WorkerResultEvent`** has **`status: retryable_failure`** (transient execution failure; another attempt may succeed).
+
+**Symptom:**
+
+- Result on **`kernelq.jobs.results`** shows **`retryable_failure`** for a **`job_id`**
+- After **`ResultStateHandler`** runs, Postgres **`retry_count`** or **`state`** changed (or job is **`failed`** if exhausted)
+
+**Current behavior (control plane):**
+
+- **`ResultStateHandler`** calls **`JobRepository.schedule_retry_from_worker_result`**
+- If **`retry_count < max_retries`**: **`retry_count`** increments by 1, job moves to **`retry_scheduled`**
+- If retries are **exhausted**: job moves to **`failed`** (not **`dead_lettered`** yet)
+- **No automatic re-run** — job stays **`retry_scheduled`** until a future requeue path runs
+
+**Future behavior:**
+
+- **Retry delay / backoff** while in **`retry_scheduled`**
+- **Automatic requeue** — **`retry_scheduled` → `queued`**, publish to **`kernelq.jobs.retry`**
+
+**Checks:**
+
+- Confirm result was consumed (`consume_result_once.py` or result consumer)
+- Query Postgres: `SELECT job_id, state, retry_count, max_retries FROM jobs WHERE job_id = '<id>';`
+- If stuck **`retry_scheduled`** with retries left, expected today — requeue is not wired yet
 
 ## Full Completion Smoke Test Fails
 

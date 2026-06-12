@@ -458,6 +458,20 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 **No numeric measurements, dashboards, or SLOs exist yet.**
 
+## Retry Metrics Planned
+
+**`schedule_retry_from_worker_result`** and **`ResultStateHandler`** handle **`retryable_failure`** in Postgres today; **backoff and requeue** are not wired yet. When retry policy is instrumented, we plan to track:
+
+| Metric | What it means |
+|--------|---------------|
+| `retry_scheduled_total` | Jobs moved to **`retry_scheduled`** after **`retryable_failure`** (retries still available) |
+| `retry_exhausted_total` | Jobs marked **`failed`** because **`retry_count >= max_retries`** |
+| `retry_count_by_job` | Current **`retry_count`** distribution (or per-attempt histogram) |
+| `retry_delay_seconds` | Planned wait in **`retry_scheduled`** before requeue (backoff + jitter) |
+| `retry_success_after_attempts` | Jobs that eventually **`succeeded`** after one or more retries |
+
+**No numeric measurements, dashboards, or SLOs exist yet.**
+
 ## End-to-End Completion Metrics Planned
 
 KernelQ now has a **full completion loop** (queued job → dispatch → worker → result → Postgres **`succeeded`**), verified by **`./control_plane/scripts/smoke_full_completion.sh`**. We have **not** measured segment latencies yet; this section names the **future histograms** that will stitch scheduler, worker, and result-consumer metrics into one story.

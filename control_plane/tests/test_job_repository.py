@@ -182,6 +182,76 @@ def test_update_job_state_from_worker_result_missing_returns_false() -> None:
         assert repo.get_job(missing_id) is None
 
 
+def test_schedule_retry_from_worker_result_increments_and_schedules() -> None:
+    """When retries remain, bump retry_count and move to retry_scheduled."""
+    job_id = _unique_job_id("test_jr_schedule_retry_ok")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        try:
+            created = repo.create_job(
+                job_id,
+                "tenant-a",
+                1,
+                JobState.RUNNING.value,
+                max_retries=3,
+            )
+            assert created.retry_count == 0
+
+            scheduled = repo.schedule_retry_from_worker_result(job_id)
+
+            assert scheduled is True
+
+            loaded = repo.get_job(job_id)
+            assert loaded is not None
+            assert loaded.state == JobState.RETRY_SCHEDULED.value
+            assert loaded.retry_count == 1
+            assert loaded.max_retries == 3
+        finally:
+            repo.delete_job(job_id)
+
+
+def test_schedule_retry_from_worker_result_exhausted_sets_failed() -> None:
+    """When retry_count already equals max_retries, mark failed without going over."""
+    job_id = _unique_job_id("test_jr_schedule_retry_exhausted")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        try:
+            # max_retries=1: first schedule uses the only retry slot.
+            repo.create_job(
+                job_id,
+                "tenant-a",
+                1,
+                JobState.RUNNING.value,
+                max_retries=1,
+            )
+            assert repo.schedule_retry_from_worker_result(job_id) is True
+            after_first = repo.get_job(job_id)
+            assert after_first is not None
+            assert after_first.state == JobState.RETRY_SCHEDULED.value
+            assert after_first.retry_count == 1
+
+            # retry_count (1) is no longer < max_retries (1) — no more retries.
+            exhausted = repo.schedule_retry_from_worker_result(job_id)
+
+            assert exhausted is True
+
+            loaded = repo.get_job(job_id)
+            assert loaded is not None
+            assert loaded.state == JobState.FAILED.value
+            assert loaded.retry_count == 1
+            assert loaded.retry_count <= loaded.max_retries
+        finally:
+            repo.delete_job(job_id)
+
+
+def test_schedule_retry_from_worker_result_missing_returns_false() -> None:
+    missing_id = _unique_job_id("test_jr_schedule_retry_missing")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        assert repo.schedule_retry_from_worker_result(missing_id) is False
+        assert repo.get_job(missing_id) is None
+
+
 def test_delete_job_removes_job() -> None:
     job_id = _unique_job_id("test_jr_delete")
     with connect() as conn:

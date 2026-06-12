@@ -160,6 +160,46 @@ class JobRepository:
         self._conn.commit()
         return updated
 
+    def schedule_retry_from_worker_result(self, job_id: str) -> bool:
+        """
+        Apply retry policy after a worker reports a retryable failure.
+
+        - If the job is missing: return ``False``.
+        - If ``retry_count < max_retries``: increment ``retry_count``, set
+          ``retry_scheduled``, bump ``updated_at``, return ``True``.
+        - Otherwise: set ``failed``, bump ``updated_at``, return ``True``.
+
+        Backoff delay and re-enqueue to Kafka are **not** implemented here —
+        this only updates Postgres so a future retry dispatcher can pick up
+        ``retry_scheduled`` rows.
+        """
+        sql = """
+            UPDATE jobs
+            SET
+                retry_count = CASE
+                    WHEN retry_count < max_retries THEN retry_count + 1
+                    ELSE retry_count
+                END,
+                state = CASE
+                    WHEN retry_count < max_retries THEN %(retry_scheduled)s
+                    ELSE %(failed)s
+                END,
+                updated_at = NOW()
+            WHERE job_id = %(job_id)s
+        """
+        params = {
+            "job_id": job_id,
+            "retry_scheduled": JobState.RETRY_SCHEDULED.value,
+            "failed": JobState.FAILED.value,
+        }
+
+        with self._conn.cursor() as cur:
+            cur.execute(sql, params)
+            updated = cur.rowcount > 0
+
+        self._conn.commit()
+        return updated
+
     def delete_job(self, job_id: str) -> bool:
         """Delete a job by id. Returns True if a row was removed (handy for tests)."""
         sql = "DELETE FROM jobs WHERE job_id = %(job_id)s"

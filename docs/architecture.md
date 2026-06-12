@@ -817,15 +817,13 @@ KernelQ now **maps worker result events into durable job state** in Postgres. **
 - **Workers (Go)** execute jobs and **report outcomes on Kafka** (`kernelq.jobs.results`). They **do not** write lifecycle state to Postgres directly.
 - **Control plane (Python)** owns **durable job state**—the system of record for orchestration, retries, and API visibility.
 
-**Current mapping (simple first step):**
+**Current mapping:**
 
-| Worker `status` | Postgres `jobs.state` (today) |
-|-----------------|-------------------------------|
-| `succeeded` | `succeeded` (**SUCCEEDED**) |
-| `retryable_failure` | `failed` (**FAILED**) |
-| `terminal_failure` | `failed` (**FAILED**) |
-
-**Retry scheduling comes later:** choosing **`RETRY_SCHEDULED`** vs **`DEAD_LETTERED`**, incrementing **`retry_count`**, backoff, and re-queue/re-publish are **not** implemented in the handler yet—both failure statuses land on **FAILED** for now so the loop is testable end-to-end before policy grows.
+| Worker `status` | Control-plane action (today) |
+|-----------------|------------------------------|
+| `succeeded` | **`update_job_state_from_worker_result`** → **`succeeded`** |
+| `retryable_failure` | **`schedule_retry_from_worker_result`** → **`retry_scheduled`** or **`failed`** (see **Retryable Failure Handling**) |
+| `terminal_failure` | **`update_job_state_from_worker_result`** → **`failed`** (**DEAD_LETTERED** later) |
 
 **End-to-end path (when wired):**
 
@@ -833,7 +831,36 @@ KernelQ now **maps worker result events into durable job state** in Postgres. **
 kernelq.jobs.results → KafkaResultConsumer → ResultConsumerRunner → ResultStateHandler → Postgres jobs.state
 ```
 
-**Interview sound bite:** *“Workers publish outcomes; control plane owns Postgres—ResultStateHandler maps succeeded to SUCCEEDED and failures to FAILED today; RETRY_SCHEDULED and DLQ policy come next.”*
+**Interview sound bite:** *“Workers publish outcomes; control plane owns Postgres—succeeded and terminal_failure map directly; retryable_failure goes through schedule_retry_from_worker_result.”*
+
+## Retryable Failure Handling
+
+When a Go worker reports **`retryable_failure`**, the **Python control plane** applies **retry scheduling policy** in Postgres—not a blind write to **`failed`**.
+
+**Flow:**
+
+```
+WorkerResultEvent (status: retryable_failure)
+    ↓  ResultStateHandler.handle
+JobRepository.schedule_retry_from_worker_result(job_id)
+    ↓
+retry_count < max_retries  →  retry_count += 1, state = retry_scheduled
+retry_count >= max_retries →  state = failed (exhausted for now)
+```
+
+**What happens today:**
+
+- **Workers classify** the outcome (`retryable_failure` = transient; may work on another attempt).
+- **Control plane increments `retry_count`** when retries remain and moves the job to **`RETRY_SCHEDULED`**.
+- When the **retry limit is exhausted** (`retry_count >= max_retries`), the job moves to **`FAILED`** (not **`DEAD_LETTERED`** yet).
+
+**What is still future work:**
+
+- **Retry delay** — exponential backoff and jitter while in **`RETRY_SCHEDULED`**
+- **Requeue flow** — **`RETRY_SCHEDULED` → QUEUED`**, publish to **`kernelq.jobs.retry`**, second dispatch loop
+- **Terminal policy** — **`terminal_failure` → `DEAD_LETTERED`** and DLQ routing
+
+**Interview sound bite:** *“Worker says retryable_failure; control plane bumps retry_count and sets RETRY_SCHEDULED if budget remains, else FAILED—backoff and requeue on kernelq.jobs.retry come next.”*
 
 ## Kafka Result Consumer Skeleton
 
@@ -883,9 +910,9 @@ succeeded (Postgres jobs.state)
 
 **How to verify locally:** **`./control_plane/scripts/smoke_full_completion.sh`** (see `docs/deploy.md`).
 
-**What still comes later:** **retry scheduling** (`retryable_failure` → **`RETRY_SCHEDULED`** / **`kernelq.jobs.retry`**), **dead-letter policy** (`terminal_failure` → **`DEAD_LETTERED`** / **`kernelq.jobs.dlq`**), a **long-running result consumer daemon**, and richer **`RUNNING`** transitions. Today the loop is complete for the **happy path** only.
+**What still comes later:** **retry delay and requeue** (`RETRY_SCHEDULED` → **`queued`**, **`kernelq.jobs.retry`**), **dead-letter policy** (`terminal_failure` → **`DEAD_LETTERED`** / **`kernelq.jobs.dlq`**), a **long-running result consumer daemon**, and richer **`RUNNING`** transitions. The **happy path** and **retryable-failure scheduling** in Postgres work today; automatic re-run does not.
 
-**Interview sound bite:** *“Queued in Postgres, dispatched on Kafka, executed in Go, result back on Kafka, state updated in Python—that’s the MVP loop; retry and DLQ policy are the next layer.”*
+**Interview sound bite:** *“Queued in Postgres, dispatched on Kafka, executed in Go, result back on Kafka, state updated in Python—that’s the MVP loop; backoff, requeue, and DLQ are the next layer.”*
 
 ## Worker Kafka Consumption
 

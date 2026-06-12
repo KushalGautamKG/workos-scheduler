@@ -156,10 +156,17 @@ Tests use a **fake handler** so parsing and dispatch can be checked without a br
 KernelQ’s control plane now includes **`ResultStateHandler`** (`kernelq/result_handler.py`). It maps validated **`WorkerResultEvent`** statuses to **`jobs.state`** in Postgres via **`JobRepository.update_job_state_from_worker_result`**.
 
 - **`succeeded`** → **`SUCCEEDED`**
-- **`retryable_failure`** → **`FAILED`** (for now)
+- **`retryable_failure`** → **`schedule_retry_from_worker_result`** (see below)
 - **`terminal_failure`** → **`FAILED`** (for now)
 
-**Retry scheduling** (`RETRY_SCHEDULED`, `DEAD_LETTERED`, backoff) is future work.
+## Retryable Result Handling
+
+**`retryable_failure`** results now use **`JobRepository.schedule_retry_from_worker_result`** (via **`ResultStateHandler`**), not a direct **`failed`** write.
+
+- If **`retry_count < max_retries`**: **`retry_count`** increments by 1 and state becomes **`RETRY_SCHEDULED`**.
+- If retries are **exhausted**: state becomes **`FAILED`** for now (not **`DEAD_LETTERED`** yet).
+
+**Backoff** and **automatic requeue** (`RETRY_SCHEDULED` → **`queued`**, **`kernelq.jobs.retry`**) come later.
 
 ## Kafka Result Consumer Skeleton
 

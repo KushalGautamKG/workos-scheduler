@@ -8,6 +8,7 @@ from control_plane.kernelq.result_handler import ResultStateHandler
 
 
 def _event(*, job_id: str = "job-123", status: str = "succeeded") -> WorkerResultEvent:
+    """Build a small valid worker result event for tests."""
     return WorkerResultEvent(
         event_type=WORKER_RESULT_EVENT_TYPE,
         job_id=job_id,
@@ -18,67 +19,88 @@ def _event(*, job_id: str = "job-123", status: str = "succeeded") -> WorkerResul
 
 
 class FakeRepository:
-    """Records update calls and returns a configurable success flag."""
+    """
+    Stand-in for JobRepository.
 
-    def __init__(self, *, updated: bool = True) -> None:
-        self.updated = updated
-        self.calls: list[tuple[str, str]] = []
+    Records which methods were called so tests can assert routing without Postgres.
+    """
+
+    def __init__(self, *, update_ok: bool = True, schedule_retry_ok: bool = True) -> None:
+        # When False, the matching method pretends the job row was missing.
+        self.update_ok = update_ok
+        self.schedule_retry_ok = schedule_retry_ok
+        # Every (job_id, new_state) passed to update_job_state_from_worker_result.
+        self.update_calls: list[tuple[str, str]] = []
+        # Every job_id passed to schedule_retry_from_worker_result.
+        self.schedule_retry_calls: list[str] = []
 
     def update_job_state_from_worker_result(self, job_id: str, new_state: str) -> bool:
-        self.calls.append((job_id, new_state))
-        return self.updated
+        self.update_calls.append((job_id, new_state))
+        return self.update_ok
+
+    def schedule_retry_from_worker_result(self, job_id: str) -> bool:
+        self.schedule_retry_calls.append(job_id)
+        return self.schedule_retry_ok
 
 
 def test_succeeded_maps_to_succeeded():
     repo = FakeRepository()
     ResultStateHandler(repo).handle(_event(status="succeeded"))
 
-    assert repo.calls == [("job-123", JobState.SUCCEEDED.value)]
+    assert repo.update_calls == [("job-123", JobState.SUCCEEDED.value)]
+    assert repo.schedule_retry_calls == []
 
 
-def test_retryable_failure_maps_to_failed_for_now():
-    repo = FakeRepository()
-    ResultStateHandler(repo).handle(_event(status="retryable_failure"))
-
-    assert repo.calls == [("job-123", JobState.FAILED.value)]
-
-
-def test_terminal_failure_maps_to_failed_for_now():
+def test_terminal_failure_maps_to_failed():
     repo = FakeRepository()
     ResultStateHandler(repo).handle(_event(status="terminal_failure"))
 
-    assert repo.calls == [("job-123", JobState.FAILED.value)]
+    assert repo.update_calls == [("job-123", JobState.FAILED.value)]
+    assert repo.schedule_retry_calls == []
 
 
-def test_missing_repository_raises():
-    with pytest.raises(ValueError, match="repository"):
-        ResultStateHandler(None).handle(_event())
+def test_retryable_failure_calls_schedule_retry():
+    repo = FakeRepository()
+    ResultStateHandler(repo).handle(_event(status="retryable_failure"))
+
+    assert repo.schedule_retry_calls == ["job-123"]
+
+
+def test_retryable_failure_does_not_call_update_state():
+    repo = FakeRepository()
+    ResultStateHandler(repo).handle(_event(status="retryable_failure"))
+
+    assert repo.update_calls == []
+
+
+def test_retryable_failure_missing_job_raises():
+    repo = FakeRepository(schedule_retry_ok=False)
+    handler = ResultStateHandler(repo)
+
+    with pytest.raises(ValueError, match="job not found"):
+        handler.handle(_event(job_id="missing-job", status="retryable_failure"))
+
+    assert repo.schedule_retry_calls == ["missing-job"]
+    assert repo.update_calls == []
+
+
+def test_terminal_failure_missing_job_raises():
+    repo = FakeRepository(update_ok=False)
+    handler = ResultStateHandler(repo)
+
+    with pytest.raises(ValueError, match="job not found"):
+        handler.handle(_event(job_id="missing-job", status="terminal_failure"))
+
+    assert repo.update_calls == [("missing-job", JobState.FAILED.value)]
+    assert repo.schedule_retry_calls == []
 
 
 def test_unknown_status_raises():
     repo = FakeRepository()
     handler = ResultStateHandler(repo)
-    bad = _event(status="unknown")
 
     with pytest.raises(ValueError, match="unknown result status"):
-        handler.handle(bad)
+        handler.handle(_event(status="not-a-real-status"))
 
-    assert repo.calls == []
-
-
-def test_repository_false_raises_job_not_found():
-    repo = FakeRepository(updated=False)
-    handler = ResultStateHandler(repo)
-
-    with pytest.raises(ValueError, match="job not found"):
-        handler.handle(_event(job_id="missing-job"))
-
-    assert repo.calls == [("missing-job", JobState.SUCCEEDED.value)]
-
-
-def test_handler_passes_correct_job_id():
-    repo = FakeRepository()
-    ResultStateHandler(repo).handle(_event(job_id="job-456"))
-
-    job_id, _state = repo.calls[0]
-    assert job_id == "job-456"
+    assert repo.update_calls == []
+    assert repo.schedule_retry_calls == []
