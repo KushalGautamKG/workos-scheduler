@@ -269,3 +269,84 @@ Use this when a **`WorkerResultEvent`** was parsed/handled but **`jobs.state`** 
 - **Result consumer is wired to the handler** — **`ResultConsumerRunner`** must use **`ResultStateHandler(repository)`**, not a no-op fake (Kafka subscribe/poll still future work for production)
 
 **Note:** **`retryable_failure`** currently lands on **FAILED** only; do not expect **`retry_scheduled`** or automatic re-dispatch until retry scheduling is implemented.
+
+## Full Completion Smoke Test Fails
+
+Use this when **`./control_plane/scripts/smoke_full_completion.sh`** exits nonzero or **`final_state`** is not **`succeeded`**.
+
+**Symptoms:**
+
+- Script prints **`FAIL: expected final_state=succeeded`**
+- **`final_state=dispatched`**, **`running`**, **`failed`**, or **`missing`** after the result wait loop
+- **`consume_result_once.py`** traceback (**`job not found`**, parse error, Kafka error)
+- Worker log shows **`message_errors`** or no **`received task`** line for the smoke **`job_id`**
+
+**Checks (in order):**
+
+1. **Postgres running**
+   - `docker compose up -d postgres`
+   - `docker exec kernelq-postgres pg_isready -U kernelq -d kernelq`
+   - Migration applied: `docker exec -i kernelq-postgres psql -U kernelq -d kernelq < control_plane/migrations/001_create_jobs.sql`
+
+2. **Kafka / Zookeeper running**
+   - `docker compose up -d zookeeper kafka`
+   - `docker compose ps` — both containers healthy
+
+3. **Topics exist**
+   - `./infra/kafka/create-topics.sh`
+   - Confirm **`kernelq.jobs.dispatch`** and **`kernelq.jobs.results`** appear in the list
+
+4. **Worker starts**
+   - Script builds **`./worker/consumer`** and starts it in the background
+   - Inspect **`/tmp/kernelq-full-worker.log`** — expect **`KernelQ worker consumer started`**
+   - If the worker exits immediately, check Go build errors and **`localhost:9092`** reachability
+
+5. **Scheduler tick publishes dispatch**
+   - Re-run: `PYTHONPATH=. python3 control_plane/scripts/run_scheduler_tick_once.py`
+   - Expect **`dispatched_count: 1`**, **`published_count: 1`**, and your smoke **`job_id`** under **`dispatched_job_ids`**
+   - If **`(none)`**, confirm a **`queued`** row exists for the smoke **`job_id`** (script creates one; re-runs need a fresh job)
+
+6. **Result topic receives event**
+   - After dispatch, grep the results topic for the smoke **`job_id`** (local):
+     ```bash
+     docker exec kernelq-kafka kafka-console-consumer \
+       --bootstrap-server kafka:29092 \
+       --topic kernelq.jobs.results \
+       --from-beginning \
+       --timeout-ms 5000 \
+       --max-messages 500 2>/dev/null | grep -F "<job_id>"
+     ```
+   - Or run **`./worker/scripts/smoke_worker_result.sh`** to isolate worker → result publishing
+
+7. **`consume_result_once.py` processed matching job**
+   - `PYTHONPATH=. python3 control_plane/scripts/consume_result_once.py`
+   - **`poll_result: processed_message=true`** — a message was read (may not be *your* job yet)
+   - **`ValueError: job not found`** — stale result for a **`job_id`** not in Postgres; see stale-message note below
+   - Full smoke script retries in a loop until the target **`job_id`** reaches **`succeeded`**
+
+8. **Final Postgres state is SUCCEEDED**
+   - Script prints **`final_state=succeeded`** on success
+   - Manual check:
+     ```bash
+     docker exec -i kernelq-postgres psql -U kernelq -d kernelq \
+       -c "SELECT job_id, state FROM jobs WHERE job_id LIKE 'day52-full-%' ORDER BY created_at DESC LIMIT 5;"
+     ```
+
+**Stale Kafka messages:**
+
+- **`kernelq.jobs.results`** retains old smoke-test events (e.g. **`day47-smoke-*`**) with **no matching Postgres row**
+- **`consume_result_once.py`** polls **one message at a time**; older records may be consumed first and fail or update unrelated jobs
+- The full completion script uses a **unique `job_id`** (`day52-full-<timestamp>`) and **retries** consumption until **that** row is **`succeeded`**
+- If failures persist, drain stale traffic in dev (new consumer group, topic reset—dev only) or keep retrying until offsets pass old messages
+
+**Mitigation:**
+
+- Re-run from repo root: `./control_plane/scripts/smoke_full_completion.sh` (creates a fresh job each time)
+- Increase wait time in the script if the worker is slow to start (default includes sleep after worker launch)
+- Fix the first failing step in the checklist above before debugging later steps
+
+**Follow-up:**
+
+- If dispatch works but results never appear, use **Worker Result Event Missing** checks above
+- If results are consumed but state stays wrong, use **Result Event Consumed but Job State Unchanged**
+- Retry scheduling and DLQ behavior are **not** part of this smoke test yet—failures map to **`failed`** only today

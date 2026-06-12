@@ -859,6 +859,34 @@ Postgres jobs.state
 
 **Interview sound bite:** *“Python polls kernelq.jobs.results once—KafkaResultConsumer → runner → ResultStateHandler → Postgres; daemon loop and retry policy come next.”*
 
+## Full Completion Loop
+
+KernelQ now has a **full feedback loop** for successful jobs—the **MVP architecture** proven end-to-end on a laptop:
+
+```
+queued job (Postgres)
+    ↓  SchedulerTickRunner — claim + publish
+kernelq.jobs.dispatch (Kafka)
+    ↓  Go worker — consume, execute
+kernelq.jobs.results (Kafka) — WorkerResultEvent
+    ↓  KafkaResultConsumer → ResultConsumerRunner → ResultStateHandler
+succeeded (Postgres jobs.state)
+```
+
+**What this proves:** the control plane can **admit and dispatch** work, workers can **execute and report outcomes** on Kafka, and the control plane can **close the loop** by updating **durable job state** in Postgres. Clients and operators see a job move from **queued** to **succeeded** without manual SQL or one-off Kafka producers.
+
+**Who owns what (unchanged):**
+
+- **Python control plane** — scheduling, claiming, dispatch publish, result consumption, Postgres as system of record.
+- **Go workers** — high-throughput execution; publish structured results; **do not** write lifecycle state directly.
+- **Kafka** — durable transport between dispatch and results; buffers decouple planes.
+
+**How to verify locally:** **`./control_plane/scripts/smoke_full_completion.sh`** (see `docs/deploy.md`).
+
+**What still comes later:** **retry scheduling** (`retryable_failure` → **`RETRY_SCHEDULED`** / **`kernelq.jobs.retry`**), **dead-letter policy** (`terminal_failure` → **`DEAD_LETTERED`** / **`kernelq.jobs.dlq`**), a **long-running result consumer daemon**, and richer **`RUNNING`** transitions. Today the loop is complete for the **happy path** only.
+
+**Interview sound bite:** *“Queued in Postgres, dispatched on Kafka, executed in Go, result back on Kafka, state updated in Python—that’s the MVP loop; retry and DLQ policy are the next layer.”*
+
 ## Worker Kafka Consumption
 
 The **Go worker plane** now **owns Kafka consumption** on **`kernelq.jobs.dispatch`**. After the Python control plane claims jobs and publishes **`DispatchEvent`** JSON, Go workers pull records from the broker and route them into the existing processing stack.

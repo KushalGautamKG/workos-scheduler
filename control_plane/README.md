@@ -167,6 +167,16 @@ KernelQ’s control plane now includes **`KafkaResultConsumer`** (`kernelq/kafka
 
 Manual try: **`control_plane/scripts/consume_result_once.py`**. A **long-running result consumer loop** (continuous poll, graceful shutdown) comes later.
 
+## Full Completion Smoke Test
+
+**`scripts/smoke_full_completion.sh`** is the **first MVP feedback-loop smoke test**. It verifies the full path from a **queued job** in Postgres to **`succeeded`** state: **scheduler tick** → **Kafka dispatch** → **Go worker** → **`kernelq.jobs.results`** → **Python result consumer** → **Postgres update**.
+
+Requires Docker (Postgres + Kafka), Go, and Python. Run from the repository root:
+
+```bash
+./control_plane/scripts/smoke_full_completion.sh
+```
+
 ## Responsibilities
 
 The control plane is responsible for:

@@ -458,6 +458,21 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 **No numeric measurements, dashboards, or SLOs exist yet.**
 
+## End-to-End Completion Metrics Planned
+
+KernelQ now has a **full completion loop** (queued job → dispatch → worker → result → Postgres **`succeeded`**), verified by **`./control_plane/scripts/smoke_full_completion.sh`**. We have **not** measured segment latencies yet; this section names the **future histograms** that will stitch scheduler, worker, and result-consumer metrics into one story.
+
+| Metric | What it means |
+|--------|---------------|
+| `enqueue_to_dispatch_latency` | Time from job admitted (**`queued`**) to **`dispatched`** and publish to **`kernelq.jobs.dispatch`** |
+| `dispatch_to_worker_consume_latency` | Time from successful dispatch publish until the Go worker consumes the message |
+| `worker_execution_latency` | Time inside the worker from consume through **`Execute`** completion |
+| `result_publish_latency` | Time from execution outcome to **`WorkerResultEvent`** on **`kernelq.jobs.results`** |
+| `result_consume_to_state_update_latency` | Time from Python result consumer poll through **`ResultStateHandler`** Postgres commit |
+| `end_to_end_completion_latency` | Time from enqueue (or **`queued`**) to terminal **`succeeded`** in Postgres |
+
+**No numeric measurements, dashboards, or SLOs exist yet.** Retry and failure paths will add sibling metrics later (`retryable_failure`, DLQ, stuck **`dispatched`**).
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

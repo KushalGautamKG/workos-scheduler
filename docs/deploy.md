@@ -418,6 +418,25 @@ PYTHONPATH=. python3 control_plane/scripts/consume_result_once.py
 
 **Not included yet:** a **long-running result consumer** loop (continuous poll, graceful shutdown).
 
+## Full Completion Smoke Test
+
+From the **repository root**, this script runs the **full MVP feedback loop**: a **queued job** in Postgres ends in **`succeeded`** state after dispatch, worker execution, and result consumption.
+
+```bash
+./control_plane/scripts/smoke_full_completion.sh
+```
+
+**What it does:**
+
+1. Starts **local infra** (Postgres, Zookeeper, Kafka) and applies the jobs migration.
+2. Creates **Kafka topics** (`./infra/kafka/create-topics.sh`).
+3. Inserts a **queued job** in Postgres (unique `job_id`).
+4. Starts the **Go worker**, runs **one scheduler tick** (claim + publish to `kernelq.jobs.dispatch`).
+5. Polls **`kernelq.jobs.results`** via the **Python result consumer** until the job’s state updates.
+6. Verifies **`jobs.state`** is **`succeeded`** (exits nonzero otherwise).
+
+Requires Docker, Go, and Python. See **`control_plane/README.md`** for a short overview.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.
