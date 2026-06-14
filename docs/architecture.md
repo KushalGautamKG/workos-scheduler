@@ -856,11 +856,45 @@ retry_count >= max_retries →  state = failed (exhausted for now)
 
 **What is still future work:**
 
-- **Retry delay** — exponential backoff and jitter while in **`RETRY_SCHEDULED`**
-- **Requeue flow** — **`RETRY_SCHEDULED` → QUEUED`**, publish to **`kernelq.jobs.retry`**, second dispatch loop
+- **Retry delay tuning** — exponential backoff and jitter when setting **`retry_after`**
+- **Long-running retry loop** — continuous scanner daemon (today: **`run_once`** / manual script)
+- **Optional retry topic** — publish to **`kernelq.jobs.retry`** for traffic isolation
 - **Terminal policy** — **`terminal_failure` → `DEAD_LETTERED`** and DLQ routing
 
-**Interview sound bite:** *“Worker says retryable_failure; control plane bumps retry_count and sets RETRY_SCHEDULED if budget remains, else FAILED—backoff and requeue on kernelq.jobs.retry come next.”*
+**Interview sound bite:** *“Worker says retryable_failure; control plane bumps retry_count and sets RETRY_SCHEDULED if budget remains, else FAILED—RetryScanner requeues due rows to QUEUED next.”*
+
+## Retry Requeue Scanner
+
+After a **`retryable_failure`**, jobs sit in **`retry_scheduled`** until their **`retry_after`** timestamp passes. **`RetryScanner`** (`control_plane/kernelq/retry_scanner.py`) is the control-plane pass that **promotes due retries back into the normal queue**.
+
+**Flow:**
+
+```
+retryable_failure (worker result)
+    ↓  schedule_retry_from_worker_result
+RETRY_SCHEDULED (retry_after set for wait)
+    ↓  RetryScanner.run_once — requeue_due_retries(now)
+QUEUED (ready for scheduler again)
+    ↓  SchedulerTickRunner — claim + publish
+kernelq.jobs.dispatch → Go worker → …
+```
+
+**What the scanner does:**
+
+- **`JobRepository.requeue_due_retries(now, limit)`** — find **`retry_scheduled`** rows where **`retry_after <= now`**, atomically update to **`queued`**
+- **`RetryScanner`** wraps one scan: records **`scanned_at`**, **`requeued_count`**, **`requeued_job_ids`**, and **`errors`**
+- **Manual integration:** **`control_plane/scripts/run_retry_scanner_once.py`**
+
+**Why back to `QUEUED` (not straight to dispatch):** the **same scheduler** that handles first-time work picks **`queued`** rows by priority and FIFO. Retries re-enter the **standard dispatch path**—no separate worker-side requeue logic.
+
+**What is still future work:**
+
+- **Max retry exhaustion** — full policy when budget is gone (**`DEAD_LETTERED`** vs **`FAILED`** today)
+- **Dead-lettering** — **`terminal_failure`**, poison jobs, **`kernelq.jobs.dlq`**
+- **Long-running scanner loop** with metrics and graceful shutdown
+- **Backoff tuning** when **`retry_after`** is computed at schedule time
+
+**Interview sound bite:** *“Retryable failure → RETRY_SCHEDULED with retry_after; RetryScanner moves due jobs to QUEUED; scheduler dispatches them like any other queued job—DLQ and exhaustion policy come later.”*
 
 ## Kafka Result Consumer Skeleton
 
@@ -910,7 +944,7 @@ succeeded (Postgres jobs.state)
 
 **How to verify locally:** **`./control_plane/scripts/smoke_full_completion.sh`** (see `docs/deploy.md`).
 
-**What still comes later:** **retry delay and requeue** (`RETRY_SCHEDULED` → **`queued`**, **`kernelq.jobs.retry`**), **dead-letter policy** (`terminal_failure` → **`DEAD_LETTERED`** / **`kernelq.jobs.dlq`**), a **long-running result consumer daemon**, and richer **`RUNNING`** transitions. The **happy path** and **retryable-failure scheduling** in Postgres work today; automatic re-run does not.
+**What still comes later:** **backoff tuning** and **long-running scanner/consumer daemons**, **dead-letter policy** (`terminal_failure` → **`DEAD_LETTERED`** / **`kernelq.jobs.dlq`**), and richer **`RUNNING`** transitions. The **happy path**, **retry scheduling**, and **one-shot retry requeue** work today; fully automatic retry loops do not.
 
 **Interview sound bite:** *“Queued in Postgres, dispatched on Kafka, executed in Go, result back on Kafka, state updated in Python—that’s the MVP loop; backoff, requeue, and DLQ are the next layer.”*
 

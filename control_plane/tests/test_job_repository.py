@@ -63,6 +63,42 @@ def _require_postgres() -> None:
         pytest.skip(f"Postgres not reachable (start docker compose): {exc}")
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _ensure_retry_after_column(_require_postgres) -> None:
+    """
+    ``requeue_due_retries`` needs ``retry_after`` on ``jobs``.
+
+    Apply the column locally if missing (safe ``IF NOT EXISTS`` for shared dev DBs).
+    """
+    with connect() as conn:
+        conn.execute(
+            """
+            ALTER TABLE jobs
+            ADD COLUMN IF NOT EXISTS retry_after BIGINT
+            """
+        )
+        conn.commit()
+
+
+def _set_retry_scheduled(
+    conn,
+    job_id: str,
+    retry_after: int,
+    *,
+    state: str = JobState.RETRY_SCHEDULED.value,
+) -> None:
+    """Put a job in retry_scheduled with a concrete ``retry_after`` timestamp."""
+    conn.execute(
+        """
+        UPDATE jobs
+        SET state = %(state)s, retry_after = %(retry_after)s, updated_at = NOW()
+        WHERE job_id = %(job_id)s
+        """,
+        {"job_id": job_id, "state": state, "retry_after": retry_after},
+    )
+    conn.commit()
+
+
 @pytest.fixture(autouse=True)
 def _cleanup_between_tests() -> None:
     """
@@ -250,6 +286,106 @@ def test_schedule_retry_from_worker_result_missing_returns_false() -> None:
         repo = JobRepository(conn)
         assert repo.schedule_retry_from_worker_result(missing_id) is False
         assert repo.get_job(missing_id) is None
+
+
+def test_requeue_due_retries_moves_due_job_to_queued() -> None:
+    """A retry_scheduled job with retry_after <= now becomes queued."""
+    job_id = _unique_job_id("test_jr_requeue_due")
+    now = 1_700_000_000
+    with connect() as conn:
+        repo = JobRepository(conn)
+        try:
+            repo.create_job(job_id, "tenant-a", 1, JobState.QUEUED.value)
+            _set_retry_scheduled(conn, job_id, retry_after=now - 60)
+
+            requeued = repo.requeue_due_retries(now=now, limit=10)
+
+            assert job_id in requeued
+            loaded = repo.get_job(job_id)
+            assert loaded is not None
+            assert loaded.state == JobState.QUEUED.value
+        finally:
+            repo.delete_job(job_id)
+
+
+def test_requeue_due_retries_skips_future_retry_after() -> None:
+    """Jobs with retry_after in the future stay retry_scheduled."""
+    job_id = _unique_job_id("test_jr_requeue_future")
+    now = 1_700_000_000
+    with connect() as conn:
+        repo = JobRepository(conn)
+        try:
+            repo.create_job(job_id, "tenant-a", 1, JobState.QUEUED.value)
+            _set_retry_scheduled(conn, job_id, retry_after=now + 3600)
+
+            requeued = repo.requeue_due_retries(now=now, limit=10)
+
+            assert requeued == []
+            loaded = repo.get_job(job_id)
+            assert loaded is not None
+            assert loaded.state == JobState.RETRY_SCHEDULED.value
+        finally:
+            repo.delete_job(job_id)
+
+
+def test_requeue_due_retries_respects_limit() -> None:
+    prefix = _unique_job_id("test_jr_requeue_limit")
+    first_id = _job_id(prefix, "first")
+    second_id = _job_id(prefix, "second")
+    third_id = _job_id(prefix, "third")
+    now = 1_700_100_000
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, first_id, second_id, third_id)
+        try:
+            repo.create_job(first_id, "tenant-a", 1, JobState.QUEUED.value)
+            repo.create_job(second_id, "tenant-a", 1, JobState.QUEUED.value)
+            repo.create_job(third_id, "tenant-a", 1, JobState.QUEUED.value)
+            # Same due time; created_at order breaks ties (first inserted first).
+            _set_retry_scheduled(conn, first_id, retry_after=now - 10)
+            _set_retry_scheduled(conn, second_id, retry_after=now - 10)
+            _set_retry_scheduled(conn, third_id, retry_after=now - 10)
+
+            requeued = repo.requeue_due_retries(now=now, limit=2)
+
+            assert len(requeued) == 2
+            assert set(requeued) <= {first_id, second_id, third_id}
+            queued_count = sum(
+                1
+                for jid in (first_id, second_id, third_id)
+                if repo.get_job(jid).state == JobState.QUEUED.value
+            )
+            assert queued_count == 2
+        finally:
+            _delete_jobs(repo, first_id, second_id, third_id)
+
+
+def test_requeue_due_retries_returns_only_requeued_job_ids() -> None:
+    """Returned ids are due jobs only — not future retries or other states."""
+    prefix = _unique_job_id("test_jr_requeue_ids")
+    due_id = _job_id(prefix, "due")
+    future_id = _job_id(prefix, "future")
+    queued_id = _job_id(prefix, "queued")
+    now = 1_700_200_000
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, due_id, future_id, queued_id)
+        try:
+            repo.create_job(due_id, "tenant-a", 1, JobState.QUEUED.value)
+            repo.create_job(future_id, "tenant-a", 1, JobState.QUEUED.value)
+            repo.create_job(queued_id, "tenant-a", 1, JobState.QUEUED.value)
+            _set_retry_scheduled(conn, due_id, retry_after=now)
+            _set_retry_scheduled(conn, future_id, retry_after=now + 9999)
+            # queued_id stays queued (not retry_scheduled)
+
+            requeued = repo.requeue_due_retries(now=now, limit=10)
+
+            assert requeued == [due_id]
+            assert repo.get_job(due_id).state == JobState.QUEUED.value
+            assert repo.get_job(future_id).state == JobState.RETRY_SCHEDULED.value
+            assert repo.get_job(queued_id).state == JobState.QUEUED.value
+        finally:
+            _delete_jobs(repo, due_id, future_id, queued_id)
 
 
 def test_delete_job_removes_job() -> None:

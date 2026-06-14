@@ -289,13 +289,39 @@ Use this when a consumed **`WorkerResultEvent`** has **`status: retryable_failur
 **Future behavior:**
 
 - **Retry delay / backoff** while in **`retry_scheduled`**
-- **Automatic requeue** — **`retry_scheduled` → `queued`**, publish to **`kernelq.jobs.retry`**
+- **Long-running automatic requeue** — continuous scanner daemon (today: manual one-shot script)
 
 **Checks:**
 
 - Confirm result was consumed (`consume_result_once.py` or result consumer)
-- Query Postgres: `SELECT job_id, state, retry_count, max_retries FROM jobs WHERE job_id = '<id>';`
-- If stuck **`retry_scheduled`** with retries left, expected today — requeue is not wired yet
+- Query Postgres: `SELECT job_id, state, retry_count, max_retries, retry_after FROM jobs WHERE job_id = '<id>';`
+- If still **`retry_scheduled`**, see **Jobs Stuck in RETRY_SCHEDULED** below
+
+## Jobs Stuck in RETRY_SCHEDULED
+
+Use this when a job stays **`retry_scheduled`** and never returns to **`queued`** / gets redispatched.
+
+**Symptoms:**
+
+- **`jobs.state = retry_scheduled`** for longer than expected
+- Scheduler does not pick the job (only **`queued`** rows are schedulable)
+
+**Checks:**
+
+1. **Inspect `retry_after`** (Unix seconds):
+   ```bash
+   docker exec -i kernelq-postgres psql -U kernelq -d kernelq \
+     -c "SELECT job_id, state, retry_after, retry_count, max_retries FROM jobs WHERE job_id = '<id>';"
+   ```
+2. **If `retry_after` is in the future** — the job is **waiting correctly**; run the scanner again after that time (no long-running loop yet).
+3. **If `retry_after` is in the past** — run the one-shot requeue scanner from repo root:
+   ```bash
+   PYTHONPATH=. python3 control_plane/scripts/run_retry_scanner_once.py
+   ```
+   Expect **`requeued_job_ids`** to include your **`job_id`** and state → **`queued`**. Then run **`run_scheduler_tick_once.py`** to dispatch.
+4. **If `retry_after` is past but the scanner does not requeue** — inspect **`errors`** in script output and Postgres connectivity; confirm **`retry_after`** column exists on **`jobs`**.
+
+**Note:** **Max retry exhaustion** and **`dead_lettered`** routing are **future work** — exhausted jobs may sit on **`failed`** today, not DLQ.
 
 ## Full Completion Smoke Test Fails
 

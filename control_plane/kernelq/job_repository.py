@@ -200,6 +200,55 @@ class JobRepository:
         self._conn.commit()
         return updated
 
+    def requeue_due_retries(self, now: int, limit: int = 100) -> list[str]:
+        """
+        Move due retry jobs back into the normal scheduling queue.
+
+        Finds rows where ``state`` is ``retry_scheduled`` and ``retry_after <= now``,
+        updates them to ``queued``, bumps ``updated_at``, and returns the
+        ``job_id`` values that were requeued (at most ``limit``).
+
+        Ordering: earliest ``retry_after`` first, then oldest ``created_at`` (FIFO
+        among jobs that become due at the same time).
+
+        ``now`` is a Unix timestamp (seconds). A future retry scanner passes the
+        current time on each pass.
+        """
+        if limit <= 0:
+            raise ValueError("limit must be a positive integer")
+
+        # One transaction: lock due retry rows, move them to queued, return ids.
+        sql = """
+            UPDATE jobs
+            SET state = %(queued_state)s, updated_at = NOW()
+            WHERE job_id IN (
+                SELECT job_id
+                FROM jobs
+                WHERE state = %(retry_scheduled_state)s
+                  AND retry_after <= %(now)s
+                ORDER BY retry_after ASC, created_at ASC
+                LIMIT %(limit)s
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING job_id, retry_after, created_at
+        """
+        params = {
+            "queued_state": JobState.QUEUED.value,
+            "retry_scheduled_state": JobState.RETRY_SCHEDULED.value,
+            "now": now,
+            "limit": limit,
+        }
+
+        with self._conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, params)
+            rows = cur.fetchall()
+
+        self._conn.commit()
+
+        # RETURNING order is not guaranteed; sort to match selection policy.
+        rows.sort(key=lambda row: (row["retry_after"], row["created_at"]))
+        return [row["job_id"] for row in rows]
+
     def delete_job(self, job_id: str) -> bool:
         """Delete a job by id. Returns True if a row was removed (handy for tests)."""
         sql = "DELETE FROM jobs WHERE job_id = %(job_id)s"

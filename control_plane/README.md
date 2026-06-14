@@ -168,6 +168,18 @@ KernelQ’s control plane now includes **`ResultStateHandler`** (`kernelq/result
 
 **Backoff** and **automatic requeue** (`RETRY_SCHEDULED` → **`queued`**, **`kernelq.jobs.retry`**) come later.
 
+## Retry Requeue Scanner
+
+**`RetryScanner`** (`kernelq/retry_scanner.py`) moves **due** **`retry_scheduled`** jobs (where **`retry_after <= now`**) back to **`queued`**. The normal **scheduler tick** can then **dispatch them again** on the usual path.
+
+This is a **one-shot scanner** for now (`run_once` / manual script)—not a long-running daemon loop yet. **Max retry exhaustion** policy and **DLQ** behavior come later.
+
+Manual try from the repository root:
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/run_retry_scanner_once.py
+```
+
 ## Kafka Result Consumer Skeleton
 
 KernelQ’s control plane now includes **`KafkaResultConsumer`** (`kernelq/kafka_result_consumer.py`) for **`kernelq.jobs.results`**. It **polls one result message** at a time and passes bytes through **`ResultConsumerRunner`** → **`ResultStateHandler`**, which can **update Postgres `jobs.state`**.

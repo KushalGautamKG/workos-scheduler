@@ -472,6 +472,19 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 **No numeric measurements, dashboards, or SLOs exist yet.**
 
+## Retry Scanner Metrics Planned
+
+**`RetryScanner.run_once`** and **`run_retry_scanner_once.py`** requeue due **`retry_scheduled`** rows today; **dashboards and a long-running loop** are not wired yet. When the scanner path is instrumented, we plan to track:
+
+| Metric | What it means |
+|--------|---------------|
+| `retry_scanner_runs_total` | How many scan passes completed (manual script or future daemon) |
+| `retry_requeued_total` | Jobs moved **`retry_scheduled` → `queued`** because **`retry_after <= now`** |
+| `retry_scanner_errors_total` | Scan failures (Postgres errors, missing **`retry_after`** column, etc.) |
+| `retry_requeue_latency_seconds` | Time for one **`requeue_due_retries`** call (p50 / p95 / p99) |
+
+**No numeric measurements, dashboards, or SLOs exist yet.**
+
 ## End-to-End Completion Metrics Planned
 
 KernelQ now has a **full completion loop** (queued job → dispatch → worker → result → Postgres **`succeeded`**), verified by **`./control_plane/scripts/smoke_full_completion.sh`**. We have **not** measured segment latencies yet; this section names the **future histograms** that will stitch scheduler, worker, and result-consumer metrics into one story.
