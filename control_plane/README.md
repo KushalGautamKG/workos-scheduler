@@ -180,10 +180,18 @@ PYTHONPATH=. python3 control_plane/scripts/run_retry_scanner_once.py
 
 ## Retry Requeue Smoke Test
 
-**`scripts/smoke_retry_requeue.sh`** verifies **`retryable_failure` → `RETRY_SCHEDULED` → `QUEUED` → `DISPATCHED`** (no Go worker). Exhaustion → **`DEAD_LETTERED`** is covered by repository/handler tests.
+**`scripts/smoke_retry_requeue.sh`** verifies **`retryable_failure` → `RETRY_SCHEDULED` → `QUEUED` → `DISPATCHED`** (no Go worker).
 
 ```bash
 ./control_plane/scripts/smoke_retry_requeue.sh
+```
+
+## Retry Exhaustion Smoke Test
+
+**`scripts/smoke_retry_exhaustion.sh`** verifies that **exhausted retries move to `DEAD_LETTERED`**. It creates a **dispatched** job with **`retry_count = max_retries`**, injects a **`retryable_failure`** result through **`ResultStateHandler`**, and asserts the final state is **`dead_lettered`**. It then runs **`RetryScanner`** once to confirm **`DEAD_LETTERED`** jobs are **terminal** and **not requeued** (no Go worker).
+
+```bash
+./control_plane/scripts/smoke_retry_exhaustion.sh
 ```
 
 ## Kafka Result Consumer Skeleton

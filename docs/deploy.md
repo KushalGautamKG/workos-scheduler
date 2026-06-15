@@ -454,7 +454,24 @@ From the **repository root**, this script verifies **retry state movement** in P
 5. Runs **one scheduler tick** (claim + publish) → **`dispatched`**.
 6. Prints state after each step; exits nonzero if the path fails.
 
-Requires Docker and Python (Kafka needed for the scheduler publish step). **Max retry exhaustion** and real worker failures are not covered yet.
+Requires Docker and Python (Kafka needed for the scheduler publish step).
+
+## Retry Exhaustion Smoke Test
+
+From the **repository root**, this script verifies **max retry exhaustion** → **`DEAD_LETTERED`** in Postgres—no Go worker required.
+
+```bash
+./control_plane/scripts/smoke_retry_exhaustion.sh
+```
+
+**What it does:**
+
+1. Starts **local infra** (Postgres, Zookeeper, Kafka) and ensures the **`jobs`** table / **`retry_after`** column exist.
+2. Creates a **dispatched** test job with **`retry_count = max_retries`** (budget already exhausted).
+3. **Injects** a **`retryable_failure`** via **`ResultStateHandler`**.
+4. Verifies final state is **`dead_lettered`**; runs **one retry scan** and confirms the job is **not requeued**.
+
+Requires Docker and Python only.
 
 ## Running Repository Tests
 

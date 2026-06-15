@@ -339,12 +339,20 @@ Use this when **`jobs.state = dead_lettered`** after a worker result or retry ex
 
 **Immediate impact:**
 
-- The job **will not be retried automatically**
-- **`RetryScanner`** and the scheduler **ignore** **`dead_lettered`** rows — no return to **`queued`** without manual intervention
+- **`DEAD_LETTERED` is terminal** — the job **will not be retried automatically**
+- **`RetryScanner` must not requeue** **`dead_lettered`** rows (only **`retry_scheduled`** with due **`retry_after`** → **`queued`**). If a dead-lettered job reappears in **`queued`**, that is a policy bug.
+
+**Verify exhaustion behavior (local):**
+
+```bash
+./control_plane/scripts/smoke_retry_exhaustion.sh
+```
+
+Expect **`final_state=dead_lettered`** and **`state_after_retry_scanner=dead_lettered`**.
 
 **Checks:**
 
-1. **Retry budget** — confirm exhaustion vs misconfiguration:
+1. **Inspect `retry_count` and `max_retries`** — confirm exhaustion vs misconfiguration:
    ```bash
    docker exec -i kernelq-postgres psql -U kernelq -d kernelq \
      -c "SELECT job_id, state, retry_count, max_retries, retry_after, updated_at FROM jobs WHERE job_id = '<id>';"

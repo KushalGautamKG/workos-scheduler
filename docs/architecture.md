@@ -934,9 +934,33 @@ DISPATCHED (again)
 
 **What this proves:** the **retry loop shape** works end-to-end in Postgres and through the **same dispatch path** as first-time jobs. Retries are not a separate ad-hoc pipeline—they re-enter **`queued`** and get picked up by **`SchedulerTickRunner`**.
 
-**What it does not prove yet:** **real worker failure** on Kafka, **DLQ Kafka publish**, or **backoff tuning** (exhaustion → **`DEAD_LETTERED`** is covered in repository/handler tests).
+**What it does not prove yet:** **real worker failure** on Kafka, **DLQ Kafka publish**, or **backoff tuning**.
 
-**Interview sound bite:** *“Smoke script: retryable result → RETRY_SCHEDULED, scanner → QUEUED, scheduler → DISPATCHED again—that’s the retry loop shape; DEAD_LETTERED exhaustion is policy in Postgres.”*
+**Interview sound bite:** *“Smoke script: retryable result → RETRY_SCHEDULED, scanner → QUEUED, scheduler → DISPATCHED again—that’s the retry loop shape.”*
+
+## Retry Exhaustion Smoke Test
+
+KernelQ can now **verify that exhausted retryable failures become `DEAD_LETTERED`** with **`./control_plane/scripts/smoke_retry_exhaustion.sh`**—Postgres and control-plane Python only (no Go worker).
+
+**What the smoke test proves (exhaustion boundary):**
+
+```
+dispatched test job (retry_count = max_retries)
+    ↓  ResultStateHandler + retryable_failure (injected)
+DEAD_LETTERED
+    ↓  RetryScanner — one scan
+DEAD_LETTERED (unchanged — not requeued)
+```
+
+**Step by step:**
+
+1. Create a **dispatched** job with **`retry_count = max_retries`** (budget already used)
+2. **Inject `retryable_failure`** → **`schedule_retry_from_worker_result`** → **`DEAD_LETTERED`**
+3. Run **`RetryScanner`** once — state **stays `DEAD_LETTERED`**
+
+**Why this matters:** **`RetryScanner`** only requeues **`RETRY_SCHEDULED`** rows with due **`retry_after`**. It **must not** pick up **`DEAD_LETTERED`** jobs—that would **defeat max-retry policy** and risk **infinite retry loops** on poison or permanently failing work.
+
+**Interview sound bite:** *“Exhaustion smoke: retry_count at max + retryable_failure → DEAD_LETTERED; scanner leaves it alone—terminal state protects the system from retrying forever.”*
 
 ## Kafka Result Consumer Skeleton
 

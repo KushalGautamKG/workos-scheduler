@@ -466,10 +466,12 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 |--------|---------------|
 | `retry_scheduled_total` | Jobs moved to **`retry_scheduled`** after **`retryable_failure`** (retries still available) |
 | `retry_exhausted_total` | Jobs that hit **`retry_count >= max_retries`** and moved to **`dead_lettered`** |
-| `dead_lettered_jobs_total` | Cumulative jobs in terminal **`dead_lettered`** (exhaustion or future permanent-failure policy) |
+| `dead_lettered_jobs_total` | Cumulative jobs in terminal **`dead_lettered`** — should **increase when retries are exhausted** (or on future permanent-failure policy) |
 | `retry_attempt_count` | Per-attempt counter or histogram of **`retry_count`** when a retry is scheduled |
 | `retry_delay_seconds` | Wait in **`retry_scheduled`** before requeue (backoff + jitter) |
 | `retry_success_after_attempts` | Jobs that eventually **`succeeded`** after one or more retries |
+
+**Correctness today, not performance:** **`./control_plane/scripts/smoke_retry_exhaustion.sh`** validates exhaustion → **`DEAD_LETTERED`** and that **`RetryScanner`** does not requeue — it does **not** measure latency or throughput.
 
 **No numeric measurements yet.**
 
