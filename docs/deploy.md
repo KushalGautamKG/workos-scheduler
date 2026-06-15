@@ -437,6 +437,25 @@ From the **repository root**, this script runs the **full MVP feedback loop**: a
 
 Requires Docker, Go, and Python. See **`control_plane/README.md`** for a short overview.
 
+## Retry Requeue Smoke Test
+
+From the **repository root**, this script verifies **retry state movement** in Postgres—no Go worker required.
+
+```bash
+./control_plane/scripts/smoke_retry_requeue.sh
+```
+
+**What it does:**
+
+1. Starts **local infra** (Postgres, Zookeeper, Kafka) and ensures the **`jobs`** table / **`retry_after`** column exist.
+2. Creates **Kafka topics** and inserts a **dispatched** test job (unique `job_id`).
+3. **Injects** a **`retryable_failure`** via **`ResultStateHandler`** → **`retry_scheduled`**.
+4. Sets **`retry_after`** due and runs **one retry scan** (`run_retry_scanner_once.py`) → **`queued`**.
+5. Runs **one scheduler tick** (claim + publish) → **`dispatched`**.
+6. Prints state after each step; exits nonzero if the path fails.
+
+Requires Docker and Python (Kafka needed for the scheduler publish step). **Max retry exhaustion** and real worker failures are not covered yet.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

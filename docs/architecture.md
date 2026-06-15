@@ -896,6 +896,34 @@ kernelq.jobs.dispatch → Go worker → …
 
 **Interview sound bite:** *“Retryable failure → RETRY_SCHEDULED with retry_after; RetryScanner moves due jobs to QUEUED; scheduler dispatches them like any other queued job—DLQ and exhaustion policy come later.”*
 
+## Retry Requeue Smoke Test
+
+KernelQ can now **verify retry state movement** on a laptop with **`./control_plane/scripts/smoke_retry_requeue.sh`**—Postgres and control-plane Python only (no Go worker execution required for this check).
+
+**What the smoke test proves (retry loop shape):**
+
+```
+dispatched test job
+    ↓  ResultStateHandler + retryable_failure (injected)
+RETRY_SCHEDULED
+    ↓  RetryScanner (retry_after made due)
+QUEUED
+    ↓  SchedulerTickRunner — one tick
+DISPATCHED (again)
+```
+
+**Step by step:**
+
+1. **Retryable worker result** (simulated) → **`schedule_retry_from_worker_result`** → **`RETRY_SCHEDULED`**
+2. **`RetryScanner`** → due rows (**`retry_after <= now`**) → **`QUEUED`**
+3. **Scheduler tick** → claim + publish → **`DISPATCHED`** on **`kernelq.jobs.dispatch`**
+
+**What this proves:** the **retry loop shape** works end-to-end in Postgres and through the **same dispatch path** as first-time jobs. Retries are not a separate ad-hoc pipeline—they re-enter **`queued`** and get picked up by **`SchedulerTickRunner`**.
+
+**What it does not prove yet:** **real worker failure** on Kafka, **max retry exhaustion** (**`DEAD_LETTERED`**), **DLQ**, or **backoff tuning** when **`retry_after`** is set automatically at schedule time.
+
+**Interview sound bite:** *“Smoke script: retryable result → RETRY_SCHEDULED, scanner → QUEUED, scheduler → DISPATCHED again—that’s the retry loop shape; exhaustion and DLQ are next.”*
+
 ## Kafka Result Consumer Skeleton
 
 The **Python control plane** can now **consume from `kernelq.jobs.results`** using **`KafkaResultConsumer`** (`control_plane/kernelq/kafka_result_consumer.py`). This connects **worker result events** on Kafka to **durable state update logic** in Postgres.

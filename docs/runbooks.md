@@ -320,6 +320,11 @@ Use this when a job stays **`retry_scheduled`** and never returns to **`queued`*
    ```
    Expect **`requeued_job_ids`** to include your **`job_id`** and state → **`queued`**. Then run **`run_scheduler_tick_once.py`** to dispatch.
 4. **If `retry_after` is past but the scanner does not requeue** — inspect **`errors`** in script output and Postgres connectivity; confirm **`retry_after`** column exists on **`jobs`**.
+5. **Verify the full retry requeue path** (repo root):
+   ```bash
+   ./control_plane/scripts/smoke_retry_requeue.sh
+   ```
+   Expect **`retry_scheduled` → `queued` → `dispatched`**. If it fails, inspect **`retry_after`**, **`run_retry_scanner_once.py`** output (**`requeued_job_ids`**, **`errors`**), **`run_scheduler_tick_once.py`** output (**`dispatched_job_ids`**, **`publish_errors`**), and Postgres **`state`** / **`retry_count`** after each step.
 
 **Note:** **Max retry exhaustion** and **`dead_lettered`** routing are **future work** — exhausted jobs may sit on **`failed`** today, not DLQ.
 

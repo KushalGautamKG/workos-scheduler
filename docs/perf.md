@@ -483,6 +483,10 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 | `retry_scanner_errors_total` | Scan failures (Postgres errors, missing **`retry_after`** column, etc.) |
 | `retry_requeue_latency_seconds` | Time for one **`requeue_due_retries`** call (p50 / p95 / p99) |
 
+**Smoke test today:** **`./control_plane/scripts/smoke_retry_requeue.sh`** validates **state transitions** (**`retry_scheduled` → `queued` → `dispatched`**) but does **not** measure latency yet.
+
+**Future retry path latency (not measured yet):** time from **`retry_scheduled`** (or **`retry_after`**) through **`queued`** to **`dispatched`** again — end-to-end retry requeue + redispatch.
+
 **No numeric measurements, dashboards, or SLOs exist yet.**
 
 ## End-to-End Completion Metrics Planned

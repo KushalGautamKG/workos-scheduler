@@ -180,6 +180,16 @@ Manual try from the repository root:
 PYTHONPATH=. python3 control_plane/scripts/run_retry_scanner_once.py
 ```
 
+## Retry Requeue Smoke Test
+
+**`scripts/smoke_retry_requeue.sh`** verifies **retryable-failure state movement** in Postgres: **`retryable_failure` → `RETRY_SCHEDULED` → `QUEUED` → `DISPATCHED`**. It uses direct repository/handler Python snippets—**not** a real Go worker failure yet. **Max retry exhaustion** and **DLQ** come later.
+
+Run from the repository root:
+
+```bash
+./control_plane/scripts/smoke_retry_requeue.sh
+```
+
 ## Kafka Result Consumer Skeleton
 
 KernelQ’s control plane now includes **`KafkaResultConsumer`** (`kernelq/kafka_result_consumer.py`) for **`kernelq.jobs.results`**. It **polls one result message** at a time and passes bytes through **`ResultConsumerRunner`** → **`ResultStateHandler`**, which can **update Postgres `jobs.state`**.
