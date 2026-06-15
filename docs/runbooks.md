@@ -277,14 +277,14 @@ Use this when a consumed **`WorkerResultEvent`** has **`status: retryable_failur
 **Symptom:**
 
 - Result on **`kernelq.jobs.results`** shows **`retryable_failure`** for a **`job_id`**
-- After **`ResultStateHandler`** runs, Postgres **`retry_count`** or **`state`** changed (or job is **`failed`** if exhausted)
+- After **`ResultStateHandler`** runs, Postgres **`retry_count`** or **`state`** changed (or job is **`dead_lettered`** if exhausted — see **Job Reaches DEAD_LETTERED**)
 
 **Current behavior (control plane):**
 
 - **`ResultStateHandler`** calls **`JobRepository.schedule_retry_from_worker_result`**
 - If **`retry_count < max_retries`**: **`retry_count`** increments by 1, job moves to **`retry_scheduled`**
-- If retries are **exhausted**: job moves to **`failed`** (not **`dead_lettered`** yet)
-- **No automatic re-run** — job stays **`retry_scheduled`** until a future requeue path runs
+- If retries are **exhausted**: job moves to **`dead_lettered`** (terminal — see **Job Reaches DEAD_LETTERED**)
+- **No automatic re-run** while **`retry_scheduled`** — run **`run_retry_scanner_once.py`** after **`retry_after`** is due
 
 **Future behavior:**
 
@@ -326,7 +326,54 @@ Use this when a job stays **`retry_scheduled`** and never returns to **`queued`*
    ```
    Expect **`retry_scheduled` → `queued` → `dispatched`**. If it fails, inspect **`retry_after`**, **`run_retry_scanner_once.py`** output (**`requeued_job_ids`**, **`errors`**), **`run_scheduler_tick_once.py`** output (**`dispatched_job_ids`**, **`publish_errors`**), and Postgres **`state`** / **`retry_count`** after each step.
 
-**Note:** **Max retry exhaustion** and **`dead_lettered`** routing are **future work** — exhausted jobs may sit on **`failed`** today, not DLQ.
+**Note:** If the job is **`dead_lettered`** instead, retries are exhausted — see **Job Reaches DEAD_LETTERED**.
+
+## Job Reaches DEAD_LETTERED
+
+Use this when **`jobs.state = dead_lettered`** after a worker result or retry exhaustion.
+
+**Meaning:**
+
+- **Retry budget exhausted** — **`retry_count >= max_retries`** after a **`retryable_failure`**
+- **Permanent failure** (policy) — **`terminal_failure`** may map to **`failed`** today; **`dead_lettered`** is the target for non-retryable outcomes
+
+**Immediate impact:**
+
+- The job **will not be retried automatically**
+- **`RetryScanner`** and the scheduler **ignore** **`dead_lettered`** rows — no return to **`queued`** without manual intervention
+
+**Checks:**
+
+1. **Retry budget** — confirm exhaustion vs misconfiguration:
+   ```bash
+   docker exec -i kernelq-postgres psql -U kernelq -d kernelq \
+     -c "SELECT job_id, state, retry_count, max_retries, retry_after, updated_at FROM jobs WHERE job_id = '<id>';"
+   ```
+   Expect **`retry_count >= max_retries`** when dead-lettered from **`retryable_failure`**.
+2. **Worker result message** — find the event on **`kernelq.jobs.results`** (matching **`job_id`**, **`status`**, **`message`**):
+   ```bash
+   docker exec kernelq-kafka kafka-console-consumer \
+     --bootstrap-server kafka:29092 \
+     --topic kernelq.jobs.results \
+     --from-beginning \
+     --timeout-ms 5000 \
+     --max-messages 500 2>/dev/null | grep -F "<job_id>"
+   ```
+   Or re-run **`PYTHONPATH=. python3 control_plane/scripts/consume_result_once.py`** if the result is still on the topic.
+3. **Job payload** — inspect the original job row (payload, tenant, priority) for poison input or bad config:
+   ```bash
+   docker exec -i kernelq-postgres psql -U kernelq -d kernelq \
+     -c "SELECT job_id, tenant_id, priority, payload, state, created_at FROM jobs WHERE job_id = '<id>';"
+   ```
+
+**Mitigation (today):**
+
+- Fix root cause (dependency, payload, worker bug) before any replay
+- **Manual replay only** — create a new job or reset state in dev after understanding the failure (no built-in replay tool yet)
+
+**Future improvement:**
+
+- **DLQ inspection/replay tooling** — consume **`kernelq.jobs.dlq`**, dashboards, and safe replay from **`DEAD_LETTERED`** without ad hoc SQL
 
 ## Full Completion Smoke Test Fails
 

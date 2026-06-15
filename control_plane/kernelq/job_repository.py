@@ -8,6 +8,7 @@ so values are never pasted into SQL as raw strings (safer and clearer).
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +17,28 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Json
 
 from control_plane.kernelq.job_state import JobState
+
+# Default wait before a retry_scheduled job becomes eligible for requeue.
+DEFAULT_RETRY_DELAY_SECONDS = 60
+
+
+@dataclass
+class ScheduleRetryResult:
+    """
+    Outcome of ``schedule_retry_from_worker_result`` for one job.
+
+    - ``outcome`` is ``"scheduled"`` when retries remain and the job waits on
+      ``retry_after`` in ``retry_scheduled``.
+    - ``outcome`` is ``"exhausted"`` when ``retry_count >= max_retries`` and the
+      job moves to ``dead_lettered`` (max retry budget used up).
+    """
+
+    outcome: str
+    job_id: str
+    state: str
+    retry_count: int
+    max_retries: int
+    retry_after: int | None = None
 
 
 @dataclass
@@ -160,19 +183,27 @@ class JobRepository:
         self._conn.commit()
         return updated
 
-    def schedule_retry_from_worker_result(self, job_id: str) -> bool:
+    def schedule_retry_from_worker_result(
+        self,
+        job_id: str,
+        retry_delay_seconds: int = DEFAULT_RETRY_DELAY_SECONDS,
+    ) -> ScheduleRetryResult | None:
         """
         Apply retry policy after a worker reports a retryable failure.
 
-        - If the job is missing: return ``False``.
+        - If the job is missing: return ``None``.
         - If ``retry_count < max_retries``: increment ``retry_count``, set
-          ``retry_scheduled``, bump ``updated_at``, return ``True``.
-        - Otherwise: set ``failed``, bump ``updated_at``, return ``True``.
+          ``retry_scheduled``, set ``retry_after = now + retry_delay_seconds``,
+          bump ``updated_at``; return outcome ``"scheduled"``.
+        - If ``retry_count >= max_retries`` (**max retry exhaustion**): set
+          ``dead_lettered``, bump ``updated_at``; return outcome ``"exhausted"``.
+          The job will not be auto-retried — operators inspect dead-letter state.
 
-        Backoff delay and re-enqueue to Kafka are **not** implemented here —
-        this only updates Postgres so a future retry dispatcher can pick up
-        ``retry_scheduled`` rows.
+        Re-enqueue to ``queued`` is handled separately by ``requeue_due_retries``.
         """
+        now = int(time.time())
+        retry_after = now + retry_delay_seconds
+
         sql = """
             UPDATE jobs
             SET
@@ -182,23 +213,46 @@ class JobRepository:
                 END,
                 state = CASE
                     WHEN retry_count < max_retries THEN %(retry_scheduled)s
-                    ELSE %(failed)s
+                    ELSE %(dead_lettered)s
+                END,
+                retry_after = CASE
+                    WHEN retry_count < max_retries THEN %(retry_after)s
+                    ELSE retry_after
                 END,
                 updated_at = NOW()
             WHERE job_id = %(job_id)s
+            RETURNING job_id, retry_count, max_retries, state, retry_after
         """
         params = {
             "job_id": job_id,
             "retry_scheduled": JobState.RETRY_SCHEDULED.value,
-            "failed": JobState.FAILED.value,
+            "dead_lettered": JobState.DEAD_LETTERED.value,
+            "retry_after": retry_after,
         }
 
-        with self._conn.cursor() as cur:
+        with self._conn.cursor(row_factory=dict_row) as cur:
             cur.execute(sql, params)
-            updated = cur.rowcount > 0
+            row = cur.fetchone()
+
+        if row is None:
+            self._conn.rollback()
+            return None
 
         self._conn.commit()
-        return updated
+
+        if row["state"] == JobState.RETRY_SCHEDULED.value:
+            outcome = "scheduled"
+        else:
+            outcome = "exhausted"
+
+        return ScheduleRetryResult(
+            outcome=outcome,
+            job_id=row["job_id"],
+            state=row["state"],
+            retry_count=row["retry_count"],
+            max_retries=row["max_retries"],
+            retry_after=row.get("retry_after"),
+        )
 
     def requeue_due_retries(self, now: int, limit: int = 100) -> list[str]:
         """

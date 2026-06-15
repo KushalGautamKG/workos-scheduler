@@ -822,7 +822,7 @@ KernelQ now **maps worker result events into durable job state** in Postgres. **
 | Worker `status` | Control-plane action (today) |
 |-----------------|------------------------------|
 | `succeeded` | **`update_job_state_from_worker_result`** → **`succeeded`** |
-| `retryable_failure` | **`schedule_retry_from_worker_result`** → **`retry_scheduled`** or **`failed`** (see **Retryable Failure Handling**) |
+| `retryable_failure` | **`schedule_retry_from_worker_result`** → **`retry_scheduled`** or **`dead_lettered`** (see **Retryable Failure Handling**, **Max Retry Exhaustion**) |
 | `terminal_failure` | **`update_job_state_from_worker_result`** → **`failed`** (**DEAD_LETTERED** later) |
 
 **End-to-end path (when wired):**
@@ -835,7 +835,7 @@ kernelq.jobs.results → KafkaResultConsumer → ResultConsumerRunner → Result
 
 ## Retryable Failure Handling
 
-When a Go worker reports **`retryable_failure`**, the **Python control plane** applies **retry scheduling policy** in Postgres—not a blind write to **`failed`**.
+When a Go worker reports **`retryable_failure`**, the **Python control plane** applies **retry scheduling policy** in Postgres via **`schedule_retry_from_worker_result`**.
 
 **Flow:**
 
@@ -844,24 +844,39 @@ WorkerResultEvent (status: retryable_failure)
     ↓  ResultStateHandler.handle
 JobRepository.schedule_retry_from_worker_result(job_id)
     ↓
-retry_count < max_retries  →  retry_count += 1, state = retry_scheduled
-retry_count >= max_retries →  state = failed (exhausted for now)
+retry_count < max_retries  →  retry_count += 1, retry_after set, state = retry_scheduled
+retry_count >= max_retries →  state = dead_lettered  (see Max Retry Exhaustion)
 ```
 
 **What happens today:**
 
 - **Workers classify** the outcome (`retryable_failure` = transient; may work on another attempt).
-- **Control plane increments `retry_count`** when retries remain and moves the job to **`RETRY_SCHEDULED`**.
-- When the **retry limit is exhausted** (`retry_count >= max_retries`), the job moves to **`FAILED`** (not **`DEAD_LETTERED`** yet).
+- **Control plane owns policy** — workers do not decide how many retries remain.
 
-**What is still future work:**
+**What is still future work:** **backoff tuning**, **long-running scanner daemon**, **`kernelq.jobs.retry`** / DLQ publish for **`terminal_failure`**.
 
-- **Retry delay tuning** — exponential backoff and jitter when setting **`retry_after`**
-- **Long-running retry loop** — continuous scanner daemon (today: **`run_once`** / manual script)
-- **Optional retry topic** — publish to **`kernelq.jobs.retry`** for traffic isolation
-- **Terminal policy** — **`terminal_failure` → `DEAD_LETTERED`** and DLQ routing
+**Interview sound bite:** *“Worker says retryable_failure; control plane schedules RETRY_SCHEDULED or dead-letters when exhausted—RetryScanner requeues due rows to QUEUED.”*
 
-**Interview sound bite:** *“Worker says retryable_failure; control plane bumps retry_count and sets RETRY_SCHEDULED if budget remains, else FAILED—RetryScanner requeues due rows to QUEUED next.”*
+## Max Retry Exhaustion
+
+**Retryable worker failures do not retry forever.** Each job carries **`retry_count`** and **`max_retries`** in Postgres; the control plane enforces a **retry budget**.
+
+**Policy (`schedule_retry_from_worker_result`):**
+
+| Condition | Postgres state | Meaning |
+|-----------|----------------|---------|
+| **`retry_count < max_retries`** | **`RETRY_SCHEDULED`** | Another attempt is allowed after **`retry_after`**; **`retry_count`** increments |
+| **`retry_count >= max_retries`** | **`DEAD_LETTERED`** | **Max retry exhaustion** — no automatic retries left |
+
+**Why `DEAD_LETTERED` is terminal:**
+
+- Stops **infinite retry loops** on work that will not succeed (poison payload, permanent dependency failure).
+- Signals **operators** to inspect, fix root cause, or **manually replay** — not the normal scheduler path.
+- Aligns with **`kernelq.jobs.dlq`** intent (Kafka DLQ publish for inspection is future work).
+
+**`DEAD_LETTERED` jobs are not requeued** by **`RetryScanner`** — only **`RETRY_SCHEDULED`** rows with due **`retry_after`** move back to **`QUEUED`**.
+
+**Interview sound bite:** *“retry_count vs max_retries bounds retries; budget left → RETRY_SCHEDULED; exhausted → DEAD_LETTERED terminal for ops inspection—not forever on the retry loop.”*
 
 ## Retry Requeue Scanner
 
@@ -889,12 +904,11 @@ kernelq.jobs.dispatch → Go worker → …
 
 **What is still future work:**
 
-- **Max retry exhaustion** — full policy when budget is gone (**`DEAD_LETTERED`** vs **`FAILED`** today)
-- **Dead-lettering** — **`terminal_failure`**, poison jobs, **`kernelq.jobs.dlq`**
+- **Dead-letter Kafka publish** — **`terminal_failure`**, poison jobs, **`kernelq.jobs.dlq`**
 - **Long-running scanner loop** with metrics and graceful shutdown
 - **Backoff tuning** when **`retry_after`** is computed at schedule time
 
-**Interview sound bite:** *“Retryable failure → RETRY_SCHEDULED with retry_after; RetryScanner moves due jobs to QUEUED; scheduler dispatches them like any other queued job—DLQ and exhaustion policy come later.”*
+**Interview sound bite:** *“Retryable failure → RETRY_SCHEDULED with retry_after; RetryScanner moves due jobs to QUEUED; scheduler dispatches them—DEAD_LETTERED jobs stay out of the scanner.”*
 
 ## Retry Requeue Smoke Test
 
@@ -920,9 +934,9 @@ DISPATCHED (again)
 
 **What this proves:** the **retry loop shape** works end-to-end in Postgres and through the **same dispatch path** as first-time jobs. Retries are not a separate ad-hoc pipeline—they re-enter **`queued`** and get picked up by **`SchedulerTickRunner`**.
 
-**What it does not prove yet:** **real worker failure** on Kafka, **max retry exhaustion** (**`DEAD_LETTERED`**), **DLQ**, or **backoff tuning** when **`retry_after`** is set automatically at schedule time.
+**What it does not prove yet:** **real worker failure** on Kafka, **DLQ Kafka publish**, or **backoff tuning** (exhaustion → **`DEAD_LETTERED`** is covered in repository/handler tests).
 
-**Interview sound bite:** *“Smoke script: retryable result → RETRY_SCHEDULED, scanner → QUEUED, scheduler → DISPATCHED again—that’s the retry loop shape; exhaustion and DLQ are next.”*
+**Interview sound bite:** *“Smoke script: retryable result → RETRY_SCHEDULED, scanner → QUEUED, scheduler → DISPATCHED again—that’s the retry loop shape; DEAD_LETTERED exhaustion is policy in Postgres.”*
 
 ## Kafka Result Consumer Skeleton
 

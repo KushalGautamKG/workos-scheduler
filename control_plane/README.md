@@ -156,25 +156,23 @@ Tests use a **fake handler** so parsing and dispatch can be checked without a br
 KernelQ’s control plane now includes **`ResultStateHandler`** (`kernelq/result_handler.py`). It maps validated **`WorkerResultEvent`** statuses to **`jobs.state`** in Postgres via **`JobRepository.update_job_state_from_worker_result`**.
 
 - **`succeeded`** → **`SUCCEEDED`**
-- **`retryable_failure`** → **`schedule_retry_from_worker_result`** (see below)
+- **`retryable_failure`** → **`schedule_retry_from_worker_result`** (see **Retryable Result Handling**)
 - **`terminal_failure`** → **`FAILED`** (for now)
 
 ## Retryable Result Handling
 
-**`retryable_failure`** results now use **`JobRepository.schedule_retry_from_worker_result`** (via **`ResultStateHandler`**), not a direct **`failed`** write.
+**`retryable_failure`** uses **`JobRepository.schedule_retry_from_worker_result`** (via **`ResultStateHandler`**):
 
-- If **`retry_count < max_retries`**: **`retry_count`** increments by 1 and state becomes **`RETRY_SCHEDULED`**.
-- If retries are **exhausted**: state becomes **`FAILED`** for now (not **`DEAD_LETTERED`** yet).
+- If **`retry_count < max_retries`**: increment **`retry_count`**, set **`retry_after`**, state → **`RETRY_SCHEDULED`**.
+- If retries are **exhausted** (`retry_count >= max_retries`): state → **`DEAD_LETTERED`** (terminal; no auto-retry).
 
-**Backoff** and **automatic requeue** (`RETRY_SCHEDULED` → **`queued`**, **`kernelq.jobs.retry`**) come later.
+**`terminal_failure`** still maps to **`FAILED`** for now. Backoff tuning and **`kernelq.jobs.retry`** publish come later.
 
 ## Retry Requeue Scanner
 
-**`RetryScanner`** (`kernelq/retry_scanner.py`) moves **due** **`retry_scheduled`** jobs (where **`retry_after <= now`**) back to **`queued`**. The normal **scheduler tick** can then **dispatch them again** on the usual path.
+**`RetryScanner`** only requeues jobs in **`RETRY_SCHEDULED`** whose **`retry_after <= now`** — it moves them to **`queued`**. It does **not** touch **`DEAD_LETTERED`** or other states. The **scheduler tick** then dispatches **`queued`** jobs again.
 
-This is a **one-shot scanner** for now (`run_once` / manual script)—not a long-running daemon loop yet. **Max retry exhaustion** policy and **DLQ** behavior come later.
-
-Manual try from the repository root:
+One-shot manual run:
 
 ```bash
 PYTHONPATH=. python3 control_plane/scripts/run_retry_scanner_once.py
@@ -182,9 +180,7 @@ PYTHONPATH=. python3 control_plane/scripts/run_retry_scanner_once.py
 
 ## Retry Requeue Smoke Test
 
-**`scripts/smoke_retry_requeue.sh`** verifies **retryable-failure state movement** in Postgres: **`retryable_failure` → `RETRY_SCHEDULED` → `QUEUED` → `DISPATCHED`**. It uses direct repository/handler Python snippets—**not** a real Go worker failure yet. **Max retry exhaustion** and **DLQ** come later.
-
-Run from the repository root:
+**`scripts/smoke_retry_requeue.sh`** verifies **`retryable_failure` → `RETRY_SCHEDULED` → `QUEUED` → `DISPATCHED`** (no Go worker). Exhaustion → **`DEAD_LETTERED`** is covered by repository/handler tests.
 
 ```bash
 ./control_plane/scripts/smoke_retry_requeue.sh

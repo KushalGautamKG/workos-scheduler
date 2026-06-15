@@ -2,8 +2,8 @@
 Apply worker result events to durable job state in Postgres.
 
 ``ResultStateHandler`` maps ``WorkerResultEvent.status`` to lifecycle updates
-through ``JobRepository``. ``retryable_failure`` uses retry scheduling;
-``terminal_failure`` and requeue/backoff for exhausted retries come later.
+through ``JobRepository``. For ``retryable_failure``, the **repository** applies
+retry policy (``RETRY_SCHEDULED`` vs ``DEAD_LETTERED`` when retries are exhausted).
 """
 
 from __future__ import annotations
@@ -17,8 +17,10 @@ class ResultStateHandler(ResultHandler):
     """
     Update Postgres when a validated worker result event arrives.
 
-    ``succeeded`` and ``terminal_failure`` map directly to job state.
-    ``retryable_failure`` delegates to ``schedule_retry_from_worker_result``.
+    - ``succeeded`` → ``SUCCEEDED`` via a direct state update.
+    - ``retryable_failure`` → ``schedule_retry_from_worker_result`` (repository
+      chooses ``RETRY_SCHEDULED`` or ``DEAD_LETTERED``).
+    - ``terminal_failure`` → ``FAILED`` for now (``DEAD_LETTERED`` later).
     """
 
     def __init__(self, repository) -> None:
@@ -29,10 +31,11 @@ class ResultStateHandler(ResultHandler):
             raise ValueError("repository must not be None")
 
         if event.status == "retryable_failure":
-            # retryable_failure now moves through retry scheduling logic;
-            # actual requeue/backoff comes later.
-            scheduled = self.repository.schedule_retry_from_worker_result(event.job_id)
-            if not scheduled:
+            # Worker reported a transient failure. The repository owns retry
+            # policy: schedule another attempt (RETRY_SCHEDULED) or stop when
+            # max_retries is exhausted (DEAD_LETTERED).
+            result = self.repository.schedule_retry_from_worker_result(event.job_id)
+            if result is None:
                 raise ValueError(f"job not found: {event.job_id!r}")
             return
 
@@ -50,8 +53,8 @@ def _map_result_status_to_job_state(status: str) -> str:
     """
     Map worker execution status to a Postgres ``jobs.state`` string.
 
-    ``retryable_failure`` is handled in ``ResultStateHandler.handle`` via
-    ``schedule_retry_from_worker_result`` — not this helper.
+    ``retryable_failure`` is **not** mapped here — see ``handle`` and
+    ``schedule_retry_from_worker_result``.
     """
     if status == "succeeded":
         return JobState.SUCCEEDED.value
