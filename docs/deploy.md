@@ -1,5 +1,17 @@
 # Deployment
 
+## MVP Demo Commands
+
+From the **repository root**. These are the **recommended demo commands** for the **MVP checkpoint** — they require **local Docker infra** (Postgres, Zookeeper, Kafka; see sections below).
+
+```bash
+./control_plane/scripts/smoke_full_completion.sh
+./control_plane/scripts/smoke_retry_requeue.sh
+./control_plane/scripts/smoke_retry_exhaustion.sh
+```
+
+Success path, retry requeue, and retry exhaustion respectively. See **[mvp.md](mvp.md)** for details.
+
 ## Local Development
 
 ## Local Control Plane Setup

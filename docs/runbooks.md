@@ -1,5 +1,19 @@
 # Runbooks
 
+## MVP Operational Smoke Tests
+
+Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context.
+
+| Path | Command |
+|------|---------|
+| **Success** | `./control_plane/scripts/smoke_full_completion.sh` |
+| **Retry** | `./control_plane/scripts/smoke_retry_requeue.sh` |
+| **Exhaustion** | `./control_plane/scripts/smoke_retry_exhaustion.sh` |
+| **Dead-letter inspection** | `PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py` |
+| **Manual recovery** | `PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>` |
+
+After manual requeue, run **`PYTHONPATH=. python3 control_plane/scripts/run_scheduler_tick_once.py`** to dispatch. All smoke scripts exit nonzero on failure.
+
 ## High Queue Depth
 
 **Symptoms:**

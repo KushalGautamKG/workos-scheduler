@@ -6,6 +6,12 @@ This system is a distributed work coordination and scheduling platform. It behav
 
 The control plane handles scheduling, state management, and coordination. The worker plane handles high-throughput task execution. They communicate through **Kafka**.
 
+## MVP Architecture Checkpoint
+
+KernelQ now has a **complete success feedback loop**: **queued** job → scheduler → **Kafka dispatch** → **Go worker** → **result event** → Postgres **`SUCCEEDED`**.
+
+It also supports **retry scheduling** (`retryable_failure` → **`RETRY_SCHEDULED`**), **retry requeue** (scanner → **`QUEUED`**), **retry exhaustion** → **`DEAD_LETTERED`**, and **manual dead-letter recovery** (`DEAD_LETTERED` → **`QUEUED`**). For the full capability list, demo commands, and limitations, see **[docs/mvp.md](mvp.md)**.
+
 ## Control Plane (Python)
 
 The control plane is responsible for:
