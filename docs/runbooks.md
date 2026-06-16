@@ -356,7 +356,21 @@ Expect **`final_state=dead_lettered`** and **`state_after_retry_scanner=dead_let
 PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py
 ```
 
-Shows up to 20 recent **`dead_lettered`** rows (newest **`updated_at`** first). Inspect **`payload`**, **`retry_count`/`max_retries`**, and **`updated_at`** per job. This script **does not replay or mutate** jobs — **replay / manual retry** is future work.
+Shows up to 20 recent **`dead_lettered`** rows (newest **`updated_at`** first). Inspect **`payload`**, **`retry_count`/`max_retries`**, and **`updated_at`** per job. Read-only.
+
+**Manual recovery:**
+
+1. **Inspect** the job (and others) with **`list_dead_lettered_jobs.py`** — confirm **`job_id`**, payload, and retry budget.
+2. **Fix external cause** if needed (dependency, payload, worker bug, config).
+3. **Requeue** — only **`DEAD_LETTERED`** jobs are eligible; **`retry_count`** is **preserved** for audit/history:
+   ```bash
+   PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>
+   ```
+   Expect **`requeued job_id=<job_id> state=queued`**. Exits nonzero if the job is missing or not dead-lettered.
+4. **Dispatch** — run a scheduler tick or wait for the scheduler to pick up **`queued`** jobs:
+   ```bash
+   PYTHONPATH=. python3 control_plane/scripts/run_scheduler_tick_once.py
+   ```
 
 **Checks:**
 
@@ -384,13 +398,12 @@ Shows up to 20 recent **`dead_lettered`** rows (newest **`updated_at`** first). 
 
 **Mitigation (today):**
 
-- Fix root cause (dependency, payload, worker bug) before any replay
-- **Manual replay only** in dev — create a new job or reset state after understanding the failure
+- Follow **Manual recovery** above — do not requeue until root cause is understood
+- In dev, you may still create a **new job** instead of requeueing the dead-lettered row
 
 **Future improvement:**
 
-- **Replay / manual retry tooling** — safe re-enqueue from **`DEAD_LETTERED`** without ad hoc SQL
-- **DLQ inspection** — consume **`kernelq.jobs.dlq`**, dashboards
+- **DLQ inspection** — consume **`kernelq.jobs.dlq`**, dashboards, alerting on **`dead_lettered_jobs_total`**
 
 ## Full Completion Smoke Test Fails
 

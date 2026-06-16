@@ -982,9 +982,34 @@ PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py
 
 **Postgres vs Kafka DLQ:** this is **separate from `kernelq.jobs.dlq`**. DLQ holds **bad Kafka messages** (malformed dispatch, poison records). **`DEAD_LETTERED`** in Postgres holds **job lifecycle state** after retry exhaustion or (eventually) permanent failure policy. Both are for inspection; they answer different questions.
 
-**What is still future work:** **replay** or **manual requeue** of inspected jobs, DLQ dashboards, and safe tooling so ops can fix root cause and re-run without defeating max-retry policy.
+**Interview sound bite:** *“DEAD_LETTERED is durable Postgres state for ops review; list script reads it—Kafka DLQ is a different lane.”*
 
-**Interview sound bite:** *“DEAD_LETTERED is durable Postgres state for ops review; list script reads it—Kafka DLQ is a different lane; replay tooling comes later.”*
+## Manual Dead-Letter Requeue
+
+**`DEAD_LETTERED` jobs are terminal by default** — **`RetryScanner`** and automatic retry policy do not touch them. After **inspection** (`list_dead_lettered_jobs.py`), operators may **manually requeue** when root cause is fixed.
+
+**Manual requeue path:**
+
+```
+DEAD_LETTERED (terminal)
+    ↓  JobRepository.requeue_dead_lettered_job (operator action)
+QUEUED
+    ↓  SchedulerTickRunner — normal dispatch
+DISPATCHED → worker → …
+```
+
+**Policy:**
+
+- Only rows currently **`dead_lettered`** are updated — missing or wrong-state jobs are rejected
+- **`retry_count` is preserved** — exhaustion history stays visible for audit
+- **`retry_after`** is cleared — the job is not a delayed **`RETRY_SCHEDULED`** row
+- **No Kafka publish in the requeue script** — the **scheduler** picks **`queued`** jobs on the next tick, same as first-time work
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>
+```
+
+**Interview sound bite:** *“DEAD_LETTERED is terminal unless ops explicitly requeues—DEAD_LETTERED → QUEUED, retry_count kept, scheduler dispatches normally later.”*
 
 ## Kafka Result Consumer Skeleton
 

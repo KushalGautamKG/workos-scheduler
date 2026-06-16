@@ -765,6 +765,88 @@ def test_list_dead_lettered_jobs_dict_includes_required_fields() -> None:
             repo.delete_job(job_id)
 
 
+def test_requeue_dead_lettered_job_becomes_queued() -> None:
+    job_id = _unique_job_id("test_jr_requeue_dl_ok")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        try:
+            repo.create_job(
+                job_id,
+                "tenant-a",
+                1,
+                JobState.DEAD_LETTERED.value,
+                max_retries=3,
+            )
+            _set_retry_count(conn, job_id, retry_count=3)
+
+            assert repo.requeue_dead_lettered_job(job_id) is True
+
+            loaded = repo.get_job(job_id)
+            assert loaded is not None
+            assert loaded.state == JobState.QUEUED.value
+        finally:
+            repo.delete_job(job_id)
+
+
+def test_requeue_dead_lettered_job_preserves_retry_count() -> None:
+    job_id = _unique_job_id("test_jr_requeue_dl_count")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        try:
+            repo.create_job(
+                job_id,
+                "tenant-a",
+                1,
+                JobState.DEAD_LETTERED.value,
+                max_retries=5,
+            )
+            _set_retry_count(conn, job_id, retry_count=5)
+            _set_retry_scheduled(
+                conn,
+                job_id,
+                retry_after=1_700_000_000,
+                state=JobState.DEAD_LETTERED.value,
+            )
+
+            assert repo.requeue_dead_lettered_job(job_id) is True
+
+            loaded = repo.get_job(job_id)
+            assert loaded is not None
+            assert loaded.retry_count == 5
+            assert loaded.max_retries == 5
+            assert _fetch_retry_after(conn, job_id) is None
+        finally:
+            repo.delete_job(job_id)
+
+
+def test_requeue_dead_lettered_job_skips_non_dead_lettered() -> None:
+    prefix = _unique_job_id("test_jr_requeue_dl_skip")
+    queued_id = _job_id(prefix, "queued")
+    succeeded_id = _job_id(prefix, "succeeded")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, queued_id, succeeded_id)
+        try:
+            repo.create_job(queued_id, "tenant-a", 1, JobState.QUEUED.value)
+            repo.create_job(succeeded_id, "tenant-a", 1, JobState.SUCCEEDED.value)
+
+            assert repo.requeue_dead_lettered_job(queued_id) is False
+            assert repo.requeue_dead_lettered_job(succeeded_id) is False
+
+            assert repo.get_job(queued_id).state == JobState.QUEUED.value
+            assert repo.get_job(succeeded_id).state == JobState.SUCCEEDED.value
+        finally:
+            _delete_jobs(repo, queued_id, succeeded_id)
+
+
+def test_requeue_dead_lettered_job_missing_returns_false() -> None:
+    missing_id = _unique_job_id("test_jr_requeue_dl_missing")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        assert repo.requeue_dead_lettered_job(missing_id) is False
+        assert repo.get_job(missing_id) is None
+
+
 def test_mark_job_dispatched_queued_becomes_dispatched() -> None:
     job_id = _unique_job_id("test_jr_dispatch_ok")
     with connect() as conn:

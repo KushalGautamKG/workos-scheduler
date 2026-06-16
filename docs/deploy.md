@@ -485,6 +485,18 @@ PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py
 
 Requires Postgres only.
 
+## Manual Dead-Letter Requeue
+
+From the **repository root**, manually move one **`DEAD_LETTERED`** job back to **`QUEUED`** after fixing root cause.
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>
+```
+
+**What it does:** updates the row only if **`state = dead_lettered`**, sets **`queued`**, clears **`retry_after`**, and **preserves `retry_count`**. The **scheduler tick** dispatches it later — this script does not publish to Kafka. Exits nonzero if the job is missing or not dead-lettered.
+
+Requires Postgres only.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

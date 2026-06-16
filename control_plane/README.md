@@ -196,10 +196,18 @@ PYTHONPATH=. python3 control_plane/scripts/run_retry_scanner_once.py
 
 ## Dead-Lettered Job Inspection
 
-The control plane can **list `DEAD_LETTERED` jobs** from Postgres via **`JobRepository.list_dead_lettered_jobs`** — this helps operators **inspect exhausted or permanently failed jobs** (`job_id`, retries, payload, timestamps). **Replay / manual retry** tooling comes later.
+The control plane can **list `DEAD_LETTERED` jobs** from Postgres via **`JobRepository.list_dead_lettered_jobs`** — this helps operators **inspect exhausted or permanently failed jobs** (`job_id`, retries, payload, timestamps).
 
 ```bash
 PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py
+```
+
+## Manual Dead-Letter Requeue
+
+Operators can **manually requeue** a **`DEAD_LETTERED`** job after fixing root cause. The job moves back to **`QUEUED`**; **`retry_count`** is **preserved** for audit/history. This **does not dispatch** the job — the **scheduler tick** picks it up later.
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>
 ```
 
 ## Kafka Result Consumer Skeleton

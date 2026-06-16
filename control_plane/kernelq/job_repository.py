@@ -402,6 +402,43 @@ class JobRepository:
 
         return result
 
+    def requeue_dead_lettered_job(self, job_id: str) -> bool:
+        """
+        Manually move one dead-lettered job back to the normal queue.
+
+        Operator-driven replay only — not automatic retry. The UPDATE runs only
+        when the row is currently ``dead_lettered``.
+
+        - Sets ``state`` to ``queued`` and bumps ``updated_at``.
+        - Clears ``retry_after`` (if present) so the job is not treated as a
+          delayed retry waiting on ``RetryScanner``.
+        - Does **not** reset ``retry_count`` — exhaustion history stays visible.
+
+        Returns True if a row was updated, False if ``job_id`` is missing or
+        the job is not in ``dead_lettered`` state.
+        """
+        sql = """
+            UPDATE jobs
+            SET
+                state = %(queued_state)s,
+                retry_after = NULL,
+                updated_at = NOW()
+            WHERE job_id = %(job_id)s
+              AND state = %(dead_lettered_state)s
+        """
+        params = {
+            "job_id": job_id,
+            "queued_state": JobState.QUEUED.value,
+            "dead_lettered_state": JobState.DEAD_LETTERED.value,
+        }
+
+        with self._conn.cursor() as cur:
+            cur.execute(sql, params)
+            updated = cur.rowcount > 0
+
+        self._conn.commit()
+        return updated
+
     def mark_job_dispatched(self, job_id: str) -> JobRecord | None:
         """
         Move one job from ``queued`` to ``dispatched`` after it is selected.
