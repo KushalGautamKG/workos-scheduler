@@ -350,6 +350,14 @@ Use this when **`jobs.state = dead_lettered`** after a worker result or retry ex
 
 Expect **`final_state=dead_lettered`** and **`state_after_retry_scanner=dead_lettered`**.
 
+**List dead-lettered jobs (read-only):**
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py
+```
+
+Shows up to 20 recent **`dead_lettered`** rows (newest **`updated_at`** first). Inspect **`payload`**, **`retry_count`/`max_retries`**, and **`updated_at`** per job. This script **does not replay or mutate** jobs — **replay / manual retry** is future work.
+
 **Checks:**
 
 1. **Inspect `retry_count` and `max_retries`** — confirm exhaustion vs misconfiguration:
@@ -377,11 +385,12 @@ Expect **`final_state=dead_lettered`** and **`state_after_retry_scanner=dead_let
 **Mitigation (today):**
 
 - Fix root cause (dependency, payload, worker bug) before any replay
-- **Manual replay only** — create a new job or reset state in dev after understanding the failure (no built-in replay tool yet)
+- **Manual replay only** in dev — create a new job or reset state after understanding the failure
 
 **Future improvement:**
 
-- **DLQ inspection/replay tooling** — consume **`kernelq.jobs.dlq`**, dashboards, and safe replay from **`DEAD_LETTERED`** without ad hoc SQL
+- **Replay / manual retry tooling** — safe re-enqueue from **`DEAD_LETTERED`** without ad hoc SQL
+- **DLQ inspection** — consume **`kernelq.jobs.dlq`**, dashboards
 
 ## Full Completion Smoke Test Fails
 

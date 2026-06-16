@@ -962,6 +962,30 @@ DEAD_LETTERED (unchanged — not requeued)
 
 **Interview sound bite:** *“Exhaustion smoke: retry_count at max + retryable_failure → DEAD_LETTERED; scanner leaves it alone—terminal state protects the system from retrying forever.”*
 
+## Dead-Lettered Job Inspection
+
+**`DEAD_LETTERED` jobs are terminal durable records in Postgres** — the control plane’s system of record for work that will not auto-retry. Operators need a way to **review** them without ad hoc SQL.
+
+**Inspection path today:**
+
+```
+jobs.state = dead_lettered (Postgres)
+    ↓  JobRepository.list_dead_lettered_jobs
+list_dead_lettered_jobs.py — operator-readable listing
+```
+
+Manual run from repo root:
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py
+```
+
+**Postgres vs Kafka DLQ:** this is **separate from `kernelq.jobs.dlq`**. DLQ holds **bad Kafka messages** (malformed dispatch, poison records). **`DEAD_LETTERED`** in Postgres holds **job lifecycle state** after retry exhaustion or (eventually) permanent failure policy. Both are for inspection; they answer different questions.
+
+**What is still future work:** **replay** or **manual requeue** of inspected jobs, DLQ dashboards, and safe tooling so ops can fix root cause and re-run without defeating max-retry policy.
+
+**Interview sound bite:** *“DEAD_LETTERED is durable Postgres state for ops review; list script reads it—Kafka DLQ is a different lane; replay tooling comes later.”*
+
 ## Kafka Result Consumer Skeleton
 
 The **Python control plane** can now **consume from `kernelq.jobs.results`** using **`KafkaResultConsumer`** (`control_plane/kernelq/kafka_result_consumer.py`). This connects **worker result events** on Kafka to **durable state update logic** in Postgres.

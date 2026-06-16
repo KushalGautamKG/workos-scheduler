@@ -194,6 +194,14 @@ PYTHONPATH=. python3 control_plane/scripts/run_retry_scanner_once.py
 ./control_plane/scripts/smoke_retry_exhaustion.sh
 ```
 
+## Dead-Lettered Job Inspection
+
+The control plane can **list `DEAD_LETTERED` jobs** from Postgres via **`JobRepository.list_dead_lettered_jobs`** — this helps operators **inspect exhausted or permanently failed jobs** (`job_id`, retries, payload, timestamps). **Replay / manual retry** tooling comes later.
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py
+```
+
 ## Kafka Result Consumer Skeleton
 
 KernelQ’s control plane now includes **`KafkaResultConsumer`** (`kernelq/kafka_result_consumer.py`) for **`kernelq.jobs.results`**. It **polls one result message** at a time and passes bytes through **`ResultConsumerRunner`** → **`ResultStateHandler`**, which can **update Postgres `jobs.state`**.

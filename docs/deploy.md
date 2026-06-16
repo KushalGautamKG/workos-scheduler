@@ -473,6 +473,18 @@ From the **repository root**, this script verifies **max retry exhaustion** → 
 
 Requires Docker and Python only.
 
+## Inspect Dead-Lettered Jobs
+
+From the **repository root**, list recent jobs in **`DEAD_LETTERED`** state for operator inspection—useful **after retry exhaustion** or when investigating stuck failures.
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py
+```
+
+**What it does:** reads up to 20 dead-lettered rows from Postgres (newest **`updated_at`** first) and prints **`job_id`**, tenant, retries, timestamps, and **`payload`**. It **does not replay or mutate** jobs.
+
+Requires Postgres only.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

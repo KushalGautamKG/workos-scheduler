@@ -40,6 +40,11 @@ def _our_jobs(results: list, prefix: str) -> list:
     return [job for job in results if job.job_id.startswith(prefix)]
 
 
+def _our_dead_lettered_jobs(results: list[dict], prefix: str) -> list[dict]:
+    """Dead-letter dict rows from this test only (shared Postgres may contain other jobs)."""
+    return [job for job in results if job["job_id"].startswith(prefix)]
+
+
 def _delete_jobs(repo: JobRepository, *job_ids: str) -> None:
     for job_id in job_ids:
         repo.delete_job(job_id)
@@ -108,6 +113,24 @@ def _set_retry_count(conn, job_id: str, retry_count: int) -> None:
         WHERE job_id = %(job_id)s
         """,
         {"job_id": job_id, "retry_count": retry_count},
+    )
+    conn.commit()
+
+
+def _set_job_state_and_updated_at(
+    conn,
+    job_id: str,
+    state: str,
+    updated_at: str,
+) -> None:
+    """Set ``state`` and a fixed ``updated_at`` (ordering tests in shared Postgres)."""
+    conn.execute(
+        """
+        UPDATE jobs
+        SET state = %(state)s, updated_at = %(updated_at)s::timestamptz
+        WHERE job_id = %(job_id)s
+        """,
+        {"job_id": job_id, "state": state, "updated_at": updated_at},
     )
     conn.commit()
 
@@ -619,6 +642,127 @@ def test_list_schedulable_jobs_respects_limit() -> None:
             assert [job.job_id for job in ours] == [third_id, second_id]
         finally:
             _delete_jobs(repo, first_id, second_id, third_id)
+
+
+def test_list_dead_lettered_jobs_returns_only_dead_lettered() -> None:
+    prefix = _unique_job_id("test_jr_dl_only")
+    dead_id = _job_id(prefix, "dead")
+    queued_id = _job_id(prefix, "queued")
+    succeeded_id = _job_id(prefix, "succeeded")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, dead_id, queued_id, succeeded_id)
+        try:
+            repo.create_job(
+                dead_id,
+                "tenant-a",
+                1,
+                JobState.DEAD_LETTERED.value,
+                payload={"kind": "dead"},
+                max_retries=3,
+            )
+            _set_retry_count(conn, dead_id, retry_count=3)
+            repo.create_job(queued_id, "tenant-a", 1, JobState.QUEUED.value)
+            repo.create_job(succeeded_id, "tenant-a", 1, JobState.SUCCEEDED.value)
+
+            ours = _our_dead_lettered_jobs(repo.list_dead_lettered_jobs(limit=500), prefix)
+
+            assert len(ours) == 1
+            assert ours[0]["job_id"] == dead_id
+            assert ours[0]["state"] == JobState.DEAD_LETTERED.value
+        finally:
+            _delete_jobs(repo, dead_id, queued_id, succeeded_id)
+
+
+def test_list_dead_lettered_jobs_respects_limit() -> None:
+    prefix = _unique_job_id("test_jr_dl_limit")
+    first_id = _job_id(prefix, "first")
+    second_id = _job_id(prefix, "second")
+    third_id = _job_id(prefix, "third")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, first_id, second_id, third_id)
+        try:
+            repo.create_job(first_id, "tenant-a", 1, JobState.DISPATCHED.value)
+            repo.create_job(second_id, "tenant-a", 1, JobState.DISPATCHED.value)
+            repo.create_job(third_id, "tenant-a", 1, JobState.DISPATCHED.value)
+            # Far-future timestamps so our rows sort ahead of unrelated dead_lettered seed data.
+            _set_job_state_and_updated_at(
+                conn, first_id, JobState.DEAD_LETTERED.value, "2099-01-01T00:00:00Z"
+            )
+            _set_job_state_and_updated_at(
+                conn, second_id, JobState.DEAD_LETTERED.value, "2099-01-02T00:00:00Z"
+            )
+            _set_job_state_and_updated_at(
+                conn, third_id, JobState.DEAD_LETTERED.value, "2099-01-03T00:00:00Z"
+            )
+
+            results = repo.list_dead_lettered_jobs(limit=2)
+            ours = _our_dead_lettered_jobs(results, prefix)
+
+            assert len(results) == 2
+            assert len(ours) == 2
+            assert [job["job_id"] for job in ours] == [third_id, second_id]
+        finally:
+            _delete_jobs(repo, first_id, second_id, third_id)
+
+
+def test_list_dead_lettered_jobs_orders_by_updated_at_desc() -> None:
+    prefix = _unique_job_id("test_jr_dl_order")
+    older_id = _job_id(prefix, "older")
+    newer_id = _job_id(prefix, "newer")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, older_id, newer_id)
+        try:
+            repo.create_job(older_id, "tenant-a", 1, JobState.DISPATCHED.value)
+            repo.create_job(newer_id, "tenant-a", 1, JobState.DISPATCHED.value)
+            _set_job_state_and_updated_at(
+                conn, older_id, JobState.DEAD_LETTERED.value, "2099-06-01T00:00:00Z"
+            )
+            _set_job_state_and_updated_at(
+                conn, newer_id, JobState.DEAD_LETTERED.value, "2099-06-02T00:00:00Z"
+            )
+
+            ours = _our_dead_lettered_jobs(repo.list_dead_lettered_jobs(limit=10), prefix)
+
+            assert len(ours) == 2
+            assert [job["job_id"] for job in ours] == [newer_id, older_id]
+            assert ours[0]["updated_at"] >= ours[1]["updated_at"]
+        finally:
+            _delete_jobs(repo, older_id, newer_id)
+
+
+def test_list_dead_lettered_jobs_dict_includes_required_fields() -> None:
+    job_id = _unique_job_id("test_jr_dl_fields")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        try:
+            repo.create_job(
+                job_id,
+                "tenant-a",
+                7,
+                JobState.DEAD_LETTERED.value,
+                payload={"kind": "inspect-me"},
+                max_retries=5,
+            )
+            _set_retry_count(conn, job_id, retry_count=5)
+
+            ours = _our_dead_lettered_jobs(repo.list_dead_lettered_jobs(limit=10), job_id)
+
+            assert len(ours) == 1
+            row = ours[0]
+            assert row["job_id"] == job_id
+            assert row["retry_count"] == 5
+            assert row["max_retries"] == 5
+            assert row["payload"] == {"kind": "inspect-me"}
+            assert row["state"] == JobState.DEAD_LETTERED.value
+            assert row["tenant_id"] == "tenant-a"
+            assert row["priority"] == 7
+            assert row["created_at"] is not None
+            assert row["updated_at"] is not None
+        finally:
+            repo.delete_job(job_id)
 
 
 def test_mark_job_dispatched_queued_becomes_dispatched() -> None:

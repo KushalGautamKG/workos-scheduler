@@ -344,6 +344,64 @@ class JobRepository:
         self._conn.commit()
         return [_row_to_record(row) for row in rows]
 
+    def list_dead_lettered_jobs(self, limit: int = 20) -> list[dict[str, Any]]:
+        """
+        Return recent dead-lettered jobs for operator inspection.
+
+        Dead-lettered rows are terminal — they will not be retried automatically.
+        Results are ordered by ``updated_at`` descending so the newest failures
+        appear first.
+        """
+        if limit <= 0:
+            raise ValueError("limit must be a positive integer")
+
+        sql = """
+            SELECT
+                job_id, tenant_id, priority, state, payload,
+                retry_count, max_retries, created_at, updated_at
+            FROM jobs
+            WHERE state = %(dead_lettered_state)s
+            ORDER BY updated_at DESC
+            LIMIT %(limit)s
+        """
+
+        with self._conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                sql,
+                {
+                    "dead_lettered_state": JobState.DEAD_LETTERED.value,
+                    "limit": limit,
+                },
+            )
+            rows = cur.fetchall()
+
+        self._conn.commit()
+
+        # Return plain dicts (not JobRecord) for easy JSON/API use in inspection tooling.
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            raw_payload = row.get("payload")
+            if isinstance(raw_payload, dict):
+                payload = dict(raw_payload)
+            else:
+                payload = {}
+
+            result.append(
+                {
+                    "job_id": row["job_id"],
+                    "tenant_id": row["tenant_id"],
+                    "priority": row["priority"],
+                    "state": row["state"],
+                    "retry_count": row["retry_count"],
+                    "max_retries": row["max_retries"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                    "payload": payload,
+                }
+            )
+
+        return result
+
     def mark_job_dispatched(self, job_id: str) -> JobRecord | None:
         """
         Move one job from ``queued`` to ``dispatched`` after it is selected.
