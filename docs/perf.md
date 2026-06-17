@@ -511,7 +511,9 @@ KernelQ now has a **full completion loop** (queued job → dispatch → worker �
 
 **`JobRepository.count_jobs_by_state`** provides **operational visibility** today — how many jobs sit in each durable Postgres **`state`** (`queued`, `succeeded`, `dead_lettered`, etc.). It is a **simple grouped Postgres query** (`GROUP BY state`), exposed as **`GET /metrics/jobs`** and **`job_state_snapshot.py`**.
 
-**Prometheus / Grafana metrics are future work** — no scrape endpoint, histograms, or numeric benchmarks yet.
+## Prometheus-Style Job State Metrics
+
+**`GET /metrics/prometheus`** exposes **current job state counts as gauges** (`kernelq_jobs_by_state{state="..."}`), **backed by the same grouped Postgres state counts**. Prometheus text exposition only — **no scrape/load benchmark yet**; Prometheus server and Grafana remain future work.
 
 ## Load Testing Methodology
 

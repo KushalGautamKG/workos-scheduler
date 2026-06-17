@@ -125,6 +125,19 @@ def test_get_job_metrics_returns_200_and_shape(client: TestClient) -> None:
         assert count >= 0
 
 
+# 1c) GET /metrics/prometheus returns Prometheus text exposition
+def test_get_prometheus_metrics_returns_text_exposition(client: TestClient) -> None:
+    response = client.get("/metrics/prometheus")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+
+    text = response.text
+    assert "# HELP kernelq_jobs_by_state" in text
+    assert "# TYPE kernelq_jobs_by_state gauge" in text
+    assert "kernelq_jobs_by_state" in text
+
+
 # 2) GET missing job returns 404
 def test_get_missing_job_returns_404(client: TestClient) -> None:
     job_id = _unique_job_id("missing")

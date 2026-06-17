@@ -212,10 +212,18 @@ PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>
 
 ## Job State Metrics Snapshot
 
-**`JobRepository.count_jobs_by_state`** summarizes **current durable job states** in Postgres (how many rows per `queued`, `succeeded`, `dead_lettered`, etc.). **`GET /metrics/jobs`** returns the same snapshot as JSON (`job_state_counts`). This is **not Prometheus yet** — local API/CLI visibility only.
+**`JobRepository.count_jobs_by_state`** summarizes **current durable job states** in Postgres (how many rows per `queued`, `succeeded`, `dead_lettered`, etc.). **`GET /metrics/jobs`** returns the same snapshot as JSON (`job_state_counts`).
 
 ```bash
 PYTHONPATH=. python3 control_plane/scripts/job_state_snapshot.py
+```
+
+## Prometheus-Style Metrics
+
+**`GET /metrics/prometheus`** exposes the same **durable Postgres job state counts** in **Prometheus text exposition format** (`kernelq_jobs_by_state` gauge). This is **not a full Prometheus deployment** — no scrape server or Grafana bundled; it is an HTTP endpoint for future scraping.
+
+```bash
+curl http://127.0.0.1:8000/metrics/prometheus
 ```
 
 ## Kafka Result Consumer Skeleton

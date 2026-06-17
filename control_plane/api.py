@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Path
+from fastapi import FastAPI, HTTPException, Path, Response
 from psycopg import Error as PsycopgError
 from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field
@@ -19,6 +19,7 @@ from control_plane.kernelq.db import connect
 from control_plane.kernelq.enqueue_result import EnqueueStatus
 from control_plane.kernelq.job_repository import JobRepository
 from control_plane.kernelq.job_state import JobState, can_transition, explain_transition
+from control_plane.kernelq.prometheus_metrics import format_job_state_counts_for_prometheus
 from control_plane.kernelq.scheduler_metrics import SchedulerMetrics
 
 
@@ -376,5 +377,28 @@ def get_job_metrics() -> JobStateCountsResponse:
             ) from exc
 
         return JobStateCountsResponse(job_state_counts=counts)
+    finally:
+        _close_repository(repo)
+
+
+@app.get(
+    "/metrics/prometheus",
+    summary="Prometheus job state metrics",
+    description="Return job counts by Postgres state in Prometheus text exposition format.",
+)
+def get_prometheus_job_metrics() -> Response:
+    """Expose durable job state counts for Prometheus scraping."""
+    repo = get_repository()
+    try:
+        try:
+            counts = repo.count_jobs_by_state()
+        except PsycopgError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database error while loading job counts: {exc}",
+            ) from exc
+
+        body = format_job_state_counts_for_prometheus(counts)
+        return Response(content=body, media_type="text/plain; version=0.0.4")
     finally:
         _close_repository(repo)

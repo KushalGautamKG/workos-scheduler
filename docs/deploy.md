@@ -527,6 +527,16 @@ curl http://127.0.0.1:8000/metrics/jobs
 
 Requires Postgres only (API also needs the control-plane process).
 
+## Prometheus-Style Metrics Endpoint
+
+**Requires the API server running** (`PYTHONPATH=. python3 -m uvicorn control_plane.api:app`). Returns **text metrics** for job states in Prometheus exposition format (`kernelq_jobs_by_state` gauge). **Prometheus server / Grafana are future work** — this is the scrape target endpoint only.
+
+```bash
+curl http://127.0.0.1:8000/metrics/prometheus
+```
+
+Requires Postgres + control-plane API.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

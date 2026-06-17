@@ -53,6 +53,7 @@ Job API endpoints now **persist job records in PostgreSQL** instead of keeping s
 - `POST /jobs/{job_id}/retry`: retry a job when the state machine allows `failed` → `retry_scheduled`.
 - `GET /metrics`: return current scheduler metrics snapshot.
 - `GET /metrics/jobs`: return job counts grouped by durable Postgres `state`.
+- `GET /metrics/prometheus`: same counts in Prometheus text exposition format.
 
 ### API Model Cleanup and State Transitions
 
@@ -234,7 +235,7 @@ Example response:
 
 #### `GET /metrics/jobs`
 
-Counts jobs by **durable Postgres state** (`JobRepository.count_jobs_by_state`). Useful for **MVP operational visibility** (queue depth, successes, dead letters). **Not a Prometheus endpoint yet** — JSON snapshot only. CLI equivalent: `control_plane/scripts/job_state_snapshot.py`.
+Counts jobs by **durable Postgres state** (`JobRepository.count_jobs_by_state`). Useful for **MVP operational visibility** (queue depth, successes, dead letters). JSON format; CLI equivalent: `control_plane/scripts/job_state_snapshot.py`.
 
 Request:
 
@@ -255,6 +256,26 @@ Example response:
 ```
 
 Only states present in the `jobs` table appear in `job_state_counts` (no zero counts for missing states).
+
+#### `GET /metrics/prometheus`
+
+**Prometheus-style text format** — counts jobs by **durable Postgres state** (same data as `/metrics/jobs`). **MVP observability endpoint** for future Prometheus scraping; not a full Prometheus stack.
+
+Request:
+
+```http
+GET /metrics/prometheus
+```
+
+Example response (`Content-Type: text/plain; version=0.0.4`):
+
+```
+# HELP kernelq_jobs_by_state Number of jobs by durable lifecycle state.
+# TYPE kernelq_jobs_by_state gauge
+kernelq_jobs_by_state{state="queued"} 2
+```
+
+Additional states appear as separate lines, sorted alphabetically.
 
 ### Quick Testing (Postman or curl)
 

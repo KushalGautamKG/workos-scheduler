@@ -38,6 +38,7 @@ What works today (local / dev):
 - **Dead-lettered job inspection** — `list_dead_lettered_jobs.py`
 - **Manual dead-letter requeue** — operator moves `DEAD_LETTERED` → `QUEUED` (`retry_count` preserved)
 - **Job state metrics snapshot** — `count_jobs_by_state` via CLI (`job_state_snapshot.py`) and **`GET /metrics/jobs`**
+- **Prometheus-style job state metrics endpoint** — **`GET /metrics/prometheus`** (text exposition; scrape target only)
 - **Smoke tests** — success, retry requeue, and exhaustion paths
 
 ---
@@ -147,7 +148,7 @@ Honest gaps — not production-ready yet:
 
 - **Result consumer** — one-shot poll (`consume_result_once.py`), not a long-running daemon
 - **Scheduler** — one-shot tick (`run_scheduler_tick_once.py`), not a continuous loop
-- **Observability** — no Prometheus / Grafana dashboards yet (metrics planned in `docs/perf.md`)
+- **Observability** — **`GET /metrics/prometheus`** returns Prometheus **text** metrics for job states; **no Prometheus server or Grafana yet** (see `docs/perf.md` for planned metrics)
 - **Security** — no auth, no multi-user tenancy enforcement beyond `tenant_id` on rows
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
 - **Retry backoff** — basic fixed delay (`retry_after`); no exponential backoff + jitter
