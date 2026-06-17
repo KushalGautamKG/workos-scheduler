@@ -22,6 +22,10 @@ docker compose up -d postgres zookeeper kafka
 ./control_plane/scripts/smoke_full_completion.sh
 ```
 
+## Prometheus Scrape Configuration
+
+KernelQ exposes **Prometheus-style metrics** at **`GET /metrics/prometheus`** (job state counts from Postgres). An example scrape config for **local development only** lives in **[infra/prometheus/prometheus.yml](infra/prometheus/prometheus.yml)** — not a production deployment.
+
 ## Docs
 
 | Doc | Purpose |

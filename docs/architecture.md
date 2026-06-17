@@ -1069,6 +1069,32 @@ succeeded (Postgres jobs.state)
 
 **Interview sound bite:** *“Queued in Postgres, dispatched on Kafka, executed in Go, result back on Kafka, state updated in Python—that’s the MVP loop; backoff, requeue, and DLQ are the next layer.”*
 
+## Metrics Collection Flow
+
+KernelQ exposes **job lifecycle visibility** by turning **durable Postgres rows** into **Prometheus gauges** that an external scraper can poll. The numbers reflect **current truth in the database**, not in-memory scheduler counters alone.
+
+```
+Postgres
+    ↓  count_jobs_by_state()
+/metrics/prometheus
+    ↓  Prometheus scrape (pull, on interval)
+Prometheus
+```
+
+**How it works:**
+
+- **`JobRepository.count_jobs_by_state()`** runs a `GROUP BY state` query against **`jobs`**—one count per lifecycle state (`queued`, `running`, `dead_lettered`, etc.).
+- **`GET /metrics/prometheus`** (FastAPI) formats those counts as **`kernelq_jobs_by_state`** gauges in Prometheus text exposition format.
+- **Prometheus** **periodically pulls** that endpoint (see `infra/prometheus/prometheus.yml`); it does not receive pushes from the API.
+
+**Why this matters for operations:** schedulers, workers, and retries all update **Postgres**; scraping derived gauges gives operators a **single pane** for backlog depth, failures, and dead letters after restarts—because the source of truth is **durable state**, not process memory.
+
+**Related endpoints:** **`GET /metrics/jobs`** returns the same counts as JSON; **`GET /metrics`** is separate in-memory scheduler counters.
+
+**Grafana** dashboards on top of Prometheus are **future work**; Prometheus UI alone is enough to confirm samples locally.
+
+**Interview sound bite:** *“Postgres is truth—count by state, expose as Prometheus gauges on /metrics/prometheus, Prometheus scrapes on an interval. Operational visibility without coupling metrics to worker memory.”*
+
 ## Worker Kafka Consumption
 
 The **Go worker plane** now **owns Kafka consumption** on **`kernelq.jobs.dispatch`**. After the Python control plane claims jobs and publishes **`DispatchEvent`** JSON, Go workers pull records from the broker and route them into the existing processing stack.

@@ -1,0 +1,24 @@
+# KernelQ Prometheus scrape configuration (local development).
+#
+# Prometheus runs in Docker and pulls metrics from the control-plane API
+# on your host machine. Start the API first:
+#
+#   PYTHONPATH=. python3 -m uvicorn control_plane.api:app --host 0.0.0.0 --port 8000
+#
+# Then start Prometheus with this config mounted (see docs/deploy.md when wired).
+
+global:
+  # scrape_interval: how often Prometheus GETs each target (here: every 15 seconds).
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "kernelq-control-plane"
+
+    # metrics_path: HTTP path on the target that returns Prometheus text exposition.
+    metrics_path: /metrics/prometheus
+
+    static_configs:
+      - targets:
+          # target: host and port of the KernelQ control-plane API.
+          # host.docker.internal lets a Prometheus container reach a process on the host.
+          - "host.docker.internal:8000"

@@ -529,13 +529,25 @@ Requires Postgres only (API also needs the control-plane process).
 
 ## Prometheus-Style Metrics Endpoint
 
-**Requires the API server running** (`PYTHONPATH=. python3 -m uvicorn control_plane.api:app`). Returns **text metrics** for job states in Prometheus exposition format (`kernelq_jobs_by_state` gauge). **Prometheus server / Grafana are future work** — this is the scrape target endpoint only.
+**Requires the API server running** (`PYTHONPATH=. python3 -m uvicorn control_plane.api:app`). Returns **text metrics** for job states in Prometheus exposition format (`kernelq_jobs_by_state` gauge).
 
 ```bash
 curl http://127.0.0.1:8000/metrics/prometheus
 ```
 
 Requires Postgres + control-plane API.
+
+## Running Prometheus Locally
+
+From the **repository root**, with the **control plane API running** on port 8000 and [Prometheus installed](https://prometheus.io/download/):
+
+```bash
+prometheus --config.file=infra/prometheus/prometheus.yml
+```
+
+**What it scrapes:** `http://host.docker.internal:8000/metrics/prometheus` (see `infra/prometheus/prometheus.yml`). On Linux without `host.docker.internal`, point the target at your host IP or run the API in Docker on the same network.
+
+**Grafana** dashboards are **future work** — Prometheus UI (e.g. `http://localhost:9090`) is enough to confirm `kernelq_jobs_by_state` samples.
 
 ## Running Repository Tests
 
