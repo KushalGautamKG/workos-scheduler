@@ -847,6 +847,51 @@ def test_requeue_dead_lettered_job_missing_returns_false() -> None:
         assert repo.get_job(missing_id) is None
 
 
+def test_count_jobs_by_state_returns_int_counts() -> None:
+    """Return shape: state string -> non-negative int (seed-data safe read)."""
+    with connect() as conn:
+        repo = JobRepository(conn)
+        counts = repo.count_jobs_by_state()
+
+        assert isinstance(counts, dict)
+        for state, count in counts.items():
+            assert isinstance(state, str)
+            assert isinstance(count, int)
+            assert count >= 0
+
+
+def test_count_jobs_by_state_reflects_inserted_jobs() -> None:
+    """
+    Before/after deltas for jobs this test inserts.
+
+    Shared Postgres may already have rows in each state — we only assert that
+    counts rose by at least what we added, not exact global totals.
+    """
+    prefix = _unique_job_id("test_jr_count_by_state")
+    queued_a = _job_id(prefix, "queued_a")
+    queued_b = _job_id(prefix, "queued_b")
+    dead_id = _job_id(prefix, "dead")
+    succeeded_id = _job_id(prefix, "succeeded")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, queued_a, queued_b, dead_id, succeeded_id)
+        try:
+            before = repo.count_jobs_by_state()
+
+            repo.create_job(queued_a, "tenant-a", 1, JobState.QUEUED.value)
+            repo.create_job(queued_b, "tenant-a", 1, JobState.QUEUED.value)
+            repo.create_job(dead_id, "tenant-a", 1, JobState.DEAD_LETTERED.value)
+            repo.create_job(succeeded_id, "tenant-a", 1, JobState.SUCCEEDED.value)
+
+            after = repo.count_jobs_by_state()
+
+            assert after.get("queued", 0) - before.get("queued", 0) >= 2
+            assert after.get("dead_lettered", 0) - before.get("dead_lettered", 0) >= 1
+            assert after.get("succeeded", 0) - before.get("succeeded", 0) >= 1
+        finally:
+            _delete_jobs(repo, queued_a, queued_b, dead_id, succeeded_id)
+
+
 def test_mark_job_dispatched_queued_becomes_dispatched() -> None:
     job_id = _unique_job_id("test_jr_dispatch_ok")
     with connect() as conn:

@@ -402,6 +402,26 @@ class JobRepository:
 
         return result
 
+    def count_jobs_by_state(self) -> dict[str, int]:
+        """
+        Return how many jobs exist in each ``state``.
+
+        Only states that appear in the ``jobs`` table are included (no zero
+        counts for missing states).
+        """
+        sql = """
+            SELECT state, COUNT(*) AS count
+            FROM jobs
+            GROUP BY state
+        """
+
+        with self._conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql)
+            rows = cur.fetchall()
+
+        self._conn.commit()
+        return {row["state"]: int(row["count"]) for row in rows}
+
     def requeue_dead_lettered_job(self, job_id: str) -> bool:
         """
         Manually move one dead-lettered job back to the normal queue.

@@ -507,6 +507,12 @@ KernelQ now has a **full completion loop** (queued job → dispatch → worker �
 
 **No numeric measurements, dashboards, or SLOs exist yet.** Retry and failure paths will add sibling metrics later (`retryable_failure`, DLQ, stuck **`dispatched`**).
 
+## MVP Job State Snapshot
+
+**`JobRepository.count_jobs_by_state`** provides **operational visibility** today — how many jobs sit in each durable Postgres **`state`** (`queued`, `succeeded`, `dead_lettered`, etc.). It is a **simple grouped Postgres query** (`GROUP BY state`), exposed as **`GET /metrics/jobs`** and **`job_state_snapshot.py`**.
+
+**Prometheus / Grafana metrics are future work** — no scrape endpoint, histograms, or numeric benchmarks yet.
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

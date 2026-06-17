@@ -52,6 +52,7 @@ Job API endpoints now **persist job records in PostgreSQL** instead of keeping s
 - `POST /jobs/{job_id}/cancel`: cancel a job (state transition to `canceled` when valid).
 - `POST /jobs/{job_id}/retry`: retry a job when the state machine allows `failed` → `retry_scheduled`.
 - `GET /metrics`: return current scheduler metrics snapshot.
+- `GET /metrics/jobs`: return job counts grouped by durable Postgres `state`.
 
 ### API Model Cleanup and State Transitions
 
@@ -230,6 +231,30 @@ Example response:
   "queue_depth_peak": 6
 }
 ```
+
+#### `GET /metrics/jobs`
+
+Counts jobs by **durable Postgres state** (`JobRepository.count_jobs_by_state`). Useful for **MVP operational visibility** (queue depth, successes, dead letters). **Not a Prometheus endpoint yet** — JSON snapshot only. CLI equivalent: `control_plane/scripts/job_state_snapshot.py`.
+
+Request:
+
+```http
+GET /metrics/jobs
+```
+
+Example response:
+
+```json
+{
+  "job_state_counts": {
+    "queued": 2,
+    "succeeded": 5,
+    "dead_lettered": 1
+  }
+}
+```
+
+Only states present in the `jobs` table appear in `job_state_counts` (no zero counts for missing states).
 
 ### Quick Testing (Postman or curl)
 

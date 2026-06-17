@@ -37,6 +37,7 @@ What works today (local / dev):
 - **Retry exhaustion** — `retry_count >= max_retries` → `DEAD_LETTERED`
 - **Dead-lettered job inspection** — `list_dead_lettered_jobs.py`
 - **Manual dead-letter requeue** — operator moves `DEAD_LETTERED` → `QUEUED` (`retry_count` preserved)
+- **Job state metrics snapshot** — `count_jobs_by_state` via CLI (`job_state_snapshot.py`) and **`GET /metrics/jobs`**
 - **Smoke tests** — success, retry requeue, and exhaustion paths
 
 ---
@@ -101,7 +102,13 @@ docker compose up -d postgres zookeeper kafka
 | `./control_plane/scripts/smoke_retry_requeue.sh` | **retryable_failure** → `retry_scheduled` → `queued` → `dispatched` (no Go worker for retry inject) |
 | `./control_plane/scripts/smoke_retry_exhaustion.sh` | Exhausted retries → **dead_lettered**; scanner does not requeue |
 
-**4. Inspect dead-lettered jobs**
+**4. Job state snapshot** (counts by Postgres state — useful after smoke tests)
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/job_state_snapshot.py
+```
+
+**5. Inspect dead-lettered jobs**
 
 ```bash
 PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py

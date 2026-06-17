@@ -509,6 +509,24 @@ PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>
 
 Requires Postgres only.
 
+## Job State Snapshot
+
+Shows **current Postgres job counts by state** (`queued`, `succeeded`, `dead_lettered`, etc.) — useful **after smoke tests** to see how rows moved.
+
+**CLI** (from repository root):
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/job_state_snapshot.py
+```
+
+**API** (with `uvicorn control_plane.api:app` running):
+
+```bash
+curl http://127.0.0.1:8000/metrics/jobs
+```
+
+Requires Postgres only (API also needs the control-plane process).
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

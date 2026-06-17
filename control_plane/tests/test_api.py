@@ -109,6 +109,22 @@ def test_get_metrics_returns_200(client: TestClient) -> None:
     assert "enqueue_accepted_count" in response.json()
 
 
+# 1b) GET /metrics/jobs returns job state counts from Postgres
+def test_get_job_metrics_returns_200_and_shape(client: TestClient) -> None:
+    response = client.get("/metrics/jobs")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "job_state_counts" in body
+
+    counts = body["job_state_counts"]
+    assert isinstance(counts, dict)
+    for state, count in counts.items():
+        assert isinstance(state, str)
+        assert isinstance(count, int)
+        assert count >= 0
+
+
 # 2) GET missing job returns 404
 def test_get_missing_job_returns_404(client: TestClient) -> None:
     job_id = _unique_job_id("missing")

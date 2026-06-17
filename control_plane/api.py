@@ -127,6 +127,12 @@ class MessageResponse(BaseModel):
     state: str
 
 
+class JobStateCountsResponse(BaseModel):
+    """Postgres job counts grouped by lifecycle state."""
+
+    job_state_counts: dict[str, int]
+
+
 # ---------------------------------------------------------------------------
 # FastAPI application and endpoints
 # ---------------------------------------------------------------------------
@@ -349,3 +355,26 @@ def retry_job(job_id: str = Path(..., description="Job ID")) -> MessageResponse:
 def get_metrics() -> dict[str, Any]:
     """Expose metrics snapshot for this control-plane process."""
     return metrics.snapshot()
+
+
+@app.get(
+    "/metrics/jobs",
+    response_model=JobStateCountsResponse,
+    summary="Job counts by lifecycle state",
+    description="Return how many jobs exist in each Postgres state.",
+)
+def get_job_metrics() -> JobStateCountsResponse:
+    """Expose durable job state counts from JobRepository."""
+    repo = get_repository()
+    try:
+        try:
+            counts = repo.count_jobs_by_state()
+        except PsycopgError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database error while loading job counts: {exc}",
+            ) from exc
+
+        return JobStateCountsResponse(job_state_counts=counts)
+    finally:
+        _close_repository(repo)

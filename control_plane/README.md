@@ -210,6 +210,14 @@ Operators can **manually requeue** a **`DEAD_LETTERED`** job after fixing root c
 PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>
 ```
 
+## Job State Metrics Snapshot
+
+**`JobRepository.count_jobs_by_state`** summarizes **current durable job states** in Postgres (how many rows per `queued`, `succeeded`, `dead_lettered`, etc.). **`GET /metrics/jobs`** returns the same snapshot as JSON (`job_state_counts`). This is **not Prometheus yet** — local API/CLI visibility only.
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/job_state_snapshot.py
+```
+
 ## Kafka Result Consumer Skeleton
 
 KernelQ’s control plane now includes **`KafkaResultConsumer`** (`kernelq/kafka_result_consumer.py`) for **`kernelq.jobs.results`**. It **polls one result message** at a time and passes bytes through **`ResultConsumerRunner`** → **`ResultStateHandler`**, which can **update Postgres `jobs.state`**.
