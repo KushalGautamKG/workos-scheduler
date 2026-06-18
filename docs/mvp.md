@@ -42,6 +42,7 @@ What works today (local / dev):
 - **Prometheus scrape configuration example** — `infra/prometheus/prometheus.yml` (15s scrape of `/metrics/prometheus`; see `docs/deploy.md`)
 - **Local Prometheus service** — `docker compose up -d prometheus` (UI on `:9090`)
 - **Local Grafana service and starter dashboard** — `docker compose up -d grafana` (UI on `:3000`; **KernelQ MVP** charts `kernelq_jobs_by_state`)
+- **Structured script logs** — one-shot scripts print `event=<name>` summary lines for operator/debug visibility (complements Prometheus)
 - **Smoke tests** — success, retry requeue, and exhaustion paths
 
 ---
@@ -153,6 +154,7 @@ Honest gaps — not production-ready yet:
 - **Scheduler** — one-shot tick (`run_scheduler_tick_once.py`), not a continuous loop
 - **Prometheus** — local Docker Compose service only; no production TSDB or HA deployment
 - **Grafana dashboard** — minimal **KernelQ MVP** panel; only **`kernelq_jobs_by_state`** gauges for now
+- **Structured logs** — one-shot scripts only; no centralized log aggregation yet
 - **Security** — no auth, no multi-user tenancy enforcement beyond `tenant_id` on rows
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
 - **Retry backoff** — basic fixed delay (`retry_after`); no exponential backoff + jitter

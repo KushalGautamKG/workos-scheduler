@@ -1115,6 +1115,14 @@ Grafana
 
 **Interview sound bite:** *“FastAPI exposes, Prometheus scrapes and stores, Grafana visualizes—three layers so the API isn’t a metrics DB and dashboards don’t hammer Postgres.”*
 
+## Structured Script Logs
+
+**Structured logs** (`event=<name> key=value …` via `control_plane/kernelq/logging_utils.py`) give **operator and debug visibility** alongside metrics. They **complement Prometheus**: metrics show aggregate health (`kernelq_jobs_by_state`); logs capture **per-run outcomes** (`requeued_count`, `published_count`, `errors_count`).
+
+Today they are emitted by **one-shot scripts** (scheduler tick, retry scanner, result consumer, job state snapshot). **Future work** may ship the same format to a **centralized log system** (Loki, ELK, CloudWatch)—not wired yet.
+
+**Interview sound bite:** *“Metrics for trends; structured script logs for what this tick or scan did—grep event=retry_scanner, don’t put job_id in Prometheus.”*
+
 ## Worker Kafka Consumption
 
 The **Go worker plane** now **owns Kafka consumption** on **`kernelq.jobs.dispatch`**. After the Python control plane claims jobs and publishes **`DispatchEvent`** JSON, Go workers pull records from the broker and route them into the existing processing stack.

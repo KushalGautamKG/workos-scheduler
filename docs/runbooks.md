@@ -14,6 +14,35 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 After manual requeue, run **`PYTHONPATH=. python3 control_plane/scripts/run_scheduler_tick_once.py`** to dispatch. All smoke scripts exit nonzero on failure.
 
+## Reading Structured Script Logs
+
+One-shot control-plane scripts print a final **key=value** summary line (see `control_plane/kernelq/logging_utils.py`). When reviewing script output or saved logs, **start with `event=<name>`** to find the script’s outcome in one line.
+
+| `event` | What to check |
+|---------|----------------|
+| `scheduler_tick` | `published_count`, `errors_count`, `publish_errors_count` |
+| `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |
+| `result_consumer` | `processed_message`, `errors_count`, optional `error` |
+| `job_state_snapshot` | `total_jobs`, `states_count` |
+
+**Key fields (across events):**
+
+- **`errors_count`** — non-zero means the pass failed or hit errors; investigate human-readable lines above the summary.
+- **`job_id`** — when present, ties the line to one job (grep by id during distributed debugging).
+- **`requeued_count`** — how many due retries moved to `queued`.
+- **`processed_message`** — `true` if the result consumer got and handled a Kafka message this poll.
+- **`published_count`** — how many dispatch events reached Kafka after a scheduler tick.
+
+**Grep examples** (redirect script output to a file first, or search CI logs):
+
+```bash
+grep "event=retry_scanner" run.log
+grep "event=scheduler_tick" run.log | grep "publish_errors_count=0"
+grep "job_id=day57-smoke" run.log
+```
+
+These lines are **grep-friendly** for local ops; KernelQ does not ship centralized log aggregation yet.
+
 ## High Queue Depth
 
 **Symptoms:**

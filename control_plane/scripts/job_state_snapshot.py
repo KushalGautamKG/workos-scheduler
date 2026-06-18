@@ -31,6 +31,18 @@ if str(_REPO_ROOT) not in sys.path:
 
 from control_plane.kernelq.db import connect
 from control_plane.kernelq.job_repository import JobRepository
+from control_plane.kernelq.logging_utils import format_log_event
+
+
+def _print_structured_summary(counts: dict[str, int]) -> None:
+    """Print one grep-friendly line for log collectors and scripts."""
+    print(
+        format_log_event(
+            "job_state_snapshot",
+            total_jobs=sum(counts.values()),
+            states_count=len(counts),
+        )
+    )
 
 
 def main() -> None:
@@ -46,10 +58,12 @@ def main() -> None:
 
     if not counts:
         print("  (none)")
-        return
+    else:
+        for state in sorted(counts):
+            print(f"  {state}: {counts[state]}")
 
-    for state in sorted(counts):
-        print(f"  {state}: {counts[state]}")
+    # Structured summary for grep and log pipelines.
+    _print_structured_summary(counts)
 
 
 if __name__ == "__main__":

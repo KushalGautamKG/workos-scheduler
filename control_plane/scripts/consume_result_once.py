@@ -38,11 +38,29 @@ if str(_REPO_ROOT) not in sys.path:
 from control_plane.kernelq.db import connect
 from control_plane.kernelq.job_repository import JobRepository
 from control_plane.kernelq.kafka_result_consumer import KafkaResultConsumer
+from control_plane.kernelq.logging_utils import format_log_event
 from control_plane.kernelq.result_consumer import ResultConsumerRunner
 from control_plane.kernelq.result_handler import ResultStateHandler
 
 # How long to wait for one result message from Kafka.
 POLL_TIMEOUT_SECONDS = 10.0
+
+
+def _print_structured_summary(
+    *,
+    processed_message: bool,
+    errors_count: int,
+    error: str | None = None,
+) -> None:
+    """Print one grep-friendly line for log collectors and scripts."""
+    fields: dict[str, object] = {
+        "processed_message": processed_message,
+        "errors_count": errors_count,
+    }
+    if error is not None:
+        fields["error"] = error
+
+    print(format_log_event("result_consumer", **fields))
 
 
 def main() -> None:
@@ -63,7 +81,20 @@ def main() -> None:
             # --- Step 4: Poll once (no infinite loop yet) ---
             processed = kafka_consumer.poll_once(timeout_seconds=POLL_TIMEOUT_SECONDS)
 
+            # Human-readable line, then structured summary (errors_count=0 on success).
             print(f"poll_result: processed_message={str(processed).lower()}")
+            _print_structured_summary(
+                processed_message=processed,
+                errors_count=0,
+            )
+    except Exception as exc:
+        # Log failure in the same format, then let the exception propagate.
+        _print_structured_summary(
+            processed_message=False,
+            errors_count=1,
+            error=str(exc),
+        )
+        raise
     finally:
         if kafka_consumer is not None:
             kafka_consumer.close()

@@ -38,6 +38,7 @@ from control_plane.kernelq.kafka_producer import (
     DEFAULT_BOOTSTRAP_SERVERS,
     KafkaJobProducer,
 )
+from control_plane.kernelq.logging_utils import format_log_event
 from control_plane.kernelq.scheduler_tick import SchedulerTickRunner
 
 
@@ -71,6 +72,20 @@ def _print_summary(result) -> None:
         print("    (none)")
 
 
+def _print_structured_summary(result) -> None:
+    """Print one grep-friendly line for log collectors and scripts."""
+    print(
+        format_log_event(
+            "scheduler_tick",
+            selected_count=result.selected_count,
+            dispatched_count=result.dispatched_count,
+            published_count=result.published_count,
+            errors_count=len(result.errors),
+            publish_errors_count=len(result.publish_errors),
+        )
+    )
+
+
 def main() -> None:
     # --- Step 1: Postgres connection and repository ---
     # JobRepository runs claim_schedulable_jobs inside this connection.
@@ -91,8 +106,9 @@ def main() -> None:
             # --- Step 4: Synchronous single pass ---
             result = runner.run_once()
 
-            # --- Step 5: Human-readable summary ---
+            # --- Step 5: Human-readable summary, then one structured log line ---
             _print_summary(result)
+            _print_structured_summary(result)
         finally:
             # Flush any buffered Kafka messages before exit.
             job_producer.close()

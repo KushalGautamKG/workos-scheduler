@@ -34,6 +34,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from control_plane.kernelq.db import connect
 from control_plane.kernelq.job_repository import JobRepository
+from control_plane.kernelq.logging_utils import format_log_event
 from control_plane.kernelq.retry_scanner import RetryScanner
 
 # Max jobs to requeue in one scan pass (same default as RetryScanner).
@@ -62,6 +63,18 @@ def _print_summary(result) -> None:
         print("    (none)")
 
 
+def _print_structured_summary(result) -> None:
+    """Print one grep-friendly line for log collectors and scripts."""
+    fields: dict[str, object] = {
+        "requeued_count": result.requeued_count,
+        "errors_count": len(result.errors),
+    }
+    if result.requeued_job_ids:
+        fields["requeued_job_ids"] = result.requeued_job_ids
+
+    print(format_log_event("retry_scanner", **fields))
+
+
 def main() -> None:
     # --- Step 1: Postgres connection and repository ---
     with connect() as conn:
@@ -73,8 +86,9 @@ def main() -> None:
         # --- Step 3: One scan pass (now = current Unix time) ---
         result = scanner.run_once()
 
-        # --- Step 4: Human-readable summary ---
+        # --- Step 4: Human-readable summary, then one structured log line ---
         _print_summary(result)
+        _print_structured_summary(result)
 
 
 if __name__ == "__main__":

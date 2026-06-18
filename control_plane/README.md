@@ -218,6 +218,19 @@ PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>
 PYTHONPATH=. python3 control_plane/scripts/job_state_snapshot.py
 ```
 
+## Structured Script Logs
+
+One-shot scripts now print an extra **key=value summary line** at the end (via `kernelq/logging_utils.py`), alongside existing human-readable output. Examples:
+
+```
+event=scheduler_tick selected_count=1 dispatched_count=1 published_count=1 errors_count=0 publish_errors_count=0
+event=retry_scanner requeued_count=2 errors_count=0 requeued_job_ids=["job-a","job-b"]
+event=result_consumer processed_message=true errors_count=0
+event=job_state_snapshot total_jobs=5010 states_count=4
+```
+
+These lines are **grep-friendly** for local debugging and smoke tests. This is **not a full logging stack** yet — no log levels, rotation, or centralized aggregation.
+
 ## Prometheus-Style Metrics
 
 **`GET /metrics/prometheus`** exposes the same **durable Postgres job state counts** in **Prometheus text exposition format** (`kernelq_jobs_by_state` gauge). This is **not a full Prometheus deployment** — no scrape server or Grafana bundled; it is an HTTP endpoint for future scraping.

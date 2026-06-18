@@ -527,6 +527,12 @@ The dashboard is **intentionally minimal**: one panel, job counts by Postgres st
 
 **Future dashboards** should add **dispatch rate**, **retry rate**, **DLQ count**, and **latency** (enqueue→dispatch, worker execution, end-to-end completion) once those counters and histograms are instrumented.
 
+## Structured Script Logs
+
+One-shot control-plane scripts print **grep-friendly summary lines** (`event=scheduler_tick`, `event=retry_scanner`, etc.). They **complement Prometheus metrics**—logs answer “what happened on this run?”; gauges answer “how many jobs are queued?”
+
+Emission is **script-only today** (no API daemon or worker JSON logs yet). **Future work:** forward the same format to a **centralized log system** for search and alerting.
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.
