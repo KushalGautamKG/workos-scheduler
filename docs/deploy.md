@@ -549,6 +549,28 @@ prometheus --config.file=infra/prometheus/prometheus.yml
 
 **Grafana** dashboards are **future work** — Prometheus UI (e.g. `http://localhost:9090`) is enough to confirm `kernelq_jobs_by_state` samples.
 
+## Running Prometheus with Docker Compose
+
+From the **repository root**:
+
+**1. Start the control plane API** (Postgres must be up):
+
+```bash
+PYTHONPATH=. python3 -m uvicorn control_plane.api:app --host 127.0.0.1 --port 8000
+```
+
+**2. Start Prometheus** (uses `infra/prometheus/prometheus.yml` mounted into the container):
+
+```bash
+docker compose up -d prometheus
+```
+
+**Prometheus UI:** [http://127.0.0.1:9090](http://127.0.0.1:9090)
+
+The scrape target stays **healthy** only when the API is listening on **port 8000** — Prometheus pulls `GET /metrics/prometheus` via `host.docker.internal:8000` as defined in the config file.
+
+In the Prometheus UI, query **`kernelq_jobs_by_state`** to see job counts by Postgres state over time.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

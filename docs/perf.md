@@ -515,7 +515,7 @@ KernelQ now has a **full completion loop** (queued job → dispatch → worker �
 
 **`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges from **`JobRepository.count_jobs_by_state()`** — a **`GROUP BY state`** query over durable Postgres rows (same source as **`GET /metrics/jobs`**).
 
-Example scrape config: **`infra/prometheus/prometheus.yml`** — **`scrape_interval: 15s`**, target **`/metrics/prometheus`** on the control-plane API. See **`docs/deploy.md`** to run Prometheus locally.
+Example scrape config: **`infra/prometheus/prometheus.yml`** — **`scrape_interval: 15s`**, target **`/metrics/prometheus`** on the control-plane API. **`docker-compose.yml`** now includes a **`prometheus`** service (`docker compose up -d prometheus`); UI at **http://127.0.0.1:9090**. Query **`kernelq_jobs_by_state`** there to inspect job state gauges. See **`docs/deploy.md`** for full steps.
 
 **No benchmarking yet** — we have not measured scrape latency, query cost under load, or time-series retention. Grafana dashboards remain future work.
 

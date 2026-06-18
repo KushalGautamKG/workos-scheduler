@@ -1,4 +1,4 @@
-# Local development stack for KernelQ (Postgres + Kafka).
+# Local development stack for KernelQ (Postgres + Kafka + Prometheus).
 #
 # Start all services:
 #   docker compose up -d
@@ -69,6 +69,18 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  # Prometheus: pulls job-state gauges from the control-plane API on the host.
+  # Start FastAPI on port 8000 first; scrape target is host.docker.internal in prometheus.yml.
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: kernelq-prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
 
 volumes:
   kernelq_postgres_data:

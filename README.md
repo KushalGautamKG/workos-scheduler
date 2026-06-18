@@ -14,6 +14,8 @@ queued job → scheduler → Kafka → Go worker → result event → Postgres S
 
 **Retry and dead-letter flows** are also smoke-tested: `retryable_failure` → `RETRY_SCHEDULED` → requeue → dispatch; exhaustion → `DEAD_LETTERED`; operator inspection and manual requeue.
 
+**Observability:** `docker compose up -d prometheus` starts local Prometheus; it scrapes **`/metrics/prometheus`** on the control-plane API (job state gauges from Postgres). **Grafana** dashboards are future work — see [docs/deploy.md](docs/deploy.md).
+
 ## Quick start
 
 ```bash
@@ -24,7 +26,7 @@ docker compose up -d postgres zookeeper kafka
 
 ## Prometheus Scrape Configuration
 
-KernelQ exposes **Prometheus-style metrics** at **`GET /metrics/prometheus`** (job state counts from Postgres). An example scrape config for **local development only** lives in **[infra/prometheus/prometheus.yml](infra/prometheus/prometheus.yml)** — not a production deployment.
+Example config: **[infra/prometheus/prometheus.yml](infra/prometheus/prometheus.yml)** (`scrape_interval: 15s`, path `/metrics/prometheus`). Local dev only — not production.
 
 ## Docs
 
