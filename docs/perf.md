@@ -517,7 +517,15 @@ KernelQ now has a **full completion loop** (queued job → dispatch → worker �
 
 Example scrape config: **`infra/prometheus/prometheus.yml`** — **`scrape_interval: 15s`**, target **`/metrics/prometheus`** on the control-plane API. **`docker-compose.yml`** now includes a **`prometheus`** service (`docker compose up -d prometheus`); UI at **http://127.0.0.1:9090**. Query **`kernelq_jobs_by_state`** there to inspect job state gauges. See **`docs/deploy.md`** for full steps.
 
-**No benchmarking yet** — we have not measured scrape latency, query cost under load, or time-series retention. Grafana dashboards remain future work.
+**No benchmarking yet** — we have not measured scrape latency, query cost under load, or time-series retention.
+
+## Grafana Dashboard Skeleton
+
+**Grafana** (`docker compose up -d grafana`, UI **http://127.0.0.1:3000**) visualizes **`kernelq_jobs_by_state`** from **Prometheus** — provisioned dashboard **KernelQ MVP** (`infra/grafana/dashboards/kernelq-mvp.json`).
+
+The dashboard is **intentionally minimal**: one panel, job counts by Postgres state. It validates the FastAPI → Prometheus → Grafana path before richer metrics exist.
+
+**Future dashboards** should add **dispatch rate**, **retry rate**, **DLQ count**, and **latency** (enqueue→dispatch, worker execution, end-to-end completion) once those counters and histograms are instrumented.
 
 ## Load Testing Methodology
 

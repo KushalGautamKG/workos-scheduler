@@ -14,7 +14,7 @@ queued job → scheduler → Kafka → Go worker → result event → Postgres S
 
 **Retry and dead-letter flows** are also smoke-tested: `retryable_failure` → `RETRY_SCHEDULED` → requeue → dispatch; exhaustion → `DEAD_LETTERED`; operator inspection and manual requeue.
 
-**Observability:** `docker compose up -d prometheus` starts local Prometheus; it scrapes **`/metrics/prometheus`** on the control-plane API (job state gauges from Postgres). **Grafana** dashboards are future work — see [docs/deploy.md](docs/deploy.md).
+**Observability:** `docker compose up -d prometheus grafana` (API on `:8000` required for scrapes). **Prometheus** — [http://127.0.0.1:9090](http://127.0.0.1:9090). **Grafana** — [http://127.0.0.1:3000](http://127.0.0.1:3000) (`admin` / `admin`). Dashboard **KernelQ MVP** charts **`kernelq_jobs_by_state`**. See [docs/deploy.md](docs/deploy.md).
 
 ## Quick start
 
@@ -24,9 +24,14 @@ docker compose up -d postgres zookeeper kafka
 ./control_plane/scripts/smoke_full_completion.sh
 ```
 
-## Prometheus Scrape Configuration
+## Observability
 
-Example config: **[infra/prometheus/prometheus.yml](infra/prometheus/prometheus.yml)** (`scrape_interval: 15s`, path `/metrics/prometheus`). Local dev only — not production.
+| Service | URL | Notes |
+|---------|-----|-------|
+| Prometheus | [http://127.0.0.1:9090](http://127.0.0.1:9090) | Scrapes `GET /metrics/prometheus` |
+| Grafana | [http://127.0.0.1:3000](http://127.0.0.1:3000) | Login `admin` / `admin` |
+
+Provisioned dashboard **KernelQ MVP** — first metric **`kernelq_jobs_by_state`** (job counts by Postgres state). Config: [infra/prometheus/prometheus.yml](infra/prometheus/prometheus.yml). Local dev only.
 
 ## Docs
 

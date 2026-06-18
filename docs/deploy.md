@@ -571,6 +571,25 @@ The scrape target stays **healthy** only when the API is listening on **port 800
 
 In the Prometheus UI, query **`kernelq_jobs_by_state`** to see job counts by Postgres state over time.
 
+## Running Grafana Locally
+
+From the **repository root**, with **Postgres** and the **control plane API on port 8000** running:
+
+```bash
+docker compose up -d prometheus grafana
+```
+
+| | URL |
+|--|-----|
+| **Prometheus** | [http://127.0.0.1:9090](http://127.0.0.1:9090) |
+| **Grafana** | [http://127.0.0.1:3000](http://127.0.0.1:3000) |
+
+**Login:** `admin` / `admin` (local dev only).
+
+The **Prometheus datasource** is provisioned automatically from `infra/grafana/provisioning/datasources/prometheus.yml`. The **KernelQ MVP** dashboard loads from **`infra/grafana/dashboards`** (`kernelq-mvp.json`).
+
+Prometheus only has **current** `kernelq_jobs_by_state` samples when the API is up — Grafana charts depend on that scrape path.
+
 ## Running Repository Tests
 
 Integration tests in `control_plane/tests/test_job_repository.py` talk to **real Postgres** on your machine. **Most other control-plane unit tests do not need Postgres** and can run without Docker.

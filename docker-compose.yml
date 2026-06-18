@@ -1,4 +1,4 @@
-# Local development stack for KernelQ (Postgres + Kafka + Prometheus).
+# Local development stack for KernelQ (Postgres + Kafka + Prometheus + Grafana).
 #
 # Start all services:
 #   docker compose up -d
@@ -81,6 +81,21 @@ services:
       - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9090:9090"
+
+  # Grafana: dashboards for Prometheus metrics (local dev credentials only).
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: kernelq-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
 
 volumes:
   kernelq_postgres_data:

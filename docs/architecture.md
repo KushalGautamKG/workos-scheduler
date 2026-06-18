@@ -1089,11 +1089,31 @@ Prometheus
 
 **Why this matters for operations:** schedulers, workers, and retries all update **Postgres**; scraping derived gauges gives operators a **single pane** for backlog depth, failures, and dead letters after restarts—because the source of truth is **durable state**, not process memory.
 
-**Related endpoints:** **`GET /metrics/jobs`** returns the same counts as JSON; **`GET /metrics`** is separate in-memory scheduler counters.
-
-**Grafana** dashboards on top of Prometheus are **future work**; Prometheus UI alone is enough to confirm samples locally.
+**Related endpoints:** **`GET /metrics/jobs`** returns the same counts as JSON; **`GET /metrics`** is separate in-memory scheduler counters. See **Observability Stack** for Grafana.
 
 **Interview sound bite:** *“Postgres is truth—count by state, expose as Prometheus gauges on /metrics/prometheus, Prometheus scrapes on an interval. Operational visibility without coupling metrics to worker memory.”*
+
+## Observability Stack
+
+KernelQ’s local observability path is a **three-layer stack**: exposition in the control plane, collection in Prometheus, visualization in Grafana. Each layer has one job—no component tries to do everything.
+
+```
+FastAPI /metrics/prometheus
+    ↓  Prometheus scrape (15s)
+Prometheus
+    ↓  PromQL queries
+Grafana
+```
+
+**Layer by layer:**
+
+- **FastAPI** exposes **`kernelq_jobs_by_state`** gauges on **`GET /metrics/prometheus`** — counts derived from durable Postgres state (`count_jobs_by_state()`), not in-memory scheduler counters.
+- **Prometheus** **scrapes and stores** those gauges on an interval (`infra/prometheus/prometheus.yml`; Docker Compose service on `:9090`). It is the time-series database and query engine.
+- **Grafana** **visualizes** metrics by querying Prometheus (`infra/grafana/provisioning`; UI on `:3000`). The provisioned **KernelQ MVP** dashboard charts jobs by state.
+
+**MVP scope:** one dashboard, one primary metric family. Tick latency, publish errors, DLQ rates, and alerting panels are **future work** — the stack proves the wiring before every counter exists.
+
+**Interview sound bite:** *“FastAPI exposes, Prometheus scrapes and stores, Grafana visualizes—three layers so the API isn’t a metrics DB and dashboards don’t hammer Postgres.”*
 
 ## Worker Kafka Consumption
 
