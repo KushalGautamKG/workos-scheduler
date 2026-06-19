@@ -19,6 +19,7 @@ from control_plane.kernelq.db import connect
 from control_plane.kernelq.enqueue_result import EnqueueStatus
 from control_plane.kernelq.job_repository import JobRepository
 from control_plane.kernelq.job_state import JobState, can_transition, explain_transition
+from control_plane.kernelq.job_metrics import compute_job_duration_metrics
 from control_plane.kernelq.prometheus_metrics import format_job_state_counts_for_prometheus
 from control_plane.kernelq.scheduler_metrics import SchedulerMetrics
 
@@ -133,6 +134,17 @@ class JobStateCountsResponse(BaseModel):
 
     job_state_counts: dict[str, int]
 
+
+class JobDurationMetricsResponse(BaseModel):
+    """Average queue wait and completion time for completed Postgres jobs."""
+
+    completed_jobs_count: int
+    average_queue_wait_seconds: float
+    average_completion_seconds: float
+
+
+# Max jobs loaded for duration metrics (matches job_duration_snapshot.py cap).
+_METRICS_JOB_LOAD_LIMIT = 100_000
 
 # ---------------------------------------------------------------------------
 # FastAPI application and endpoints
@@ -377,6 +389,37 @@ def get_job_metrics() -> JobStateCountsResponse:
             ) from exc
 
         return JobStateCountsResponse(job_state_counts=counts)
+    finally:
+        _close_repository(repo)
+
+
+@app.get(
+    "/metrics/durations",
+    response_model=JobDurationMetricsResponse,
+    summary="Job duration metrics",
+    description=(
+        "Return average queue wait and completion time for completed jobs "
+        "(succeeded, failed, dead_lettered) derived from Postgres timestamps."
+    ),
+)
+def get_job_duration_metrics() -> JobDurationMetricsResponse:
+    """Expose duration averages from JobRepository + compute_job_duration_metrics."""
+    repo = get_repository()
+    try:
+        try:
+            jobs = repo.list_jobs(limit=_METRICS_JOB_LOAD_LIMIT)
+            result = compute_job_duration_metrics(jobs)
+        except PsycopgError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Database error while loading job durations: {exc}",
+            ) from exc
+
+        return JobDurationMetricsResponse(
+            completed_jobs_count=result.completed_jobs_count,
+            average_queue_wait_seconds=result.average_queue_wait_seconds,
+            average_completion_seconds=result.average_completion_seconds,
+        )
     finally:
         _close_repository(repo)
 

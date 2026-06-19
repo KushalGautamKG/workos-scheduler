@@ -218,6 +218,21 @@ PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>
 PYTHONPATH=. python3 control_plane/scripts/job_state_snapshot.py
 ```
 
+## Job Duration Metrics
+
+**`compute_job_duration_metrics`** derives averages from Postgres timestamps on completed jobs (`succeeded`, `failed`, `dead_lettered`):
+
+- **Queue wait time** — `dispatched_at - created_at` (when `dispatched_at` is present)
+- **Completion time** — `updated_at - created_at`
+
+CLI snapshot:
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/job_duration_snapshot.py
+```
+
+HTTP: **`GET /metrics/durations`** returns `completed_jobs_count`, `average_queue_wait_seconds`, and `average_completion_seconds`.
+
 ## Structured Script Logs
 
 One-shot scripts print an extra **key=value summary line** at the end (via `kernelq/logging_utils.py` for Python scripts; bash helpers in smoke tests). Examples:

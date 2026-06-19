@@ -422,6 +422,31 @@ class JobRepository:
         self._conn.commit()
         return {row["state"]: int(row["count"]) for row in rows}
 
+    def list_jobs(self, limit: int = 100_000) -> list[JobRecord]:
+        """
+        Return job rows for metrics snapshots and inspection.
+
+        Use a ``limit`` cap on large local datasets; ordering is oldest first.
+        """
+        if limit <= 0:
+            raise ValueError("limit must be a positive integer")
+
+        sql = """
+            SELECT
+                job_id, tenant_id, priority, state, payload,
+                retry_count, max_retries, created_at, updated_at
+            FROM jobs
+            ORDER BY created_at ASC
+            LIMIT %(limit)s
+        """
+
+        with self._conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, {"limit": limit})
+            rows = cur.fetchall()
+
+        self._conn.commit()
+        return [_row_to_record(row) for row in rows]
+
     def requeue_dead_lettered_job(self, job_id: str) -> bool:
         """
         Manually move one dead-lettered job back to the normal queue.

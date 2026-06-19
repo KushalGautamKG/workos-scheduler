@@ -138,6 +138,22 @@ def test_get_prometheus_metrics_returns_text_exposition(client: TestClient) -> N
     assert "kernelq_jobs_by_state" in text
 
 
+# 1d) GET /metrics/durations returns job duration averages from Postgres
+def test_get_job_duration_metrics_returns_200_and_shape(client: TestClient) -> None:
+    response = client.get("/metrics/durations")
+
+    assert response.status_code == 200
+    body = response.json()
+
+    assert "completed_jobs_count" in body
+    assert "average_queue_wait_seconds" in body
+    assert "average_completion_seconds" in body
+
+    assert isinstance(body["completed_jobs_count"], int)
+    assert isinstance(body["average_queue_wait_seconds"], (int, float))
+    assert isinstance(body["average_completion_seconds"], (int, float))
+
+
 # 2) GET missing job returns 404
 def test_get_missing_job_returns_404(client: TestClient) -> None:
     job_id = _unique_job_id("missing")

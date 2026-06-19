@@ -511,6 +511,12 @@ KernelQ now has a **full completion loop** (queued job → dispatch → worker �
 
 **`JobRepository.count_jobs_by_state`** provides **operational visibility** today — how many jobs sit in each durable Postgres **`state`** (`queued`, `succeeded`, `dead_lettered`, etc.). It is a **simple grouped Postgres query** (`GROUP BY state`), exposed as **`GET /metrics/jobs`** and **`job_state_snapshot.py`**.
 
+## Job Duration Metrics
+
+KernelQ now reports **average queue wait** and **average completion duration** from **persisted Postgres timestamps** (`compute_job_duration_metrics`). Exposed as **`GET /metrics/durations`** and **`job_duration_snapshot.py`**.
+
+**Current implementation uses averages only** — useful for MVP snapshots and demos. **Future work:** Prometheus **histograms** and **percentiles** (p50/p95/p99) for tail latency and SLO alerting.
+
 ## Prometheus Scraping
 
 **`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges from **`JobRepository.count_jobs_by_state()`** — a **`GROUP BY state`** query over durable Postgres rows (same source as **`GET /metrics/jobs`**).

@@ -53,6 +53,7 @@ Job API endpoints now **persist job records in PostgreSQL** instead of keeping s
 - `POST /jobs/{job_id}/retry`: retry a job when the state machine allows `failed` → `retry_scheduled`.
 - `GET /metrics`: return current scheduler metrics snapshot.
 - `GET /metrics/jobs`: return job counts grouped by durable Postgres `state`.
+- `GET /metrics/durations`: return average queue wait and completion duration from Postgres timestamps.
 - `GET /metrics/prometheus`: same counts in Prometheus text exposition format.
 
 ### API Model Cleanup and State Transitions
@@ -256,6 +257,28 @@ Example response:
 ```
 
 Only states present in the `jobs` table appear in `job_state_counts` (no zero counts for missing states).
+
+#### `GET /metrics/durations`
+
+**Average queue wait and completion duration** for completed jobs (`succeeded`, `failed`, `dead_lettered`). Metrics are **derived from persisted Postgres timestamps** (`created_at`, `updated_at`, and `dispatched_at` when present). **Averages only today** — no p95/p99 yet.
+
+Request:
+
+```http
+GET /metrics/durations
+```
+
+Example response:
+
+```json
+{
+  "completed_jobs_count": 42,
+  "average_queue_wait_seconds": 12.5,
+  "average_completion_seconds": 87.3
+}
+```
+
+CLI equivalent: `control_plane/scripts/job_duration_snapshot.py`.
 
 #### `GET /metrics/prometheus`
 

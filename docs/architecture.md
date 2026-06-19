@@ -1089,9 +1089,17 @@ Prometheus
 
 **Why this matters for operations:** schedulers, workers, and retries all update **Postgres**; scraping derived gauges gives operators a **single pane** for backlog depth, failures, and dead letters after restarts—because the source of truth is **durable state**, not process memory.
 
-**Related endpoints:** **`GET /metrics/jobs`** returns the same counts as JSON; **`GET /metrics`** is separate in-memory scheduler counters. See **Observability Stack** for Grafana.
+**Related endpoints:** **`GET /metrics/jobs`** returns the same counts as JSON; **`GET /metrics/durations`** returns average queue wait and completion time from persisted timestamps; **`GET /metrics`** is separate in-memory scheduler counters. See **Observability Stack** for Grafana.
 
 **Interview sound bite:** *“Postgres is truth—count by state, expose as Prometheus gauges on /metrics/prometheus, Prometheus scrapes on an interval. Operational visibility without coupling metrics to worker memory.”*
+
+## Job Duration Metrics
+
+KernelQ now reports **average queue wait** (`dispatched_at - created_at`) and **average completion time** (`updated_at - created_at`) for completed jobs. Metrics are **derived from persisted Postgres timestamps** via **`compute_job_duration_metrics`** — **`GET /metrics/durations`** and **`job_duration_snapshot.py`**.
+
+**Current implementation uses averages only.** **Future work:** Prometheus **histograms** and **percentiles** (p50/p95/p99) for latency SLOs.
+
+**Interview sound bite:** *“Duration from Postgres timestamps—mean queue wait and completion today; histograms and percentiles when Prometheus instrumentation lands.”*
 
 ## Observability Stack
 
