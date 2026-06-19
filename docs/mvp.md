@@ -107,6 +107,13 @@ docker compose up -d postgres zookeeper kafka
 | `./control_plane/scripts/smoke_retry_requeue.sh` | **retryable_failure** → `retry_scheduled` → `queued` → `dispatched` (no Go worker for retry inject) |
 | `./control_plane/scripts/smoke_retry_exhaustion.sh` | Exhausted retries → **dead_lettered**; scanner does not requeue |
 
+Each smoke script prints a structured **`event=smoke_*`** summary line (`success=true|false`) at the end — grep these to verify demo success quickly:
+
+```bash
+./control_plane/scripts/smoke_full_completion.sh 2>&1 | tee demo.log
+grep "event=smoke_" demo.log
+```
+
 **4. Job state snapshot** (counts by Postgres state — useful after smoke tests)
 
 ```bash
@@ -129,6 +136,8 @@ PYTHONPATH=. python3 control_plane/scripts/run_scheduler_tick_once.py
 ---
 
 ## 5. Test Commands
+
+**MVP smoke scripts** (see §4) emit **`event=smoke_*`** summary lines — useful for a quick pass/fail check after a demo or CI run (`grep "event=smoke_"`).
 
 **Python (control plane)**
 

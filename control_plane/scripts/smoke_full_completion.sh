@@ -11,9 +11,34 @@
 
 set -euo pipefail
 
+# Print one grep-friendly summary line (error values JSON-quoted when needed).
+log_smoke_summary() {
+  local success="$1"
+  local job_id="${2:-unknown}"
+  local final_state="${3:-unknown}"
+  local error_msg="${4:-}"
+
+  if [[ -z "${job_id}" ]]; then
+    job_id="unknown"
+  fi
+  if [[ -z "${final_state}" ]]; then
+    final_state="unknown"
+  fi
+
+  if [[ "${success}" == "true" ]]; then
+    echo "event=smoke_full_completion job_id=${job_id} final_state=${final_state} success=true"
+    return
+  fi
+
+  local quoted_error
+  quoted_error=$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "${error_msg}")
+  echo "event=smoke_full_completion job_id=${job_id} final_state=${final_state} success=false error=${quoted_error}"
+}
+
 # --- Sanity check: this script expects to run from the repo root ---
 if [[ ! -f docker-compose.yml ]] || [[ ! -d control_plane/kernelq ]]; then
   echo "ERROR: Run this script from the repository root." >&2
+  log_smoke_summary false unknown unknown "Run this script from the repository root."
   exit 1
 fi
 
@@ -143,8 +168,10 @@ echo "final_state=${FINAL_STATE}"
 
 if [[ "${FINAL_STATE}" != "succeeded" ]]; then
   echo "FAIL: expected final_state=succeeded for job_id=${JOB_ID}" >&2
+  log_smoke_summary false "${JOB_ID}" "${FINAL_STATE}" "expected final_state=succeeded"
   exit 1
 fi
 
 echo "PASS: full completion loop succeeded for job_id=${JOB_ID}"
+log_smoke_summary true "${JOB_ID}" "${FINAL_STATE}"
 exit 0

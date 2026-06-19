@@ -11,9 +11,32 @@
 
 set -euo pipefail
 
+# Print one grep-friendly summary line (error values JSON-quoted when needed).
+log_smoke_summary() {
+  local success="$1"
+  local job_id="${2:-unknown}"
+  local final_state="${3:-unknown}"
+  local state_after_retry_scanner="${4:-unknown}"
+  local error_msg="${5:-}"
+
+  [[ -z "${job_id}" ]] && job_id="unknown"
+  [[ -z "${final_state}" ]] && final_state="unknown"
+  [[ -z "${state_after_retry_scanner}" ]] && state_after_retry_scanner="unknown"
+
+  if [[ "${success}" == "true" ]]; then
+    echo "event=smoke_retry_exhaustion job_id=${job_id} final_state=${final_state} state_after_retry_scanner=${state_after_retry_scanner} success=true"
+    return
+  fi
+
+  local quoted_error
+  quoted_error=$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "${error_msg}")
+  echo "event=smoke_retry_exhaustion job_id=${job_id} final_state=${final_state} state_after_retry_scanner=${state_after_retry_scanner} success=false error=${quoted_error}"
+}
+
 # --- Sanity check: this script expects to run from the repo root ---
 if [[ ! -f docker-compose.yml ]] || [[ ! -d control_plane/kernelq ]]; then
   echo "ERROR: Run this script from the repository root." >&2
+  log_smoke_summary false unknown unknown unknown "Run this script from the repository root."
   exit 1
 fi
 
@@ -157,12 +180,15 @@ echo "state_after_retry_scanner=${STATE_AFTER_RETRY_SCANNER}"
 
 if [[ "${FINAL_STATE}" != "dead_lettered" ]]; then
   echo "FAIL: expected final_state=dead_lettered" >&2
+  log_smoke_summary false "${JOB_ID}" "${FINAL_STATE}" "${STATE_AFTER_RETRY_SCANNER}" "expected final_state=dead_lettered"
   exit 1
 fi
 if [[ "${STATE_AFTER_RETRY_SCANNER}" != "dead_lettered" ]]; then
   echo "FAIL: expected state_after_retry_scanner=dead_lettered" >&2
+  log_smoke_summary false "${JOB_ID}" "${FINAL_STATE}" "${STATE_AFTER_RETRY_SCANNER}" "expected state_after_retry_scanner=dead_lettered"
   exit 1
 fi
 
 echo "PASS: retry exhaustion smoke test succeeded for job_id=${JOB_ID}"
+log_smoke_summary true "${JOB_ID}" "${FINAL_STATE}" "${STATE_AFTER_RETRY_SCANNER}"
 exit 0

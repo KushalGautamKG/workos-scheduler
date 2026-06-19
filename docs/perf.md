@@ -533,6 +533,8 @@ One-shot control-plane scripts print **grep-friendly summary lines** (`event=sch
 
 Emission is **script-only today** (no API daemon or worker JSON logs yet). **Future work:** forward the same format to a **centralized log system** for search and alerting.
 
+**Smoke-test lines** (`event=smoke_*`, `success=true|false`) validate **correctness** (state transitions, pass/fail)—not latency. **Future work:** parse timestamps around these lines to measure **demo flow timing** (enqueue→dispatch→result→terminal state).
+
 ## Load Testing Methodology
 
 TODO: Define test scenarios, load profiles, ramp-up strategies, and success criteria.

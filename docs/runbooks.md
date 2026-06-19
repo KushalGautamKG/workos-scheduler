@@ -14,12 +14,23 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 After manual requeue, run **`PYTHONPATH=. python3 control_plane/scripts/run_scheduler_tick_once.py`** to dispatch. All smoke scripts exit nonzero on failure.
 
+Each MVP smoke script prints a final **`event=smoke_*`** summary line (`success=true|false`, plus `job_id` and state fields). Redirect output to a file, then:
+
+```bash
+grep "event=smoke_" run.log
+```
+
+Lines with **`success=false`** include an **`error=`** field — read that before scrolling the full log.
+
 ## Reading Structured Script Logs
 
-One-shot control-plane scripts print a final **key=value** summary line (see `control_plane/kernelq/logging_utils.py`). When reviewing script output or saved logs, **start with `event=<name>`** to find the script’s outcome in one line.
+One-shot control-plane scripts print a final **key=value** summary line (Python: `control_plane/kernelq/logging_utils.py`; smoke tests: bash helpers in `scripts/smoke_*.sh`). When reviewing script output or saved logs, **start with `event=<name>`** to find the script’s outcome in one line.
 
 | `event` | What to check |
 |---------|----------------|
+| `smoke_full_completion` | `success`, `final_state=succeeded`, `job_id` |
+| `smoke_retry_requeue` | `success`, `state_after_retry_result`, `state_after_retry_scanner`, `state_after_scheduler_tick` |
+| `smoke_retry_exhaustion` | `success`, `final_state=dead_lettered`, `state_after_retry_scanner=dead_lettered` |
 | `scheduler_tick` | `published_count`, `errors_count`, `publish_errors_count` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |
 | `result_consumer` | `processed_message`, `errors_count`, optional `error` |
@@ -32,10 +43,13 @@ One-shot control-plane scripts print a final **key=value** summary line (see `co
 - **`requeued_count`** — how many due retries moved to `queued`.
 - **`processed_message`** — `true` if the result consumer got and handled a Kafka message this poll.
 - **`published_count`** — how many dispatch events reached Kafka after a scheduler tick.
+- **`success`** — on smoke lines, `true` means the MVP path passed; `false` means check **`error=`** on the same line.
 
 **Grep examples** (redirect script output to a file first, or search CI logs):
 
 ```bash
+grep "event=smoke_" run.log
+grep "success=false" run.log
 grep "event=retry_scanner" run.log
 grep "event=scheduler_tick" run.log | grep "publish_errors_count=0"
 grep "job_id=day57-smoke" run.log

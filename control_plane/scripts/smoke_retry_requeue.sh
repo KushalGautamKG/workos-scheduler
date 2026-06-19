@@ -12,9 +12,34 @@
 
 set -euo pipefail
 
+# Print one grep-friendly summary line (error values JSON-quoted when needed).
+log_smoke_summary() {
+  local success="$1"
+  local job_id="${2:-unknown}"
+  local state_after_retry_result="${3:-unknown}"
+  local state_after_retry_scanner="${4:-unknown}"
+  local state_after_scheduler_tick="${5:-unknown}"
+  local error_msg="${6:-}"
+
+  [[ -z "${job_id}" ]] && job_id="unknown"
+  [[ -z "${state_after_retry_result}" ]] && state_after_retry_result="unknown"
+  [[ -z "${state_after_retry_scanner}" ]] && state_after_retry_scanner="unknown"
+  [[ -z "${state_after_scheduler_tick}" ]] && state_after_scheduler_tick="unknown"
+
+  if [[ "${success}" == "true" ]]; then
+    echo "event=smoke_retry_requeue job_id=${job_id} state_after_retry_result=${state_after_retry_result} state_after_retry_scanner=${state_after_retry_scanner} state_after_scheduler_tick=${state_after_scheduler_tick} success=true"
+    return
+  fi
+
+  local quoted_error
+  quoted_error=$(python3 -c 'import json, sys; print(json.dumps(sys.argv[1]))' "${error_msg}")
+  echo "event=smoke_retry_requeue job_id=${job_id} state_after_retry_result=${state_after_retry_result} state_after_retry_scanner=${state_after_retry_scanner} state_after_scheduler_tick=${state_after_scheduler_tick} success=false error=${quoted_error}"
+}
+
 # --- Sanity check: this script expects to run from the repo root ---
 if [[ ! -f docker-compose.yml ]] || [[ ! -d control_plane/kernelq ]]; then
   echo "ERROR: Run this script from the repository root." >&2
+  log_smoke_summary false unknown unknown unknown unknown "Run this script from the repository root."
   exit 1
 fi
 
@@ -194,16 +219,20 @@ echo "state_after_scheduler_tick=${STATE_AFTER_SCHEDULER_TICK}"
 
 if [[ "${STATE_AFTER_RETRY_RESULT}" != "retry_scheduled" ]]; then
   echo "FAIL: expected state_after_retry_result=retry_scheduled" >&2
+  log_smoke_summary false "${JOB_ID}" "${STATE_AFTER_RETRY_RESULT}" "${STATE_AFTER_RETRY_SCANNER}" "${STATE_AFTER_SCHEDULER_TICK}" "expected state_after_retry_result=retry_scheduled"
   exit 1
 fi
 if [[ "${STATE_AFTER_RETRY_SCANNER}" != "queued" ]]; then
   echo "FAIL: expected state_after_retry_scanner=queued" >&2
+  log_smoke_summary false "${JOB_ID}" "${STATE_AFTER_RETRY_RESULT}" "${STATE_AFTER_RETRY_SCANNER}" "${STATE_AFTER_SCHEDULER_TICK}" "expected state_after_retry_scanner=queued"
   exit 1
 fi
 if [[ "${STATE_AFTER_SCHEDULER_TICK}" != "dispatched" ]]; then
   echo "FAIL: expected state_after_scheduler_tick=dispatched" >&2
+  log_smoke_summary false "${JOB_ID}" "${STATE_AFTER_RETRY_RESULT}" "${STATE_AFTER_RETRY_SCANNER}" "${STATE_AFTER_SCHEDULER_TICK}" "expected state_after_scheduler_tick=dispatched"
   exit 1
 fi
 
 echo "PASS: retry requeue smoke test succeeded for job_id=${JOB_ID}"
+log_smoke_summary true "${JOB_ID}" "${STATE_AFTER_RETRY_RESULT}" "${STATE_AFTER_RETRY_SCANNER}" "${STATE_AFTER_SCHEDULER_TICK}"
 exit 0
