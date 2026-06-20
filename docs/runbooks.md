@@ -37,7 +37,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `job_state_snapshot` | `total_jobs`, `states_count` |
 | `job_duration_snapshot` | `completed_jobs_count`, `average_queue_wait_seconds`, `average_completion_seconds` |
 
-**Duration metrics:** KernelQ reports **average queue wait** and **completion time** from **persisted Postgres timestamps** (`GET /metrics/durations` or `job_duration_snapshot.py`). **Averages only today** — **future work:** Prometheus histograms and percentiles.
+**Duration metrics:** Queue wait uses persisted **`dispatched_at - created_at`** (actual dispatch time; **`GET /metrics/durations`** or `job_duration_snapshot.py`). **Averages only today** — foundation for **p95/p99** latency metrics.
 
 **Key fields (across events):**
 

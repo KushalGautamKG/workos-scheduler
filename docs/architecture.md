@@ -1095,11 +1095,11 @@ Prometheus
 
 ## Job Duration Metrics
 
-KernelQ now reports **average queue wait** (`dispatched_at - created_at`) and **average completion time** (`updated_at - created_at`) for completed jobs. Metrics are **derived from persisted Postgres timestamps** via **`compute_job_duration_metrics`** — **`GET /metrics/durations`** and **`job_duration_snapshot.py`**.
+Jobs store optional **`dispatched_at`** (first **`queued` → `dispatched`**). KernelQ reports **average queue wait** from actual dispatch times (`dispatched_at - created_at`) and **average completion time** (`updated_at - created_at`) for terminal jobs via **`compute_job_duration_metrics`** — **`GET /metrics/durations`** and **`job_duration_snapshot.py`**.
 
-**Current implementation uses averages only.** **Future work:** Prometheus **histograms** and **percentiles** (p50/p95/p99) for latency SLOs.
+**Averages only today.** Persisted dispatch and completion timestamps are the **foundation for future p95/p99** latency metrics (Prometheus histograms when instrumented).
 
-**Interview sound bite:** *“Duration from Postgres timestamps—mean queue wait and completion today; histograms and percentiles when Prometheus instrumentation lands.”*
+**Interview sound bite:** *“Postgres holds dispatch time—mean queue wait from `dispatched_at` today; p95/p99 when histograms land.”*
 
 ## Observability Stack
 

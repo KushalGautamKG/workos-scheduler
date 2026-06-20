@@ -64,10 +64,13 @@ def _record_to_response(record: Any) -> "JobResponse":
     """Map a repository JobRecord to the public API response model."""
     created_at = record.created_at
     updated_at = record.updated_at
+    dispatched_at = record.dispatched_at
     if isinstance(created_at, datetime):
         created_at = int(created_at.timestamp())
     if isinstance(updated_at, datetime):
         updated_at = int(updated_at.timestamp())
+    if isinstance(dispatched_at, datetime):
+        dispatched_at = int(dispatched_at.timestamp())
 
     return JobResponse(
         job_id=record.job_id,
@@ -79,6 +82,7 @@ def _record_to_response(record: Any) -> "JobResponse":
         max_retries=record.max_retries,
         created_at=created_at,
         updated_at=updated_at,
+        dispatched_at=dispatched_at,
     )
 
 
@@ -119,6 +123,7 @@ class JobResponse(BaseModel):
     max_retries: int
     created_at: int
     updated_at: int
+    dispatched_at: Optional[int] = None
 
 
 class MessageResponse(BaseModel):
@@ -399,11 +404,13 @@ def get_job_metrics() -> JobStateCountsResponse:
     summary="Job duration metrics",
     description=(
         "Return average queue wait and completion time for completed jobs "
-        "(succeeded, failed, dead_lettered) derived from Postgres timestamps."
+        "(succeeded, failed, dead_lettered) derived from Postgres timestamps. "
+        "Queue wait is ``dispatched_at - created_at``; jobs without "
+        "``dispatched_at`` are omitted from that average (returns 0.0 when none qualify)."
     ),
 )
 def get_job_duration_metrics() -> JobDurationMetricsResponse:
-    """Expose duration averages from JobRepository + compute_job_duration_metrics."""
+    """Load jobs from Postgres and derive duration averages (including ``dispatched_at``)."""
     repo = get_repository()
     try:
         try:

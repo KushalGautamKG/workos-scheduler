@@ -53,7 +53,7 @@ Job API endpoints now **persist job records in PostgreSQL** instead of keeping s
 - `POST /jobs/{job_id}/retry`: retry a job when the state machine allows `failed` → `retry_scheduled`.
 - `GET /metrics`: return current scheduler metrics snapshot.
 - `GET /metrics/jobs`: return job counts grouped by durable Postgres `state`.
-- `GET /metrics/durations`: return average queue wait and completion duration from Postgres timestamps.
+- `GET /metrics/durations`: average queue wait (`dispatched_at - created_at`) and completion duration from Postgres timestamps.
 - `GET /metrics/prometheus`: same counts in Prometheus text exposition format.
 
 ### API Model Cleanup and State Transitions
@@ -260,7 +260,7 @@ Only states present in the `jobs` table appear in `job_state_counts` (no zero co
 
 #### `GET /metrics/durations`
 
-**Average queue wait and completion duration** for completed jobs (`succeeded`, `failed`, `dead_lettered`). Metrics are **derived from persisted Postgres timestamps** (`created_at`, `updated_at`, and `dispatched_at` when present). **Averages only today** — no p95/p99 yet.
+**Average queue wait and completion duration** for completed jobs (`succeeded`, `failed`, `dead_lettered`). Queue wait uses persisted **`dispatched_at - created_at`** (set on first dispatch; jobs without `dispatched_at` are omitted from that average). Completion uses **`updated_at - created_at`**. **Averages only today** — same timestamps will back future **p95/p99** latency metrics.
 
 Request:
 

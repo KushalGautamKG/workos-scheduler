@@ -38,7 +38,7 @@ What works today (local / dev):
 - **Dead-lettered job inspection** — `list_dead_lettered_jobs.py`
 - **Manual dead-letter requeue** — operator moves `DEAD_LETTERED` → `QUEUED` (`retry_count` preserved)
 - **Job state metrics snapshot** — `count_jobs_by_state` via CLI (`job_state_snapshot.py`) and **`GET /metrics/jobs`**
-- **Job duration metrics** — average queue wait and completion time from Postgres timestamps (`job_duration_snapshot.py`, **`GET /metrics/durations`**; averages only)
+- **Job duration metrics** — queue wait from **`dispatched_at`** (`job_duration_snapshot.py`, **`GET /metrics/durations`**; averages today, foundation for p95/p99)
 - **Prometheus-style job state metrics endpoint** — **`GET /metrics/prometheus`** (text exposition; scrape target only)
 - **Prometheus scrape configuration example** — `infra/prometheus/prometheus.yml` (15s scrape of `/metrics/prometheus`; see `docs/deploy.md`)
 - **Local Prometheus service** — `docker compose up -d prometheus` (UI on `:9090`)

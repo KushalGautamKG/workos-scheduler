@@ -79,6 +79,19 @@ def _require_postgres_and_migration() -> None:
         )
 
 
+@pytest.fixture(scope="module", autouse=True)
+def _ensure_dispatched_at_column(_require_postgres_and_migration) -> None:
+    """Apply ``dispatched_at`` locally if missing (shared dev DBs)."""
+    with connect() as conn:
+        conn.execute(
+            """
+            ALTER TABLE jobs
+            ADD COLUMN IF NOT EXISTS dispatched_at TIMESTAMPTZ
+            """
+        )
+        conn.commit()
+
+
 @pytest.fixture(autouse=True)
 def reset_metrics() -> None:
     """Reset in-process metrics so test order does not matter."""
@@ -152,6 +165,45 @@ def test_get_job_duration_metrics_returns_200_and_shape(client: TestClient) -> N
     assert isinstance(body["completed_jobs_count"], int)
     assert isinstance(body["average_queue_wait_seconds"], (int, float))
     assert isinstance(body["average_completion_seconds"], (int, float))
+    assert body["average_queue_wait_seconds"] >= 0
+    assert body["average_completion_seconds"] >= 0
+
+
+def test_get_job_duration_metrics_queue_wait_uses_dispatched_at(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Queue wait on /metrics/durations comes from dispatched_at - created_at."""
+    from types import SimpleNamespace
+
+    job = SimpleNamespace(
+        state="succeeded",
+        created_at=1_000,
+        dispatched_at=1_010,
+        updated_at=1_050,
+    )
+
+    class _FakeConn:
+        def close(self) -> None:
+            pass
+
+    class FakeRepo:
+        def __init__(self) -> None:
+            self._conn = _FakeConn()
+
+        def list_jobs(self, limit: int = 100_000) -> list[SimpleNamespace]:
+            return [job]
+
+    monkeypatch.setattr(api_module, "get_repository", lambda: FakeRepo())
+
+    response = client.get("/metrics/durations")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["completed_jobs_count"] == 1
+    assert body["average_queue_wait_seconds"] > 0
+    assert body["average_queue_wait_seconds"] == 10.0
+    assert body["average_completion_seconds"] == 50.0
 
 
 # 2) GET missing job returns 404
@@ -204,6 +256,7 @@ def test_get_job_after_enqueue_returns_persisted_job_data(client: TestClient) ->
         assert data["max_retries"] == 3
         assert data["created_at"] is not None
         assert data["updated_at"] is not None
+        assert data["dispatched_at"] is None
     finally:
         _delete_job(job_id)
 

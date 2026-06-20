@@ -44,7 +44,8 @@ def compute_job_duration_metrics(jobs: Iterable[Any]) -> JobDurationMetrics:
     are ignored. Jobs missing timestamps needed for a metric are skipped for
     that average only.
 
-    Queue wait: ``dispatched_at - created_at``
+    Queue wait: ``dispatched_at - created_at`` (jobs without ``dispatched_at`` or
+    with negative wait are skipped for that average only).
     Completion: ``updated_at - created_at``
     """
     completed_count = 0
@@ -65,8 +66,10 @@ def compute_job_duration_metrics(jobs: Iterable[Any]) -> JobDurationMetrics:
         dispatched_at = _to_epoch_seconds(getattr(job, "dispatched_at", None))
 
         if created_at is not None and dispatched_at is not None:
-            queue_wait_total += dispatched_at - created_at
-            queue_wait_count += 1
+            queue_wait = dispatched_at - created_at
+            if queue_wait >= 0:
+                queue_wait_total += queue_wait
+                queue_wait_count += 1
 
         if created_at is not None and updated_at is not None:
             completion_total += updated_at - created_at

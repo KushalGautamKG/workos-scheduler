@@ -69,6 +69,23 @@ def _require_postgres() -> None:
 
 
 @pytest.fixture(scope="module", autouse=True)
+def _ensure_dispatched_at_column(_require_postgres) -> None:
+    """
+    ``JobRecord`` hydration needs ``dispatched_at`` on ``jobs``.
+
+    Apply the column locally if missing (safe ``IF NOT EXISTS`` for shared dev DBs).
+    """
+    with connect() as conn:
+        conn.execute(
+            """
+            ALTER TABLE jobs
+            ADD COLUMN IF NOT EXISTS dispatched_at TIMESTAMPTZ
+            """
+        )
+        conn.commit()
+
+
+@pytest.fixture(scope="module", autouse=True)
 def _ensure_retry_after_column(_require_postgres) -> None:
     """
     ``requeue_due_retries`` needs ``retry_after`` on ``jobs``.
@@ -181,6 +198,7 @@ def test_create_job_inserts_and_returns_record() -> None:
             assert rec.retry_count == 0
             assert rec.max_retries == 5
             assert rec.created_at is not None
+            assert rec.dispatched_at is None
             assert rec.updated_at is not None
         finally:
             repo.delete_job(job_id)
@@ -892,8 +910,8 @@ def test_count_jobs_by_state_reflects_inserted_jobs() -> None:
             _delete_jobs(repo, queued_a, queued_b, dead_id, succeeded_id)
 
 
-def test_mark_job_dispatched_queued_becomes_dispatched() -> None:
-    job_id = _unique_job_id("test_jr_dispatch_ok")
+def test_dispatched_at_populated_on_queued_to_dispatched() -> None:
+    job_id = _unique_job_id("test_jr_dispatched_at_set")
     with connect() as conn:
         repo = JobRepository(conn)
         _delete_jobs(repo, job_id)
@@ -904,10 +922,72 @@ def test_mark_job_dispatched_queued_becomes_dispatched() -> None:
 
             assert updated is not None
             assert updated.state == JobState.DISPATCHED.value
+            assert updated.dispatched_at is not None
+            assert repo.get_job(job_id).dispatched_at is not None
+        finally:
+            _delete_jobs(repo, job_id)
+
+
+def test_dispatched_at_populated_only_once() -> None:
+    job_id = _unique_job_id("test_jr_dispatched_at_once")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, job_id)
+        try:
+            repo.create_job(job_id, "tenant-a", 1, JobState.QUEUED.value)
+
+            first = repo.mark_job_dispatched(job_id)
+            assert first is not None
+            first_dispatched_at = first.dispatched_at
+
+            repo.update_job_state(job_id, JobState.QUEUED.value)
+
+            second = repo.mark_job_dispatched(job_id)
+            assert second is not None
+            assert second.dispatched_at == first_dispatched_at
+        finally:
+            _delete_jobs(repo, job_id)
+
+
+def test_queued_jobs_remain_null_dispatched_at() -> None:
+    job_id = _unique_job_id("test_jr_dispatched_at_null")
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, job_id)
+        try:
+            created = repo.create_job(job_id, "tenant-a", 1, JobState.QUEUED.value)
+            assert created.dispatched_at is None
 
             loaded = repo.get_job(job_id)
             assert loaded is not None
-            assert loaded.state == JobState.DISPATCHED.value
+            assert loaded.state == JobState.QUEUED.value
+            assert loaded.dispatched_at is None
+        finally:
+            _delete_jobs(repo, job_id)
+
+
+def test_retry_redispatch_preserves_original_dispatched_at() -> None:
+    job_id = _unique_job_id("test_jr_dispatched_at_retry")
+    now = int(time.time())
+    with connect() as conn:
+        repo = JobRepository(conn)
+        _delete_jobs(repo, job_id)
+        try:
+            repo.create_job(job_id, "tenant-a", 1, JobState.QUEUED.value)
+
+            first = repo.mark_job_dispatched(job_id)
+            assert first is not None
+            original_dispatched_at = first.dispatched_at
+
+            repo.update_job_state(job_id, JobState.RUNNING.value)
+            _set_retry_scheduled(conn, job_id, retry_after=now - 60)
+
+            requeued = repo.requeue_due_retries(now=now, limit=10)
+            assert job_id in requeued
+
+            second = repo.mark_job_dispatched(job_id)
+            assert second is not None
+            assert second.dispatched_at == original_dispatched_at
         finally:
             _delete_jobs(repo, job_id)
 
@@ -953,6 +1033,7 @@ def test_claim_schedulable_jobs_marks_queued_as_dispatched() -> None:
 
             assert len(ours) == 2
             assert all(job.state == JobState.DISPATCHED.value for job in ours)
+            assert all(job.dispatched_at is not None for job in ours)
             assert repo.get_job(first_id).state == JobState.DISPATCHED.value
             assert repo.get_job(second_id).state == JobState.DISPATCHED.value
         finally:

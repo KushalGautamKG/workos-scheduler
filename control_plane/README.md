@@ -220,10 +220,12 @@ PYTHONPATH=. python3 control_plane/scripts/job_state_snapshot.py
 
 ## Job Duration Metrics
 
-**`compute_job_duration_metrics`** derives averages from Postgres timestamps on completed jobs (`succeeded`, `failed`, `dead_lettered`):
+Jobs persist an optional **`dispatched_at`** timestamp (set on first **`queued` → `dispatched`**, never overwritten on retry re-dispatch). **`compute_job_duration_metrics`** derives averages from Postgres on completed jobs (`succeeded`, `failed`, `dead_lettered`):
 
-- **Queue wait time** — `dispatched_at - created_at` (when `dispatched_at` is present)
+- **Queue wait time** — `dispatched_at - created_at` (actual dispatch time; jobs without `dispatched_at` are skipped)
 - **Completion time** — `updated_at - created_at`
+
+**Averages only today** — persisted timestamps are the foundation for future **p95/p99** latency metrics.
 
 CLI snapshot:
 

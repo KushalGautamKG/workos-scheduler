@@ -21,6 +21,15 @@ from control_plane.kernelq.job_state import JobState
 # Default wait before a retry_scheduled job becomes eligible for requeue.
 DEFAULT_RETRY_DELAY_SECONDS = 60
 
+# Shared column list for SELECT/RETURNING job rows.
+_JOB_ROW_COLUMNS = (
+    "job_id, tenant_id, priority, state, payload, "
+    "retry_count, max_retries, created_at, updated_at, dispatched_at"
+)
+
+# First dispatch only: QUEUED -> DISPATCHED sets dispatched_at; retries keep the original.
+_SET_FIRST_DISPATCHED_AT = "dispatched_at = COALESCE(dispatched_at, NOW())"
+
 
 @dataclass
 class ScheduleRetryResult:
@@ -54,6 +63,7 @@ class JobRecord:
     max_retries: int
     created_at: object
     updated_at: object
+    dispatched_at: object | None = None
 
 
 def _row_to_record(row: dict[str, Any]) -> JobRecord:
@@ -75,6 +85,7 @@ def _row_to_record(row: dict[str, Any]) -> JobRecord:
         max_retries=row["max_retries"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        dispatched_at=row.get("dispatched_at"),
     )
 
 
@@ -96,12 +107,11 @@ class JobRepository:
         """Insert a new job row and return the stored record (including timestamps)."""
         data = payload if payload is not None else {}
 
-        sql = """
+        sql = f"""
             INSERT INTO jobs (job_id, tenant_id, priority, state, payload, max_retries)
             VALUES (%(job_id)s, %(tenant_id)s, %(priority)s, %(state)s, %(payload)s, %(max_retries)s)
             RETURNING
-                job_id, tenant_id, priority, state, payload,
-                retry_count, max_retries, created_at, updated_at
+                {_JOB_ROW_COLUMNS}
         """
         params = {
             "job_id": job_id,
@@ -122,10 +132,9 @@ class JobRepository:
 
     def get_job(self, job_id: str) -> JobRecord | None:
         """Load one job by primary key, or None if it does not exist."""
-        sql = """
+        sql = f"""
             SELECT
-                job_id, tenant_id, priority, state, payload,
-                retry_count, max_retries, created_at, updated_at
+                {_JOB_ROW_COLUMNS}
             FROM jobs
             WHERE job_id = %(job_id)s
         """
@@ -141,13 +150,12 @@ class JobRepository:
 
     def update_job_state(self, job_id: str, new_state: str) -> JobRecord | None:
         """Set ``state`` and bump ``updated_at``; return the row or None if missing."""
-        sql = """
+        sql = f"""
             UPDATE jobs
             SET state = %(new_state)s, updated_at = NOW()
             WHERE job_id = %(job_id)s
             RETURNING
-                job_id, tenant_id, priority, state, payload,
-                retry_count, max_retries, created_at, updated_at
+                {_JOB_ROW_COLUMNS}
         """
 
         with self._conn.cursor(row_factory=dict_row) as cur:
@@ -324,10 +332,9 @@ class JobRepository:
         among equals). A future dispatch loop will call this, publish to Kafka,
         then mark winners as ``dispatched``.
         """
-        sql = """
+        sql = f"""
             SELECT
-                job_id, tenant_id, priority, state, payload,
-                retry_count, max_retries, created_at, updated_at
+                {_JOB_ROW_COLUMNS}
             FROM jobs
             WHERE state = %(queued_state)s
             ORDER BY priority DESC, created_at ASC
@@ -355,10 +362,9 @@ class JobRepository:
         if limit <= 0:
             raise ValueError("limit must be a positive integer")
 
-        sql = """
+        sql = f"""
             SELECT
-                job_id, tenant_id, priority, state, payload,
-                retry_count, max_retries, created_at, updated_at
+                {_JOB_ROW_COLUMNS}
             FROM jobs
             WHERE state = %(dead_lettered_state)s
             ORDER BY updated_at DESC
@@ -431,10 +437,9 @@ class JobRepository:
         if limit <= 0:
             raise ValueError("limit must be a positive integer")
 
-        sql = """
+        sql = f"""
             SELECT
-                job_id, tenant_id, priority, state, payload,
-                retry_count, max_retries, created_at, updated_at
+                {_JOB_ROW_COLUMNS}
             FROM jobs
             ORDER BY created_at ASC
             LIMIT %(limit)s
@@ -488,6 +493,9 @@ class JobRepository:
         """
         Move one job from ``queued`` to ``dispatched`` after it is selected.
 
+        On this transition, sets ``dispatched_at`` to the current time when it is
+        still ``NULL``; an existing value is left unchanged (retry re-dispatch).
+
         Fetching first makes the rule obvious: only jobs still waiting in the
         queue may be handed off. The UPDATE also checks ``state = queued`` so
         two schedulers cannot dispatch the same row if they race.
@@ -496,13 +504,15 @@ class JobRepository:
         if current is None or current.state != JobState.QUEUED.value:
             return None
 
-        sql = """
+        sql = f"""
             UPDATE jobs
-            SET state = %(new_state)s, updated_at = NOW()
+            SET
+                state = %(new_state)s,
+                updated_at = NOW(),
+                {_SET_FIRST_DISPATCHED_AT}
             WHERE job_id = %(job_id)s AND state = %(queued_state)s
             RETURNING
-                job_id, tenant_id, priority, state, payload,
-                retry_count, max_retries, created_at, updated_at
+                {_JOB_ROW_COLUMNS}
         """
         params = {
             "job_id": job_id,
@@ -536,14 +546,20 @@ class JobRepository:
 
         Ordering matches ``list_schedulable_jobs``: ``priority DESC``, then
         ``created_at ASC``.
+
+        Each claimed row gets ``dispatched_at`` on first dispatch only (same
+        rule as ``mark_job_dispatched``).
         """
         if limit <= 0:
             raise ValueError("limit must be a positive integer")
 
         # One statement: lock candidate rows, update them, return the new rows.
-        sql = """
+        sql = f"""
             UPDATE jobs
-            SET state = %(dispatched_state)s, updated_at = NOW()
+            SET
+                state = %(dispatched_state)s,
+                updated_at = NOW(),
+                {_SET_FIRST_DISPATCHED_AT}
             WHERE job_id IN (
                 SELECT job_id
                 FROM jobs
@@ -553,8 +569,7 @@ class JobRepository:
                 FOR UPDATE SKIP LOCKED
             )
             RETURNING
-                job_id, tenant_id, priority, state, payload,
-                retry_count, max_retries, created_at, updated_at
+                {_JOB_ROW_COLUMNS}
         """
         params = {
             "queued_state": JobState.QUEUED.value,

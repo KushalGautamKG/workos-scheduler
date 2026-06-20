@@ -513,9 +513,9 @@ KernelQ now has a **full completion loop** (queued job → dispatch → worker �
 
 ## Job Duration Metrics
 
-KernelQ now reports **average queue wait** and **average completion duration** from **persisted Postgres timestamps** (`compute_job_duration_metrics`). Exposed as **`GET /metrics/durations`** and **`job_duration_snapshot.py`**.
+Jobs persist optional **`dispatched_at`** on first dispatch. **Average queue wait** is computed from actual dispatch times (`dispatched_at - created_at`); **completion** from `updated_at - created_at` (`compute_job_duration_metrics`). Exposed as **`GET /metrics/durations`** and **`job_duration_snapshot.py`**.
 
-**Current implementation uses averages only** — useful for MVP snapshots and demos. **Future work:** Prometheus **histograms** and **percentiles** (p50/p95/p99) for tail latency and SLO alerting.
+**Averages only today** — durable timestamps lay groundwork for **p95/p99** tail-latency metrics and SLO alerting.
 
 ## Prometheus Scraping
 

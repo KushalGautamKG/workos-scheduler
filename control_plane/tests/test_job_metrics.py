@@ -36,6 +36,7 @@ def test_one_completed_job() -> None:
     )
 
     assert metrics.completed_jobs_count == 1
+    assert metrics.average_queue_wait_seconds > 0
     assert metrics.average_queue_wait_seconds == 10.0
     assert metrics.average_completion_seconds == 50.0
 
@@ -79,6 +80,21 @@ def test_missing_timestamps_ignored() -> None:
     assert metrics.completed_jobs_count == 2
     assert metrics.average_queue_wait_seconds == 30.0
     assert metrics.average_completion_seconds == 100.0
+
+
+def test_negative_queue_wait_ignored() -> None:
+    metrics = compute_job_duration_metrics(
+        [
+            # dispatched before created_at — invalid, skipped for queue wait.
+            _job("succeeded", created_at=100, dispatched_at=90, updated_at=150),
+            _job("succeeded", created_at=0, dispatched_at=20, updated_at=80),
+        ]
+    )
+
+    assert metrics.completed_jobs_count == 2
+    assert metrics.average_queue_wait_seconds > 0
+    assert metrics.average_queue_wait_seconds == 20.0
+    assert metrics.average_completion_seconds == (50.0 + 80.0) / 2
 
 
 def test_dead_lettered_included() -> None:
