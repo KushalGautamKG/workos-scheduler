@@ -235,6 +235,12 @@ PYTHONPATH=. python3 control_plane/scripts/job_duration_snapshot.py
 
 HTTP: **`GET /metrics/durations`** returns `completed_jobs_count`, `average_queue_wait_seconds`, and `average_completion_seconds`.
 
+**Smoke test:** **`scripts/smoke_queue_wait_metrics.sh`** — sleeps before dispatch, completes via **`ResultStateHandler`**, asserts **`queue_wait_seconds > 0`** (`dispatched_at - created_at`).
+
+```bash
+./control_plane/scripts/smoke_queue_wait_metrics.sh
+```
+
 ## Structured Script Logs
 
 One-shot scripts print an extra **key=value summary line** at the end (via `kernelq/logging_utils.py` for Python scripts; bash helpers in smoke tests). Examples:
@@ -247,7 +253,7 @@ event=job_state_snapshot total_jobs=5010 states_count=4
 event=smoke_full_completion job_id=day52-full-123 final_state=succeeded success=true
 ```
 
-**MVP smoke tests** emit `event=smoke_*` summary lines (`smoke_full_completion`, `smoke_retry_requeue`, `smoke_retry_exhaustion`) with `success=true|false` and state fields. Collect demo evidence after a run:
+**MVP smoke tests** emit `event=smoke_*` summary lines (`smoke_full_completion`, `smoke_retry_requeue`, `smoke_retry_exhaustion`, `smoke_queue_wait_metrics`) with `success=true|false` and state fields. Collect demo evidence after a run:
 
 ```bash
 grep "event=smoke_" run.log

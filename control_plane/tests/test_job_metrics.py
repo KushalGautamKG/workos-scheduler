@@ -82,6 +82,18 @@ def test_missing_timestamps_ignored() -> None:
     assert metrics.average_completion_seconds == 100.0
 
 
+def test_queue_wait_uses_dispatched_at_ignores_missing() -> None:
+    metrics = compute_job_duration_metrics(
+        [
+            _job("succeeded", created_at=100, dispatched_at=105, updated_at=200),
+            _job("succeeded", created_at=100, updated_at=200),
+        ]
+    )
+
+    assert metrics.completed_jobs_count == 2
+    assert metrics.average_queue_wait_seconds == 5.0
+
+
 def test_negative_queue_wait_ignored() -> None:
     metrics = compute_job_duration_metrics(
         [

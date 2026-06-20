@@ -517,6 +517,8 @@ Jobs persist optional **`dispatched_at`** on first dispatch. **Average queue wai
 
 **Averages only today** — durable timestamps lay groundwork for **p95/p99** tail-latency metrics and SLO alerting.
 
+**Smoke test:** **`./control_plane/scripts/smoke_queue_wait_metrics.sh`** verifies non-zero queue latency from **`dispatched_at`**.
+
 ## Prometheus Scraping
 
 **`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges from **`JobRepository.count_jobs_by_state()`** — a **`GROUP BY state`** query over durable Postgres rows (same source as **`GET /metrics/jobs`**).

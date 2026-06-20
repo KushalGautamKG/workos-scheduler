@@ -44,7 +44,7 @@ What works today (local / dev):
 - **Local Prometheus service** — `docker compose up -d prometheus` (UI on `:9090`)
 - **Local Grafana service and starter dashboard** — `docker compose up -d grafana` (UI on `:3000`; **KernelQ MVP** charts `kernelq_jobs_by_state`)
 - **Structured script logs** — one-shot scripts print `event=<name>` summary lines for operator/debug visibility (complements Prometheus)
-- **Smoke tests** — success, retry requeue, and exhaustion paths
+- **Smoke tests** — success, retry requeue, exhaustion, and queue-wait latency (`smoke_queue_wait_metrics.sh`)
 
 ---
 
@@ -107,6 +107,7 @@ docker compose up -d postgres zookeeper kafka
 | `./control_plane/scripts/smoke_full_completion.sh` | End-to-end: queued → dispatch → worker → result → **succeeded** |
 | `./control_plane/scripts/smoke_retry_requeue.sh` | **retryable_failure** → `retry_scheduled` → `queued` → `dispatched` (no Go worker for retry inject) |
 | `./control_plane/scripts/smoke_retry_exhaustion.sh` | Exhausted retries → **dead_lettered**; scanner does not requeue |
+| `./control_plane/scripts/smoke_queue_wait_metrics.sh` | Non-zero queue wait from **`dispatched_at`** (`queue_wait_seconds > 0`) |
 
 Each smoke script prints a structured **`event=smoke_*`** summary line (`success=true|false`) at the end — grep these to verify demo success quickly:
 

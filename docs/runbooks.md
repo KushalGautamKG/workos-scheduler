@@ -9,6 +9,7 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 | **Success** | `./control_plane/scripts/smoke_full_completion.sh` |
 | **Retry** | `./control_plane/scripts/smoke_retry_requeue.sh` |
 | **Exhaustion** | `./control_plane/scripts/smoke_retry_exhaustion.sh` |
+| **Queue wait metrics** | `./control_plane/scripts/smoke_queue_wait_metrics.sh` |
 | **Dead-letter inspection** | `PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py` |
 | **Manual recovery** | `PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>` |
 
@@ -31,13 +32,14 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_full_completion` | `success`, `final_state=succeeded`, `job_id` |
 | `smoke_retry_requeue` | `success`, `state_after_retry_result`, `state_after_retry_scanner`, `state_after_scheduler_tick` |
 | `smoke_retry_exhaustion` | `success`, `final_state=dead_lettered`, `state_after_retry_scanner=dead_lettered` |
+| `smoke_queue_wait_metrics` | `success`, `queue_wait_seconds` > 0, `job_id` |
 | `scheduler_tick` | `published_count`, `errors_count`, `publish_errors_count` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |
 | `result_consumer` | `processed_message`, `errors_count`, optional `error` |
 | `job_state_snapshot` | `total_jobs`, `states_count` |
 | `job_duration_snapshot` | `completed_jobs_count`, `average_queue_wait_seconds`, `average_completion_seconds` |
 
-**Duration metrics:** Queue wait uses persisted **`dispatched_at - created_at`** (actual dispatch time; **`GET /metrics/durations`** or `job_duration_snapshot.py`). **Averages only today** — foundation for **p95/p99** latency metrics.
+**Duration metrics:** Queue wait uses **`dispatched_at - created_at`**. **`smoke_queue_wait_metrics.sh`** verifies non-zero queue latency end-to-end.
 
 **Key fields (across events):**
 
