@@ -223,9 +223,10 @@ PYTHONPATH=. python3 control_plane/scripts/job_state_snapshot.py
 Jobs persist an optional **`dispatched_at`** timestamp (set on first **`queued` → `dispatched`**, never overwritten on retry re-dispatch). **`compute_job_duration_metrics`** derives averages from Postgres on completed jobs (`succeeded`, `failed`, `dead_lettered`):
 
 - **Queue wait time** — `dispatched_at - created_at` (actual dispatch time; jobs without `dispatched_at` are skipped)
+- **Queue wait percentiles** — **p50**, **p95**, **p99** from the same valid waits
 - **Completion time** — `updated_at - created_at`
 
-**Averages only today** — persisted timestamps are the foundation for future **p95/p99** latency metrics.
+**Not histogram-based yet** — percentiles are computed from Postgres snapshots (nearest-rank), not Prometheus `_bucket` series.
 
 CLI snapshot:
 
@@ -233,7 +234,7 @@ CLI snapshot:
 PYTHONPATH=. python3 control_plane/scripts/job_duration_snapshot.py
 ```
 
-HTTP: **`GET /metrics/durations`** returns `completed_jobs_count`, `average_queue_wait_seconds`, and `average_completion_seconds`.
+HTTP: **`GET /metrics/durations`** returns averages plus **`p50_queue_wait_seconds`**, **`p95_queue_wait_seconds`**, **`p99_queue_wait_seconds`**. Same stats appear as **`kernelq_queue_wait_seconds{quantile=...}`** gauges on **`GET /metrics/prometheus`** (alongside job state counts).
 
 **Smoke test:** **`scripts/smoke_queue_wait_metrics.sh`** — sleeps before dispatch, completes via **`ResultStateHandler`**, asserts **`queue_wait_seconds > 0`** (`dispatched_at - created_at`).
 
@@ -263,7 +264,7 @@ These lines are **grep-friendly** for local debugging and demos. This is **not a
 
 ## Prometheus-Style Metrics
 
-**`GET /metrics/prometheus`** exposes the same **durable Postgres job state counts** in **Prometheus text exposition format** (`kernelq_jobs_by_state` gauge). This is **not a full Prometheus deployment** — no scrape server or Grafana bundled; it is an HTTP endpoint for future scraping.
+**`GET /metrics/prometheus`** exposes **durable Postgres job state counts** and **queue-wait percentile gauges** in Prometheus text exposition format (`kernelq_jobs_by_state`, `kernelq_queue_wait_seconds{quantile="0.50"|"0.95"|"0.99"}`). **Gauge quantiles from DB snapshots — not native Prometheus histograms yet.**
 
 ```bash
 curl http://127.0.0.1:8000/metrics/prometheus

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from control_plane.kernelq.prometheus_metrics import format_job_state_counts_for_prometheus
+from control_plane.kernelq.job_metrics import JobDurationMetrics
+from control_plane.kernelq.prometheus_metrics import (
+    format_job_duration_metrics_for_prometheus,
+    format_job_state_counts_for_prometheus,
+)
 
 
 def test_formatter_includes_help_and_type_lines() -> None:
@@ -67,3 +71,67 @@ def test_formatter_non_int_count_raises_value_error() -> None:
 
     with pytest.raises(ValueError, match="count must be an int"):
         format_job_state_counts_for_prometheus({"queued": True})  # type: ignore[dict-item]
+
+
+def test_duration_formatter_includes_help_and_type_lines() -> None:
+    metrics = JobDurationMetrics(
+        completed_jobs_count=1,
+        average_queue_wait_seconds=10.0,
+        average_completion_seconds=50.0,
+        p50_queue_wait_seconds=10.0,
+        p95_queue_wait_seconds=20.0,
+        p99_queue_wait_seconds=30.0,
+    )
+
+    output = format_job_duration_metrics_for_prometheus(metrics)
+
+    assert "# HELP kernelq_queue_wait_seconds Queue wait duration quantiles in seconds." in output
+    assert "# TYPE kernelq_queue_wait_seconds gauge" in output
+
+
+def test_duration_formatter_outputs_quantile_gauges() -> None:
+    metrics = JobDurationMetrics(
+        completed_jobs_count=3,
+        average_queue_wait_seconds=15.0,
+        average_completion_seconds=60.0,
+        p50_queue_wait_seconds=10.0,
+        p95_queue_wait_seconds=25.0,
+        p99_queue_wait_seconds=40.0,
+    )
+
+    output = format_job_duration_metrics_for_prometheus(metrics)
+
+    assert output.splitlines()[-3:] == [
+        'kernelq_queue_wait_seconds{quantile="0.50"} 10.0',
+        'kernelq_queue_wait_seconds{quantile="0.95"} 25.0',
+        'kernelq_queue_wait_seconds{quantile="0.99"} 40.0',
+    ]
+
+
+def test_duration_formatter_output_ends_with_newline() -> None:
+    metrics = JobDurationMetrics(
+        completed_jobs_count=0,
+        average_queue_wait_seconds=0.0,
+        average_completion_seconds=0.0,
+        p50_queue_wait_seconds=0.0,
+        p95_queue_wait_seconds=0.0,
+        p99_queue_wait_seconds=0.0,
+    )
+
+    output = format_job_duration_metrics_for_prometheus(metrics)
+
+    assert output.endswith("\n")
+
+
+def test_duration_formatter_negative_value_raises_value_error() -> None:
+    metrics = JobDurationMetrics(
+        completed_jobs_count=1,
+        average_queue_wait_seconds=0.0,
+        average_completion_seconds=0.0,
+        p50_queue_wait_seconds=-1.0,
+        p95_queue_wait_seconds=0.0,
+        p99_queue_wait_seconds=0.0,
+    )
+
+    with pytest.raises(ValueError, match=">= 0"):
+        format_job_duration_metrics_for_prometheus(metrics)

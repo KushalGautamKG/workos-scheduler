@@ -20,7 +20,10 @@ from control_plane.kernelq.enqueue_result import EnqueueStatus
 from control_plane.kernelq.job_repository import JobRepository
 from control_plane.kernelq.job_state import JobState, can_transition, explain_transition
 from control_plane.kernelq.job_metrics import compute_job_duration_metrics
-from control_plane.kernelq.prometheus_metrics import format_job_state_counts_for_prometheus
+from control_plane.kernelq.prometheus_metrics import (
+    format_job_duration_metrics_for_prometheus,
+    format_job_state_counts_for_prometheus,
+)
 from control_plane.kernelq.scheduler_metrics import SchedulerMetrics
 
 
@@ -141,11 +144,14 @@ class JobStateCountsResponse(BaseModel):
 
 
 class JobDurationMetricsResponse(BaseModel):
-    """Average queue wait and completion time for completed Postgres jobs."""
+    """Queue wait and completion duration stats for completed Postgres jobs."""
 
     completed_jobs_count: int
     average_queue_wait_seconds: float
     average_completion_seconds: float
+    p50_queue_wait_seconds: float
+    p95_queue_wait_seconds: float
+    p99_queue_wait_seconds: float
 
 
 # Max jobs loaded for duration metrics (matches job_duration_snapshot.py cap).
@@ -406,11 +412,12 @@ def get_job_metrics() -> JobStateCountsResponse:
         "Return average queue wait and completion time for completed jobs "
         "(succeeded, failed, dead_lettered) derived from Postgres timestamps. "
         "Queue wait is ``dispatched_at - created_at``; jobs without "
-        "``dispatched_at`` are omitted from that average (returns 0.0 when none qualify)."
+        "``dispatched_at`` are omitted from queue-wait stats (returns 0.0 when none qualify). "
+        "Includes p50/p95/p99 queue wait percentiles."
     ),
 )
 def get_job_duration_metrics() -> JobDurationMetricsResponse:
-    """Load jobs from Postgres and derive duration averages (including ``dispatched_at``)."""
+    """Load jobs from Postgres and derive duration stats (including ``dispatched_at``)."""
     repo = get_repository()
     try:
         try:
@@ -426,6 +433,9 @@ def get_job_duration_metrics() -> JobDurationMetricsResponse:
             completed_jobs_count=result.completed_jobs_count,
             average_queue_wait_seconds=result.average_queue_wait_seconds,
             average_completion_seconds=result.average_completion_seconds,
+            p50_queue_wait_seconds=result.p50_queue_wait_seconds,
+            p95_queue_wait_seconds=result.p95_queue_wait_seconds,
+            p99_queue_wait_seconds=result.p99_queue_wait_seconds,
         )
     finally:
         _close_repository(repo)
@@ -433,22 +443,28 @@ def get_job_duration_metrics() -> JobDurationMetricsResponse:
 
 @app.get(
     "/metrics/prometheus",
-    summary="Prometheus job state metrics",
-    description="Return job counts by Postgres state in Prometheus text exposition format.",
+    summary="Prometheus job metrics",
+    description=(
+        "Return job counts by Postgres state and queue-wait percentile gauges "
+        "in Prometheus text exposition format."
+    ),
 )
 def get_prometheus_job_metrics() -> Response:
-    """Expose durable job state counts for Prometheus scraping."""
+    """Expose durable job state counts and queue-wait quantiles for Prometheus scraping."""
     repo = get_repository()
     try:
         try:
             counts = repo.count_jobs_by_state()
+            jobs = repo.list_jobs(limit=_METRICS_JOB_LOAD_LIMIT)
+            duration_metrics = compute_job_duration_metrics(jobs)
         except PsycopgError as exc:
             raise HTTPException(
                 status_code=500,
-                detail=f"Database error while loading job counts: {exc}",
+                detail=f"Database error while loading Prometheus metrics: {exc}",
             ) from exc
 
         body = format_job_state_counts_for_prometheus(counts)
+        body += format_job_duration_metrics_for_prometheus(duration_metrics)
         return Response(content=body, media_type="text/plain; version=0.0.4")
     finally:
         _close_repository(repo)

@@ -53,8 +53,8 @@ Job API endpoints now **persist job records in PostgreSQL** instead of keeping s
 - `POST /jobs/{job_id}/retry`: retry a job when the state machine allows `failed` → `retry_scheduled`.
 - `GET /metrics`: return current scheduler metrics snapshot.
 - `GET /metrics/jobs`: return job counts grouped by durable Postgres `state`.
-- `GET /metrics/durations`: average queue wait (`dispatched_at - created_at`) and completion duration from Postgres timestamps.
-- `GET /metrics/prometheus`: same counts in Prometheus text exposition format.
+- `GET /metrics/durations`: queue wait averages and **p50/p95/p99** percentiles (`dispatched_at - created_at`) plus completion duration.
+- `GET /metrics/prometheus`: job state counts and **`kernelq_queue_wait_seconds`** quantile gauges (text exposition; not histogram-based yet).
 
 ### API Model Cleanup and State Transitions
 
@@ -260,7 +260,7 @@ Only states present in the `jobs` table appear in `job_state_counts` (no zero co
 
 #### `GET /metrics/durations`
 
-**Average queue wait and completion duration** for completed jobs (`succeeded`, `failed`, `dead_lettered`). Queue wait uses persisted **`dispatched_at - created_at`** (set on first dispatch; jobs without `dispatched_at` are omitted from that average). Completion uses **`updated_at - created_at`**. **Averages only today** — same timestamps will back future **p95/p99** latency metrics.
+**Queue wait and completion duration** for completed jobs (`succeeded`, `failed`, `dead_lettered`). Queue wait uses **`dispatched_at - created_at`**; jobs without `dispatched_at` are omitted. Returns averages plus **queue wait percentiles** **`p50_queue_wait_seconds`**, **`p95_queue_wait_seconds`**, **`p99_queue_wait_seconds`**. Completion uses **`updated_at - created_at`**. Percentiles are snapshot-derived — **not full Prometheus histograms yet**.
 
 Request:
 
@@ -274,7 +274,10 @@ Example response:
 {
   "completed_jobs_count": 42,
   "average_queue_wait_seconds": 12.5,
-  "average_completion_seconds": 87.3
+  "average_completion_seconds": 87.3,
+  "p50_queue_wait_seconds": 8.0,
+  "p95_queue_wait_seconds": 45.0,
+  "p99_queue_wait_seconds": 120.0
 }
 ```
 
@@ -282,7 +285,7 @@ CLI equivalent: `control_plane/scripts/job_duration_snapshot.py`.
 
 #### `GET /metrics/prometheus`
 
-**Prometheus-style text format** — counts jobs by **durable Postgres state** (same data as `/metrics/jobs`). **MVP observability endpoint** for future Prometheus scraping; not a full Prometheus stack.
+**Prometheus text format** — **job state counts** (`kernelq_jobs_by_state`) and **queue wait percentile gauges** (`kernelq_queue_wait_seconds{quantile="0.50"|"0.95"|"0.99"}`), derived from the same Postgres snapshot as `/metrics/durations`. **Gauge quantiles, not histogram `_bucket` metrics yet.**
 
 Request:
 
@@ -296,6 +299,9 @@ Example response (`Content-Type: text/plain; version=0.0.4`):
 # HELP kernelq_jobs_by_state Number of jobs by durable lifecycle state.
 # TYPE kernelq_jobs_by_state gauge
 kernelq_jobs_by_state{state="queued"} 2
+# HELP kernelq_queue_wait_seconds Queue wait duration quantiles in seconds.
+# TYPE kernelq_queue_wait_seconds gauge
+kernelq_queue_wait_seconds{quantile="0.95"} 2.4
 ```
 
 Additional states appear as separate lines, sorted alphabetically.

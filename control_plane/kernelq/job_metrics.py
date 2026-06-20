@@ -7,6 +7,7 @@ required timestamps for a given metric are skipped for that average only.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable
@@ -22,6 +23,9 @@ class JobDurationMetrics:
     completed_jobs_count: int
     average_queue_wait_seconds: float
     average_completion_seconds: float
+    p50_queue_wait_seconds: float
+    p95_queue_wait_seconds: float
+    p99_queue_wait_seconds: float
 
 
 def _to_epoch_seconds(value: object) -> float | None:
@@ -33,6 +37,23 @@ def _to_epoch_seconds(value: object) -> float | None:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
     return None
+
+
+def _percentile_nearest_rank(sorted_values: list[float], p: float) -> float:
+    """
+    Nearest-rank percentile on a pre-sorted list; ``p`` is in [0, 100].
+
+    Uses the smallest value where at least ``p``% of observations are <= it:
+    rank = ceil(p / 100 * n), 1-indexed, then index rank - 1 into sorted data.
+    Simpler than linear interpolation and stable for small MVP sample sizes.
+    """
+    if not sorted_values:
+        return 0.0
+
+    n = len(sorted_values)
+    rank = math.ceil(p / 100.0 * n)
+    rank = max(1, min(rank, n))
+    return sorted_values[rank - 1]
 
 
 def compute_job_duration_metrics(jobs: Iterable[Any]) -> JobDurationMetrics:
@@ -49,6 +70,7 @@ def compute_job_duration_metrics(jobs: Iterable[Any]) -> JobDurationMetrics:
     Completion: ``updated_at - created_at``
     """
     completed_count = 0
+    queue_wait_values: list[float] = []
     queue_wait_total = 0.0
     queue_wait_count = 0
     completion_total = 0.0
@@ -68,6 +90,7 @@ def compute_job_duration_metrics(jobs: Iterable[Any]) -> JobDurationMetrics:
         if created_at is not None and dispatched_at is not None:
             queue_wait = dispatched_at - created_at
             if queue_wait >= 0:
+                queue_wait_values.append(queue_wait)
                 queue_wait_total += queue_wait
                 queue_wait_count += 1
 
@@ -82,8 +105,16 @@ def compute_job_duration_metrics(jobs: Iterable[Any]) -> JobDurationMetrics:
         completion_total / completion_count if completion_count else 0.0
     )
 
+    queue_wait_values.sort()
+    p50 = _percentile_nearest_rank(queue_wait_values, 50.0)
+    p95 = _percentile_nearest_rank(queue_wait_values, 95.0)
+    p99 = _percentile_nearest_rank(queue_wait_values, 99.0)
+
     return JobDurationMetrics(
         completed_jobs_count=completed_count,
         average_queue_wait_seconds=float(average_queue_wait),
         average_completion_seconds=float(average_completion),
+        p50_queue_wait_seconds=float(p50),
+        p95_queue_wait_seconds=float(p95),
+        p99_queue_wait_seconds=float(p99),
     )

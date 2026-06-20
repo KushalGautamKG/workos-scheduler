@@ -37,9 +37,9 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |
 | `result_consumer` | `processed_message`, `errors_count`, optional `error` |
 | `job_state_snapshot` | `total_jobs`, `states_count` |
-| `job_duration_snapshot` | `completed_jobs_count`, `average_queue_wait_seconds`, `average_completion_seconds` |
+| `job_duration_snapshot` | `completed_jobs_count`, averages, **`p50_queue_wait_seconds`**, **`p95_queue_wait_seconds`**, **`p99_queue_wait_seconds`** |
 
-**Duration metrics:** Queue wait uses **`dispatched_at - created_at`**. **`smoke_queue_wait_metrics.sh`** verifies non-zero queue latency end-to-end.
+**Duration metrics:** Queue wait **p50/p95/p99** from **`dispatched_at - created_at`**. JSON: **`GET /metrics/durations`**; Prometheus gauges: **`GET /metrics/prometheus`**. Snapshot quantiles — **not histogram `_bucket` metrics yet**. **`smoke_queue_wait_metrics.sh`** verifies non-zero queue latency.
 
 **Key fields (across events):**
 

@@ -149,6 +149,63 @@ def test_get_prometheus_metrics_returns_text_exposition(client: TestClient) -> N
     assert "# HELP kernelq_jobs_by_state" in text
     assert "# TYPE kernelq_jobs_by_state gauge" in text
     assert "kernelq_jobs_by_state" in text
+    assert "# HELP kernelq_queue_wait_seconds" in text
+    assert "# TYPE kernelq_queue_wait_seconds gauge" in text
+    assert 'kernelq_queue_wait_seconds{quantile="0.50"}' in text
+    assert 'kernelq_queue_wait_seconds{quantile="0.95"}' in text
+    assert 'kernelq_queue_wait_seconds{quantile="0.99"}' in text
+
+
+def test_get_prometheus_metrics_includes_state_counts_and_queue_wait_quantiles(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    from control_plane.kernelq.job_metrics import JobDurationMetrics
+
+    class _FakeConn:
+        def close(self) -> None:
+            pass
+
+    class FakeRepo:
+        def __init__(self) -> None:
+            self._conn = _FakeConn()
+
+        def count_jobs_by_state(self) -> dict[str, int]:
+            return {"queued": 10}
+
+        def list_jobs(self, limit: int = 100_000) -> list[SimpleNamespace]:
+            return [
+                SimpleNamespace(
+                    state="succeeded",
+                    created_at=0,
+                    dispatched_at=24,
+                    updated_at=30,
+                )
+            ]
+
+    monkeypatch.setattr(api_module, "get_repository", lambda: FakeRepo())
+    monkeypatch.setattr(
+        api_module,
+        "compute_job_duration_metrics",
+        lambda jobs: JobDurationMetrics(
+            completed_jobs_count=1,
+            average_queue_wait_seconds=24.0,
+            average_completion_seconds=30.0,
+            p50_queue_wait_seconds=24.0,
+            p95_queue_wait_seconds=24.0,
+            p99_queue_wait_seconds=24.0,
+        ),
+    )
+
+    response = client.get("/metrics/prometheus")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    text = response.text
+    assert 'kernelq_jobs_by_state{state="queued"} 10' in text
+    assert 'kernelq_queue_wait_seconds{quantile="0.95"} 24.0' in text
 
 
 # 1d) GET /metrics/durations returns job duration averages from Postgres
@@ -161,12 +218,23 @@ def test_get_job_duration_metrics_returns_200_and_shape(client: TestClient) -> N
     assert "completed_jobs_count" in body
     assert "average_queue_wait_seconds" in body
     assert "average_completion_seconds" in body
+    assert "p50_queue_wait_seconds" in body
+    assert "p95_queue_wait_seconds" in body
+    assert "p99_queue_wait_seconds" in body
 
     assert isinstance(body["completed_jobs_count"], int)
     assert isinstance(body["average_queue_wait_seconds"], (int, float))
     assert isinstance(body["average_completion_seconds"], (int, float))
+    assert isinstance(body["p50_queue_wait_seconds"], (int, float))
+    assert isinstance(body["p95_queue_wait_seconds"], (int, float))
+    assert isinstance(body["p99_queue_wait_seconds"], (int, float))
     assert body["average_queue_wait_seconds"] >= 0
     assert body["average_completion_seconds"] >= 0
+    assert body["p50_queue_wait_seconds"] >= 0
+    assert body["p95_queue_wait_seconds"] >= 0
+    assert body["p99_queue_wait_seconds"] >= 0
+    assert body["p50_queue_wait_seconds"] <= body["p95_queue_wait_seconds"]
+    assert body["p95_queue_wait_seconds"] <= body["p99_queue_wait_seconds"]
 
 
 def test_get_job_duration_metrics_queue_wait_uses_dispatched_at(
@@ -204,6 +272,9 @@ def test_get_job_duration_metrics_queue_wait_uses_dispatched_at(
     assert body["average_queue_wait_seconds"] > 0
     assert body["average_queue_wait_seconds"] == 10.0
     assert body["average_completion_seconds"] == 50.0
+    assert body["p50_queue_wait_seconds"] == 10.0
+    assert body["p95_queue_wait_seconds"] == 10.0
+    assert body["p99_queue_wait_seconds"] == 10.0
 
 
 # 2) GET missing job returns 404

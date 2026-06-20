@@ -28,6 +28,9 @@ def test_empty_list_returns_zeros() -> None:
     assert metrics.completed_jobs_count == 0
     assert metrics.average_queue_wait_seconds == 0.0
     assert metrics.average_completion_seconds == 0.0
+    assert metrics.p50_queue_wait_seconds == 0.0
+    assert metrics.p95_queue_wait_seconds == 0.0
+    assert metrics.p99_queue_wait_seconds == 0.0
 
 
 def test_one_completed_job() -> None:
@@ -82,16 +85,69 @@ def test_missing_timestamps_ignored() -> None:
     assert metrics.average_completion_seconds == 100.0
 
 
-def test_queue_wait_uses_dispatched_at_ignores_missing() -> None:
+def test_queue_wait_percentiles_zero_when_no_queue_waits() -> None:
+    metrics = compute_job_duration_metrics(
+        [_job("succeeded", created_at=100, updated_at=200)]
+    )
+
+    assert metrics.p50_queue_wait_seconds == 0.0
+    assert metrics.p95_queue_wait_seconds == 0.0
+    assert metrics.p99_queue_wait_seconds == 0.0
+
+
+def test_queue_wait_percentiles_single_value() -> None:
+    metrics = compute_job_duration_metrics(
+        [_job("succeeded", created_at=100, dispatched_at=107, updated_at=200)]
+    )
+
+    assert metrics.p50_queue_wait_seconds == 7.0
+    assert metrics.p95_queue_wait_seconds == 7.0
+    assert metrics.p99_queue_wait_seconds == 7.0
+
+
+def test_queue_wait_percentiles_ordered_for_multiple_values() -> None:
+    waits = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     metrics = compute_job_duration_metrics(
         [
-            _job("succeeded", created_at=100, dispatched_at=105, updated_at=200),
-            _job("succeeded", created_at=100, updated_at=200),
+            _job("succeeded", created_at=0, dispatched_at=wait, updated_at=wait + 1)
+            for wait in waits
         ]
     )
 
-    assert metrics.completed_jobs_count == 2
-    assert metrics.average_queue_wait_seconds == 5.0
+    p50 = metrics.p50_queue_wait_seconds
+    p95 = metrics.p95_queue_wait_seconds
+    p99 = metrics.p99_queue_wait_seconds
+
+    assert p50 <= p95 <= p99
+    assert p50 == 50.0
+    assert p95 == 100.0
+    assert p99 == 100.0
+
+
+def test_queue_wait_percentiles_missing_dispatched_at_ignored() -> None:
+    metrics = compute_job_duration_metrics(
+        [
+            _job("succeeded", created_at=0, dispatched_at=5, updated_at=10),
+            _job("succeeded", created_at=0, updated_at=10),
+        ]
+    )
+
+    assert metrics.p50_queue_wait_seconds == 5.0
+    assert metrics.p95_queue_wait_seconds == 5.0
+    assert metrics.p99_queue_wait_seconds == 5.0
+
+
+def test_queue_wait_percentiles_negative_ignored() -> None:
+    metrics = compute_job_duration_metrics(
+        [
+            _job("succeeded", created_at=100, dispatched_at=90, updated_at=150),
+            _job("succeeded", created_at=0, dispatched_at=20, updated_at=80),
+        ]
+    )
+
+    assert metrics.p50_queue_wait_seconds == 20.0
+    assert metrics.p95_queue_wait_seconds == 20.0
+    assert metrics.p99_queue_wait_seconds == 20.0
 
 
 def test_negative_queue_wait_ignored() -> None:

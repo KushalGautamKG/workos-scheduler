@@ -513,15 +513,15 @@ KernelQ now has a **full completion loop** (queued job → dispatch → worker �
 
 ## Job Duration Metrics
 
-Jobs persist optional **`dispatched_at`** on first dispatch. **Average queue wait** is computed from actual dispatch times (`dispatched_at - created_at`); **completion** from `updated_at - created_at` (`compute_job_duration_metrics`). Exposed as **`GET /metrics/durations`** and **`job_duration_snapshot.py`**.
+Jobs persist optional **`dispatched_at`** on first dispatch. **`compute_job_duration_metrics`** computes queue wait averages and **p50/p95/p99 percentiles** from `dispatched_at - created_at`; completion from `updated_at - created_at`. Exposed via **`GET /metrics/durations`**, **`job_duration_snapshot.py`**, and **`kernelq_queue_wait_seconds`** gauges on **`GET /metrics/prometheus`**.
 
-**Averages only today** — durable timestamps lay groundwork for **p95/p99** tail-latency metrics and SLO alerting.
+**Snapshot quantiles today** — not histogram-based Prometheus instrumentation yet.
 
 **Smoke test:** **`./control_plane/scripts/smoke_queue_wait_metrics.sh`** verifies non-zero queue latency from **`dispatched_at`**.
 
 ## Prometheus Scraping
 
-**`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges from **`JobRepository.count_jobs_by_state()`** — a **`GROUP BY state`** query over durable Postgres rows (same source as **`GET /metrics/jobs`**).
+**`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges and **`kernelq_queue_wait_seconds{quantile=...}`** percentile gauges (same Postgres snapshot as `/metrics/durations`).
 
 Example scrape config: **`infra/prometheus/prometheus.yml`** — **`scrape_interval: 15s`**, target **`/metrics/prometheus`** on the control-plane API. **`docker-compose.yml`** now includes a **`prometheus`** service (`docker compose up -d prometheus`); UI at **http://127.0.0.1:9090**. Query **`kernelq_jobs_by_state`** there to inspect job state gauges. See **`docs/deploy.md`** for full steps.
 

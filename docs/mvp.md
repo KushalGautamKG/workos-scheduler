@@ -38,8 +38,8 @@ What works today (local / dev):
 - **Dead-lettered job inspection** — `list_dead_lettered_jobs.py`
 - **Manual dead-letter requeue** — operator moves `DEAD_LETTERED` → `QUEUED` (`retry_count` preserved)
 - **Job state metrics snapshot** — `count_jobs_by_state` via CLI (`job_state_snapshot.py`) and **`GET /metrics/jobs`**
-- **Job duration metrics** — queue wait from **`dispatched_at`** (`job_duration_snapshot.py`, **`GET /metrics/durations`**; averages today, foundation for p95/p99)
-- **Prometheus-style job state metrics endpoint** — **`GET /metrics/prometheus`** (text exposition; scrape target only)
+- **Job duration metrics** — queue wait **p50/p95/p99** from **`dispatched_at`** (`job_duration_snapshot.py`, **`GET /metrics/durations`**; also **`kernelq_queue_wait_seconds`** on **`GET /metrics/prometheus`** — gauge quantiles, not histograms yet)
+- **Prometheus-style metrics endpoint** — **`GET /metrics/prometheus`** (job state counts + queue wait quantile gauges)
 - **Prometheus scrape configuration example** — `infra/prometheus/prometheus.yml` (15s scrape of `/metrics/prometheus`; see `docs/deploy.md`)
 - **Local Prometheus service** — `docker compose up -d prometheus` (UI on `:9090`)
 - **Local Grafana service and starter dashboard** — `docker compose up -d grafana` (UI on `:3000`; **KernelQ MVP** charts `kernelq_jobs_by_state`)
@@ -165,7 +165,7 @@ Honest gaps — not production-ready yet:
 - **Scheduler** — one-shot tick (`run_scheduler_tick_once.py`), not a continuous loop
 - **Prometheus** — local Docker Compose service only; no production TSDB or HA deployment
 - **Grafana dashboard** — minimal **KernelQ MVP** panel; only **`kernelq_jobs_by_state`** gauges for now
-- **Duration metrics** — averages only from Postgres timestamps; no Prometheus histograms or percentiles yet
+- **Duration metrics** — Postgres snapshot **p50/p95/p99** queue wait on **`/metrics/durations`** and **`/metrics/prometheus`**; not native Prometheus histograms yet
 - **Structured logs** — one-shot scripts only; no centralized log aggregation yet
 - **Security** — no auth, no multi-user tenancy enforcement beyond `tenant_id` on rows
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only

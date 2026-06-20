@@ -46,6 +46,9 @@ def _print_structured_summary(metrics) -> None:
             completed_jobs_count=metrics.completed_jobs_count,
             average_queue_wait_seconds=metrics.average_queue_wait_seconds,
             average_completion_seconds=metrics.average_completion_seconds,
+            p50_queue_wait_seconds=metrics.p50_queue_wait_seconds,
+            p95_queue_wait_seconds=metrics.p95_queue_wait_seconds,
+            p99_queue_wait_seconds=metrics.p99_queue_wait_seconds,
         )
     )
 
@@ -64,6 +67,9 @@ def main() -> None:
     print(f"  completed_jobs_count: {metrics.completed_jobs_count}")
     print(f"  average_queue_wait_seconds: {metrics.average_queue_wait_seconds}")
     print(f"  average_completion_seconds: {metrics.average_completion_seconds}")
+    print(f"  p50_queue_wait_seconds: {metrics.p50_queue_wait_seconds}")
+    print(f"  p95_queue_wait_seconds: {metrics.p95_queue_wait_seconds}")
+    print(f"  p99_queue_wait_seconds: {metrics.p99_queue_wait_seconds}")
 
     # Structured summary for grep and log pipelines.
     _print_structured_summary(metrics)
