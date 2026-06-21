@@ -519,6 +519,8 @@ Jobs persist optional **`dispatched_at`** on first dispatch. **`compute_job_dura
 
 **Smoke test:** **`./control_plane/scripts/smoke_queue_wait_metrics.sh`** verifies non-zero queue latency from **`dispatched_at`**.
 
+**Local seed data:** **`./control_plane/scripts/seed_latency_metrics.py`** — populate succeeded jobs with varied queue waits (1–10s) for duration/percentile demos and benchmarking.
+
 ## Prometheus Scraping
 
 **`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges and **`kernelq_queue_wait_seconds{quantile=...}`** percentile gauges (same Postgres snapshot as `/metrics/durations`).

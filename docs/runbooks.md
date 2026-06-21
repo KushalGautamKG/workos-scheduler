@@ -38,8 +38,9 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `result_consumer` | `processed_message`, `errors_count`, optional `error` |
 | `job_state_snapshot` | `total_jobs`, `states_count` |
 | `job_duration_snapshot` | `completed_jobs_count`, averages, **`p50_queue_wait_seconds`**, **`p95_queue_wait_seconds`**, **`p99_queue_wait_seconds`** |
+| `seed_latency_metrics` | `created_jobs` |
 
-**Duration metrics:** Queue wait **p50/p95/p99** from **`dispatched_at - created_at`**. JSON: **`GET /metrics/durations`**; Prometheus gauges: **`GET /metrics/prometheus`**. Snapshot quantiles — **not histogram `_bucket` metrics yet**. **`smoke_queue_wait_metrics.sh`** verifies non-zero queue latency.
+**Duration metrics:** Queue wait **p50/p95/p99** from **`dispatched_at - created_at`**. JSON: **`GET /metrics/durations`**; Prometheus gauges: **`GET /metrics/prometheus`**. Snapshot quantiles — **not histogram `_bucket` metrics yet**. **`seed_latency_metrics.py`** seeds realistic queue waits for local testing; **`smoke_queue_wait_metrics.sh`** verifies non-zero queue latency end-to-end.
 
 **Key fields (across events):**
 

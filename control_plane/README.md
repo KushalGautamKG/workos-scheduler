@@ -234,6 +234,12 @@ CLI snapshot:
 PYTHONPATH=. python3 control_plane/scripts/job_duration_snapshot.py
 ```
 
+**Seed data:** **`scripts/seed_latency_metrics.py`** inserts 20+ succeeded jobs with realistic **`created_at` / `dispatched_at` / `updated_at`** (queue waits 1–10s) for local percentile testing and benchmarking.
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/seed_latency_metrics.py
+```
+
 HTTP: **`GET /metrics/durations`** returns averages plus **`p50_queue_wait_seconds`**, **`p95_queue_wait_seconds`**, **`p99_queue_wait_seconds`**. Same stats appear as **`kernelq_queue_wait_seconds{quantile=...}`** gauges on **`GET /metrics/prometheus`** (alongside job state counts).
 
 **Smoke test:** **`scripts/smoke_queue_wait_metrics.sh`** — sleeps before dispatch, completes via **`ResultStateHandler`**, asserts **`queue_wait_seconds > 0`** (`dispatched_at - created_at`).

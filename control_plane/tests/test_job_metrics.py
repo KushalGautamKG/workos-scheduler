@@ -105,6 +105,28 @@ def test_queue_wait_percentiles_single_value() -> None:
     assert metrics.p99_queue_wait_seconds == 7.0
 
 
+def test_queue_wait_percentiles_deterministic_seed_waits() -> None:
+    """Queue waits 1, 2, 3, 5, 10 — nearest-rank percentiles, no Postgres."""
+    waits = [1, 2, 3, 5, 10]
+    metrics = compute_job_duration_metrics(
+        [
+            _job("succeeded", created_at=0, dispatched_at=wait, updated_at=wait + 1)
+            for wait in waits
+        ]
+    )
+
+    p50 = metrics.p50_queue_wait_seconds
+    p95 = metrics.p95_queue_wait_seconds
+    p99 = metrics.p99_queue_wait_seconds
+
+    assert p50 > 0
+    assert p95 >= p50
+    assert p99 >= p95
+    assert p50 == 3.0
+    assert p95 == 10.0
+    assert p99 == 10.0
+
+
 def test_queue_wait_percentiles_ordered_for_multiple_values() -> None:
     waits = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     metrics = compute_job_duration_metrics(
