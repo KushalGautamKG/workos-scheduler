@@ -51,7 +51,7 @@ Note: this setup is local-only for now. Docker and cloud deployment will come la
 
 KernelQ includes a **local Postgres** service in the repo’s Docker Compose file. Postgres will hold **durable job state** so jobs survive restarts and can be shared across processes.
 
-The first migration, `control_plane/migrations/001_create_jobs.sql`, creates the **`jobs`** table. **Wiring the FastAPI API to Postgres** comes in a later step.
+The first migration, `control_plane/migrations/001_create_jobs.sql`, creates the **`jobs`** table. Later migrations add scheduler indexes and **`dispatched_at`**. The **FastAPI API** and **scheduler tick** both persist through **`JobRepository`**.
 
 From the repository root:
 
@@ -73,11 +73,11 @@ It supports **create**, **fetch by id**, **update state**, and **delete**—so S
 
 **Repository tests** (`tests/test_job_repository.py`) need the **local Postgres container** running and the **migration** applied first.
 
-**API integration** with this repository will be wired in a later step; the FastAPI app can still use in-memory state until then.
+The **FastAPI API**, **scheduler tick**, **result handler**, and **benchmark scripts** all use this layer.
 
 ## Database-backed Scheduling Path
 
-`JobRepository` can now **list queued jobs from Postgres** (`list_schedulable_jobs`) and **mark a queued job as dispatched** (`mark_job_dispatched`). That is the first step toward moving **scheduler selection** from in-memory prototypes to **durable, database-backed orchestration**—the same ordering ideas (priority, then age), but stored in the `jobs` table so they survive restarts. **Kafka publishing** will be added later; today this path updates Postgres only.
+`JobRepository` supports **listing schedulable jobs** (`list_schedulable_jobs`), **atomic claiming** (`claim_schedulable_jobs`), and **marking dispatched** (`mark_job_dispatched`). **`SchedulerTickRunner`** uses **`claim_schedulable_jobs`** for durable, database-backed orchestration (priority, then age). Pass **`job_producer=None`** for Postgres-only benchmarks; pass **`KafkaJobProducer`** to publish after claim.
 
 ## Scheduler Tick Runner
 
@@ -121,7 +121,7 @@ Postgres-backed tests use **test-only job ID prefixes** (for example `test-repo-
 
 ## Kafka Infrastructure
 
-KernelQ’s root **`docker-compose.yml`** now includes **Zookeeper** and **Kafka** for local development. Kafka will become the **durable coordination layer** between scheduler ticks (Python) and Go workers—buffering dispatch events and decoupling scheduling from execution. **Today this is infrastructure only:** start the broker with `docker compose up -d zookeeper kafka`; **publishing and consuming** come in a later milestone.
+KernelQ’s root **`docker-compose.yml`** includes **Zookeeper** and **Kafka** for local development. Kafka is the **coordination layer** between scheduler ticks (Python) and Go workers. Start locally with `docker compose up -d zookeeper kafka`, create topics with **`infra/kafka/create-topics.sh`**, then use **`run_scheduler_tick_once.py`** or the MVP smoke tests.
 
 ## Kafka Topics
 
@@ -137,19 +137,17 @@ KernelQ has a Python **`KafkaJobProducer`** wrapper in **`kernelq/kafka_producer
 
 ## Manual Scheduler-to-Kafka Smoke Test
 
-**`scripts/run_scheduler_tick_once.py`** runs **one** scheduler tick with a **real `KafkaJobProducer`**: it claims **one** **`queued`** job from Postgres and publishes a **`DispatchEvent`** to **`kernelq.jobs.dispatch`**. You need a queued job already (API or SQL)—the script does not create one. Use the **Kafka CLI consumer** to read the message locally; **Go workers** will consume the topic later. Full steps: **`docs/deploy.md`** (Manual Scheduler-to-Kafka Smoke Test).
+**`scripts/run_scheduler_tick_once.py`** runs **one** scheduler tick with a **real `KafkaJobProducer`**: it claims **one** **`queued`** job from Postgres and publishes a **`DispatchEvent`** to **`kernelq.jobs.dispatch`**. You need a queued job already (API, SQL, or **`generate_load_jobs.py`**). **Go workers** consume the topic; see **`smoke_full_completion.sh`** and **`docs/deploy.md`**.
 
 ## Worker Result Event Contract
 
-The Python control plane now includes a **`WorkerResultEvent`** model (`kernelq/result_event.py`). It **parses JSON messages** from **`kernelq.jobs.results`**—the topic where Go workers report execution outcomes.
-
-Before any future **Postgres state update**, the model **validates** `event_type`, `job_id`, `status`, and `worker` (allowed statuses: `succeeded`, `retryable_failure`, `terminal_failure`). **Real Kafka result consumption** (subscribe, process, update job state) comes in a later step.
+The Python control plane includes a **`WorkerResultEvent`** model (`kernelq/result_event.py`). It **parses and validates** JSON from **`kernelq.jobs.results`** (`event_type`, `job_id`, `status`, `worker`; statuses: `succeeded`, `retryable_failure`, `terminal_failure`). **`ResultStateHandler`** maps validated events to Postgres state updates.
 
 ## Result Consumer Skeleton
 
-KernelQ’s control plane now includes **`ResultConsumerRunner`** (`kernelq/result_consumer.py`). It takes a raw **`ResultMessage`** (Kafka key + JSON bytes), **parses and validates** it into a **`WorkerResultEvent`**, then **delegates** to a **`ResultHandler`**.
+KernelQ’s control plane includes **`ResultConsumerRunner`** (`kernelq/result_consumer.py`). It takes a raw **`ResultMessage`** (Kafka key + JSON bytes), **parses and validates** it into a **`WorkerResultEvent`**, then **delegates** to a **`ResultHandler`**.
 
-Tests use a **fake handler** so parsing and dispatch can be checked without a broker. **Real Kafka subscription** and **Postgres job-state updates** from result events come later.
+Tests use a **fake handler** so parsing can be checked without a broker. **`KafkaResultConsumer`** polls **`kernelq.jobs.results`** for one-shot manual runs; a **long-running consumer loop** is still future work.
 
 ## Result-to-State Handler
 
@@ -273,6 +271,8 @@ event=scheduler_tick selected_count=1 dispatched_count=1 published_count=1 error
 event=retry_scanner requeued_count=2 errors_count=0 requeued_job_ids=["job-a","job-b"]
 event=result_consumer processed_message=true errors_count=0
 event=job_state_snapshot total_jobs=5010 states_count=4
+event=generate_load_jobs created_jobs=1000 elapsed_seconds=1.2 jobs_per_second=833.3 tenants=10
+event=benchmark_scheduler_throughput dispatched_jobs=1000 generated_jobs=1000 jobs_dispatched_per_second=4200.0 tick_count=20
 event=smoke_full_completion job_id=day52-full-123 final_state=succeeded success=true
 ```
 
@@ -357,15 +357,13 @@ This is our first combined scheduling pipeline, but it is still an **in-memory p
 
 KernelQ now includes a small **scheduler metrics** module in Python (`scheduler_metrics.py`). It lets us tally **enqueue outcomes** (accepted vs full vs invalid), **dispatch counts** (totals, per tenant, per priority), and **peak queue depth** during simulations or tests.
 
-A **simulation script** (`scripts/simulate_composed_scheduler.py`) runs a **repeatable** composed-scheduler experiment so we can inspect ordering and counters **before** Kafka and persistence are wired in.
+A **simulation script** (`scripts/simulate_composed_scheduler.py`) runs a **repeatable** composed-scheduler experiment for in-memory policy comparison. **Durable scheduling** uses **`SchedulerTickRunner`** against Postgres; see **Scheduler Throughput Benchmark** for dispatch-rate measurement.
 
 ## Current Scheduling Evaluation
 
-KernelQ now measures **queue wait time** in the Python control-plane prototype, not just how many jobs were dispatched.
+KernelQ measures **queue wait time** in simulations and in **production Postgres metrics** (`job_duration_snapshot.py`, **`GET /metrics/durations`**, Prometheus gauges).
 
-This lets us compare both **dispatch behavior** and **waiting behavior** by tenant and by priority.
-
-That view helps us evaluate **fairness vs urgency tradeoffs** early, before Kafka and worker execution are fully wired in.
+This lets us compare **dispatch behavior** and **waiting behavior** by tenant and priority—in prototypes and on real job rows with **`dispatched_at`**.
 
 ## Scheduler Comparison
 
@@ -373,9 +371,7 @@ KernelQ now includes a script (`scripts/compare_schedulers.py`) to compare multi
 
 All schedulers run on the **same fixed workload**, so differences in results come from scheduling policy, not from different inputs.
 
-We compare **wait time**, **fairness across tenants**, and **dispatch behavior** to understand tradeoffs clearly.
-
-This gives us a practical way to evaluate policy choices before Kafka dispatch and worker execution are fully integrated.
+We compare **wait time**, **fairness across tenants**, and **dispatch behavior** to understand tradeoffs. **Durable dispatch** is exercised via **`benchmark_scheduler_throughput.py`** and smoke tests end-to-end with Go workers.
 
 ## Control Plane API
 
@@ -393,19 +389,17 @@ It is designed so external clients and internal services can interact with the K
 
 ## Health Check and OpenAPI
 
-The control plane exposes **`GET /health`** so load balancers and people can confirm the API process is up. For now it is a **shallow** check only (it does not probe dependencies).
+The control plane exposes **`GET /health`** so load balancers and people can confirm the API process is up. For now it is a **shallow** check only (it does not probe Postgres or Kafka).
 
 FastAPI serves **interactive docs at `/docs`** and the **OpenAPI spec at `/openapi.json`** while the server is running.
 
-Deeper checks for **Kafka, Postgres, and Redis** (and workers) will be added when those pieces are integrated.
+**Future work:** dependency-aware health (Postgres, Kafka, worker lag) and readiness endpoints.
 
 ## API Test Coverage
 
 Automated API tests live in `tests/test_api.py` using FastAPI `TestClient`, so endpoint behavior is checked automatically (not only with manual curl requests).
 
-These tests verify enqueue, query, cancel, retry, metrics, and error behavior.
-
-This makes the API safer to change before we connect Postgres, Kafka, and Go workers.
+These tests verify enqueue, query, cancel, retry, metrics, and error behavior against the **Postgres-backed API** (with test isolation via job-id prefixes).
 
 ## What job_state.py Models
 
@@ -420,14 +414,14 @@ This ensures jobs follow a predictable path and prevents them from getting stuck
 
 ## What's Coming Next
 
-This control plane will grow to include:
+Planned improvements beyond the current MVP checkpoint (see **[docs/mvp.md](../docs/mvp.md)**):
 
-- **REST API**: FastAPI endpoints for job management (create, read, update, delete jobs)
-- **Scheduler**: Logic that decides when to move jobs from CREATED to QUEUED
-- **Orchestration**: Coordinating retries, handling failures, managing dependencies
-- **Database integration**: Storing job definitions and state in Postgres
-- **Message broker integration**: Publishing jobs to the broker for workers to consume
-- **Metrics and observability**: Tracking system health and performance
+- **Outbox / retryable dispatch** — reconcile Postgres **`dispatched`** rows when Kafka publish fails
+- **Long-running result consumer** — continuous poll loop with graceful shutdown
+- **Worker throughput benchmarks** — pool size and backpressure experiments
+- **Native Prometheus histograms** — replace snapshot-derived quantile gauges
+- **Dependency-aware health checks** — Postgres, Kafka, and worker readiness
+- **Cloud deployment** — beyond local Docker Compose
 
 ## Structure
 
