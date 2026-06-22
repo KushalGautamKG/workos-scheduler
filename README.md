@@ -14,7 +14,7 @@ queued job → scheduler → Kafka → Go worker → result event → Postgres S
 
 **Retry and dead-letter flows** are also smoke-tested: `retryable_failure` → `RETRY_SCHEDULED` → requeue → dispatch; exhaustion → `DEAD_LETTERED`; operator inspection and manual requeue.
 
-**Observability:** `docker compose up -d prometheus grafana` (API on `:8000` required for scrapes). **Prometheus** — [http://127.0.0.1:9090](http://127.0.0.1:9090). **Grafana** — [http://127.0.0.1:3000](http://127.0.0.1:3000) (`admin` / `admin`). Dashboard **KernelQ MVP** charts **`kernelq_jobs_by_state`**. See [docs/deploy.md](docs/deploy.md).
+**Observability:** `docker compose up -d prometheus grafana` (API on `:8000` required for scrapes). **Prometheus** — [http://127.0.0.1:9090](http://127.0.0.1:9090). **Grafana** — [http://127.0.0.1:3000](http://127.0.0.1:3000) (`admin` / `admin`). Dashboard **KernelQ MVP** charts **`kernelq_jobs_by_state`**. Seed queue-wait percentiles locally: `PYTHONPATH=. python3 control_plane/scripts/seed_latency_metrics.py`. See [docs/deploy.md](docs/deploy.md).
 
 ## Quick start
 
