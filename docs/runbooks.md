@@ -40,10 +40,22 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `job_duration_snapshot` | `completed_jobs_count`, averages, **`p50_queue_wait_seconds`**, **`p95_queue_wait_seconds`**, **`p99_queue_wait_seconds`** |
 | `seed_latency_metrics` | `created_jobs` |
 | `generate_load_jobs` | `created_jobs`, `elapsed_seconds`, `jobs_per_second`, `tenants` |
+| `benchmark_scheduler_throughput` | `generated_jobs`, `dispatched_jobs`, `jobs_dispatched_per_second`, `tick_count` |
 
 **Duration metrics:** Queue wait **p50/p95/p99** from **`dispatched_at - created_at`**. JSON: **`GET /metrics/durations`**; Prometheus gauges: **`GET /metrics/prometheus`**. Snapshot quantiles — **not histogram `_bucket` metrics yet**. **`seed_latency_metrics.py`** seeds realistic queue waits for local testing; **`smoke_queue_wait_metrics.sh`** verifies non-zero queue latency end-to-end.
 
 **Load generator:** **`generate_load_jobs.py`** creates **`queued`** benchmark rows in Postgres (use a unique **`--prefix`** for cleanup and reproducibility). Dispatch with **`run_scheduler_tick_once.py`** when ready.
+
+## Performance / Benchmarking
+
+Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throughput (**`jobs_dispatched_per_second`**, **`event=benchmark_scheduler_throughput`**).
+
+If **`dispatched_jobs` < `generated_jobs`**, inspect:
+
+- Postgres connectivity
+- Scheduler tick errors (lines above the summary)
+- Kafka / no-op producer behavior (benchmark uses **`job_producer=None`**; Kafka publish failures apply only if you changed that)
+- Queued job state (rows still **`queued`**? higher-priority competitors in a shared DB?)
 
 **Key fields (across events):**
 

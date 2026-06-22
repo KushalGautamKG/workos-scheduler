@@ -41,6 +41,7 @@ What works today (local / dev):
 - **Job duration metrics** — queue wait **p50/p95/p99** from **`dispatched_at`** (`job_duration_snapshot.py`, **`GET /metrics/durations`**; also **`kernelq_queue_wait_seconds`** on **`GET /metrics/prometheus`** — gauge quantiles, not histograms yet)
 - **Latency metrics seed script** — **`seed_latency_metrics.py`** populates succeeded jobs with realistic queue waits for local testing and benchmarking
 - **Load job generator** — **`generate_load_jobs.py`** creates **`queued`** benchmark workloads (unique **`--prefix`** for cleanup); dispatch via **`run_scheduler_tick_once.py`**
+- **Scheduler throughput benchmark** — **`benchmark_scheduler_throughput.py`** measures **`queued` → `dispatched`** dispatch rate; reports **`jobs_dispatched_per_second`**
 - **Prometheus-style metrics endpoint** — **`GET /metrics/prometheus`** (job state counts + queue wait quantile gauges)
 - **Prometheus scrape configuration example** — `infra/prometheus/prometheus.yml` (15s scrape of `/metrics/prometheus`; see `docs/deploy.md`)
 - **Local Prometheus service** — `docker compose up -d prometheus` (UI on `:9090`)

@@ -256,6 +256,14 @@ HTTP: **`GET /metrics/durations`** returns averages plus **`p50_queue_wait_secon
 PYTHONPATH=. python3 control_plane/scripts/generate_load_jobs.py --count 1000 --prefix bench --tenants 10
 ```
 
+## Scheduler Throughput Benchmark
+
+**`scripts/benchmark_scheduler_throughput.py`** creates a local benchmark workload in Postgres, then dispatches it through repeated **`SchedulerTickRunner`** ticks (no Kafka). It reports **`jobs_dispatched_per_second`** plus a structured **`event=benchmark_scheduler_throughput`** line. This measures **scheduler/Postgres dispatch throughput**, not worker execution throughput.
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 1000 --batch-size 100 --tenants 10
+```
+
 ## Structured Script Logs
 
 One-shot scripts print an extra **key=value summary line** at the end (via `kernelq/logging_utils.py` for Python scripts; bash helpers in smoke tests). Examples:

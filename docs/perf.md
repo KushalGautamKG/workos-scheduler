@@ -529,6 +529,14 @@ Jobs persist optional **`dispatched_at`** on first dispatch. **`compute_job_dura
 PYTHONPATH=. python3 control_plane/scripts/generate_load_jobs.py --count 1000 --prefix bench --tenants 10
 ```
 
+## Scheduler Throughput Benchmark
+
+**`./control_plane/scripts/benchmark_scheduler_throughput.py`** measures **`queued` → `dispatched`** throughput via repeated **`SchedulerTickRunner`** ticks (Postgres claim only — no Kafka). It reports **`jobs_dispatched_per_second`** and **`event=benchmark_scheduler_throughput`**. **Does not measure worker execution yet.** **Future benchmarks** will compare worker pool sizes and backpressure settings.
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 1000 --batch-size 100 --tenants 10
+```
+
 ## Prometheus Scraping
 
 **`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges and **`kernelq_queue_wait_seconds{quantile=...}`** percentile gauges (same Postgres snapshot as `/metrics/durations`).
