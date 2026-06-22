@@ -45,6 +45,11 @@ def _our_dead_lettered_jobs(results: list[dict], prefix: str) -> list[dict]:
     return [job for job in results if job["job_id"].startswith(prefix)]
 
 
+def _our_job_ids(job_ids: list[str], prefix: str) -> list[str]:
+    """Job ids from this test only (shared Postgres may contain other rows)."""
+    return [job_id for job_id in job_ids if job_id.startswith(prefix)]
+
+
 def _delete_jobs(repo: JobRepository, *job_ids: str) -> None:
     for job_id in job_ids:
         repo.delete_job(job_id)
@@ -475,7 +480,7 @@ def test_requeue_due_retries_skips_future_retry_after() -> None:
 
             requeued = repo.requeue_due_retries(now=now, limit=10)
 
-            assert requeued == []
+            assert job_id not in requeued
             loaded = repo.get_job(job_id)
             assert loaded is not None
             assert loaded.state == JobState.RETRY_SCHEDULED.value
@@ -503,8 +508,9 @@ def test_requeue_due_retries_respects_limit() -> None:
 
             requeued = repo.requeue_due_retries(now=now, limit=2)
 
-            assert len(requeued) == 2
-            assert set(requeued) <= {first_id, second_id, third_id}
+            our_requeued = _our_job_ids(requeued, prefix)
+            assert len(our_requeued) == 2
+            assert set(our_requeued) <= {first_id, second_id, third_id}
             queued_count = sum(
                 1
                 for jid in (first_id, second_id, third_id)
@@ -535,7 +541,8 @@ def test_requeue_due_retries_returns_only_requeued_job_ids() -> None:
 
             requeued = repo.requeue_due_retries(now=now, limit=10)
 
-            assert requeued == [due_id]
+            our_requeued = _our_job_ids(requeued, prefix)
+            assert our_requeued == [due_id]
             assert repo.get_job(due_id).state == JobState.QUEUED.value
             assert repo.get_job(future_id).state == JobState.RETRY_SCHEDULED.value
             assert repo.get_job(queued_id).state == JobState.QUEUED.value

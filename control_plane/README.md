@@ -248,6 +248,14 @@ HTTP: **`GET /metrics/durations`** returns averages plus **`p50_queue_wait_secon
 ./control_plane/scripts/smoke_queue_wait_metrics.sh
 ```
 
+## Load Job Generator
+
+**`scripts/generate_load_jobs.py`** creates **`queued`** jobs directly in Postgres (via **`JobRepository`**, no HTTP API) for local benchmark preparation. Flags: **`--count`**, **`--prefix`**, **`--tenants`**, **`--max-priority`**. Jobs cycle tenants (`tenant-0`, …) and priorities (`0`..`max-priority`). Prints **`created_jobs`**, **`elapsed_seconds`**, **`jobs_per_second`**, plus a structured **`event=generate_load_jobs`** line.
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/generate_load_jobs.py --count 1000 --prefix bench --tenants 10
+```
+
 ## Structured Script Logs
 
 One-shot scripts print an extra **key=value summary line** at the end (via `kernelq/logging_utils.py` for Python scripts; bash helpers in smoke tests). Examples:

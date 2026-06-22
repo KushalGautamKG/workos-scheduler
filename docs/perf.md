@@ -521,6 +521,14 @@ Jobs persist optional **`dispatched_at`** on first dispatch. **`compute_job_dura
 
 **Local seed data:** **`./control_plane/scripts/seed_latency_metrics.py`** — populate succeeded jobs with varied queue waits (1–10s) for duration/percentile demos and benchmarking.
 
+## Load Generation
+
+**`./control_plane/scripts/generate_load_jobs.py`** seeds **`queued`** jobs in Postgres for scheduler and worker benchmarks (repository insert path — not HTTP enqueue yet). It reports **`jobs_per_second`** as **insertion throughput** only. **Not full end-to-end throughput** — **future work:** measure **dispatch** and **completion** throughput separately.
+
+```bash
+PYTHONPATH=. python3 control_plane/scripts/generate_load_jobs.py --count 1000 --prefix bench --tenants 10
+```
+
 ## Prometheus Scraping
 
 **`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges and **`kernelq_queue_wait_seconds{quantile=...}`** percentile gauges (same Postgres snapshot as `/metrics/durations`).
