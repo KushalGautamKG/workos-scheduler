@@ -6,6 +6,8 @@ This script:
   1. Inserts ``--count`` jobs in ``queued`` state (like ``generate_load_jobs.py``).
   2. Runs ``SchedulerTickRunner`` in a loop until our generated jobs are
      ``dispatched``, we make no progress, or a safety iteration cap is hit.
+  3. Repeats for ``--trials`` with a **unique prefix per trial** and prints
+     min/avg/max throughput across trials.
 
 **No Kafka required** — ``job_producer=None`` so the benchmark measures Postgres
 claim throughput only (not broker publish latency).
@@ -20,7 +22,7 @@ Run from the repository root:
 Examples:
 
     PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 200
-    PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --prefix bench --batch-size 25
+    PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --prefix bench --batch-size 25 --trials 5
 """
 
 from __future__ import annotations
@@ -29,6 +31,7 @@ import argparse
 import math
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 # Allow running as a file path without installing the package.
@@ -44,6 +47,19 @@ from control_plane.kernelq.scheduler_tick import SchedulerTickRunner
 
 # High base priority so benchmark rows sort ahead of unrelated local queued jobs.
 _BENCHMARK_PRIORITY_BASE = 1_900_000_000
+
+
+@dataclass(frozen=True)
+class TrialResult:
+    """Metrics collected for one benchmark trial."""
+
+    trial_number: int
+    prefix: str
+    generated_jobs: int
+    dispatched_jobs: int
+    elapsed_seconds: float
+    jobs_dispatched_per_second: float
+    tick_count: int
 
 
 def _parse_args() -> argparse.Namespace:
@@ -80,6 +96,12 @@ def _parse_args() -> argparse.Namespace:
         default=50,
         help="max_jobs_per_tick for each scheduler pass (default: 50).",
     )
+    parser.add_argument(
+        "--trials",
+        type=int,
+        default=1,
+        help="How many repeated trials to run (default: 1).",
+    )
     return parser.parse_args()
 
 
@@ -93,6 +115,8 @@ def _validate_args(args: argparse.Namespace) -> None:
         raise SystemExit("--max-priority must be >= 0")
     if args.batch_size <= 0:
         raise SystemExit("--batch-size must be a positive integer")
+    if args.trials <= 0:
+        raise SystemExit("--trials must be a positive integer")
 
 
 def _tenant_id(index: int, tenant_count: int) -> str:
@@ -111,6 +135,11 @@ def _priority(index: int, max_priority: int) -> int:
     return _BENCHMARK_PRIORITY_BASE + (index % spread)
 
 
+def _trial_prefix(base_prefix: str, trial_number: int, timestamp: int) -> str:
+    """Unique prefix per trial so rows are isolated and easy to clean up."""
+    return f"{base_prefix}-trial-{trial_number}-{timestamp}"
+
+
 def _generate_jobs(
     repo: JobRepository,
     *,
@@ -118,19 +147,18 @@ def _generate_jobs(
     prefix: str,
     tenants: int,
     max_priority: int,
-    run_timestamp: int,
 ) -> list[str]:
     """Insert queued rows and return the job ids we created."""
     job_ids: list[str] = []
 
     for index in range(count):
-        job_id = f"{prefix}-{run_timestamp}-{index}"
+        job_id = f"{prefix}-{index}"
         repo.create_job(
             job_id=job_id,
             tenant_id=_tenant_id(index, tenants),
             priority=_priority(index, max_priority),
             state=JobState.QUEUED.value,
-            payload={"kind": "sched-bench", "index": index},
+            payload={"kind": "sched-bench", "index": index, "trial_prefix": prefix},
         )
         job_ids.append(job_id)
 
@@ -190,22 +218,89 @@ def _run_dispatch_benchmark(
     return len(dispatched_our_ids), tick_count
 
 
-def _print_summary(
+def _run_single_trial(
+    repo: JobRepository,
     *,
-    generated_jobs: int,
-    dispatched_jobs: int,
-    elapsed_seconds: float,
-    jobs_dispatched_per_second: float,
-    tick_count: int,
+    trial_number: int,
+    base_prefix: str,
+    count: int,
+    tenants: int,
+    max_priority: int,
+    batch_size: int,
+    max_iterations: int,
+    run_timestamp: int,
+) -> TrialResult:
+    """Generate jobs for one trial, dispatch them, and return metrics."""
+    prefix = _trial_prefix(base_prefix, trial_number, run_timestamp)
+    job_ids = _generate_jobs(
+        repo,
+        count=count,
+        prefix=prefix,
+        tenants=tenants,
+        max_priority=max_priority,
+    )
+    our_job_ids = set(job_ids)
+
+    started = time.perf_counter()
+    dispatched_jobs, tick_count = _run_dispatch_benchmark(
+        repo,
+        our_job_ids=our_job_ids,
+        batch_size=batch_size,
+        max_iterations=max_iterations,
+    )
+    elapsed_seconds = time.perf_counter() - started
+    jobs_dispatched_per_second = (
+        dispatched_jobs / elapsed_seconds if elapsed_seconds > 0 else 0.0
+    )
+
+    return TrialResult(
+        trial_number=trial_number,
+        prefix=prefix,
+        generated_jobs=len(job_ids),
+        dispatched_jobs=dispatched_jobs,
+        elapsed_seconds=elapsed_seconds,
+        jobs_dispatched_per_second=jobs_dispatched_per_second,
+        tick_count=tick_count,
+    )
+
+
+def _mean(values: list[float]) -> float:
+    """Arithmetic mean; returns 0.0 for an empty list."""
+    if not values:
+        return 0.0
+    return sum(values) / len(values)
+
+
+def _print_trial_result(result: TrialResult) -> None:
+    """Human-readable output for one trial."""
+    print(f"Trial {result.trial_number} ({result.prefix})")
+    print(f"  generated_jobs:              {result.generated_jobs}")
+    print(f"  dispatched_jobs:             {result.dispatched_jobs}")
+    print(f"  elapsed_seconds:             {result.elapsed_seconds}")
+    print(f"  jobs_dispatched_per_second:  {result.jobs_dispatched_per_second}")
+    print(f"  tick_count:                  {result.tick_count}")
+    print()
+
+
+def _print_aggregate_summary(
+    *,
+    trials: list[TrialResult],
+    generated_jobs_per_trial: int,
 ) -> None:
-    """Human-readable benchmark output."""
+    """Human-readable min/avg/max summary across trials."""
+    rates = [trial.jobs_dispatched_per_second for trial in trials]
+    elapsed_values = [trial.elapsed_seconds for trial in trials]
+
     print("Scheduler throughput benchmark finished.")
     print()
-    print(f"  generated_jobs:              {generated_jobs}")
-    print(f"  dispatched_jobs:             {dispatched_jobs}")
-    print(f"  elapsed_seconds:             {elapsed_seconds}")
-    print(f"  jobs_dispatched_per_second:  {jobs_dispatched_per_second}")
-    print(f"  tick_count:                  {tick_count}")
+    print(f"  trials:                           {len(trials)}")
+    print(f"  generated_jobs_per_trial:         {generated_jobs_per_trial}")
+    print(f"  min_jobs_dispatched_per_second:   {min(rates)}")
+    print(f"  avg_jobs_dispatched_per_second:   {_mean(rates)}")
+    print(f"  max_jobs_dispatched_per_second:   {max(rates)}")
+    print(f"  min_elapsed_seconds:              {min(elapsed_values)}")
+    print(f"  avg_elapsed_seconds:              {_mean(elapsed_values)}")
+    print(f"  max_elapsed_seconds:              {max(elapsed_values)}")
 
 
 def main() -> None:
@@ -213,54 +308,45 @@ def main() -> None:
     _validate_args(args)
 
     run_timestamp = int(time.time())
-    prefix = args.prefix.strip() or "sched-bench"
+    base_prefix = args.prefix.strip() or "sched-bench"
     max_iterations = _max_tick_iterations(args.count, args.batch_size)
+    trial_results: list[TrialResult] = []
 
-    # --- Step 1: generate queued jobs ---
     with connect() as conn:
         repo = JobRepository(conn)
-        job_ids = _generate_jobs(
-            repo,
-            count=args.count,
-            prefix=prefix,
-            tenants=args.tenants,
-            max_priority=args.max_priority,
-            run_timestamp=run_timestamp,
-        )
-        our_job_ids = set(job_ids)
-        generated_jobs = len(job_ids)
 
-        # --- Step 2: time scheduler ticks only (not job insertion) ---
-        started = time.perf_counter()
-        dispatched_jobs, tick_count = _run_dispatch_benchmark(
-            repo,
-            our_job_ids=our_job_ids,
-            batch_size=args.batch_size,
-            max_iterations=max_iterations,
-        )
-        elapsed_seconds = time.perf_counter() - started
+        for trial_number in range(1, args.trials + 1):
+            result = _run_single_trial(
+                repo,
+                trial_number=trial_number,
+                base_prefix=base_prefix,
+                count=args.count,
+                tenants=args.tenants,
+                max_priority=args.max_priority,
+                batch_size=args.batch_size,
+                max_iterations=max_iterations,
+                run_timestamp=run_timestamp,
+            )
+            trial_results.append(result)
+            _print_trial_result(result)
 
-    jobs_dispatched_per_second = (
-        dispatched_jobs / elapsed_seconds if elapsed_seconds > 0 else 0.0
-    )
+    rates = [trial.jobs_dispatched_per_second for trial in trial_results]
+    total_dispatched_jobs = sum(trial.dispatched_jobs for trial in trial_results)
 
-    # --- Step 3: readable summary, then structured log line ---
-    _print_summary(
-        generated_jobs=generated_jobs,
-        dispatched_jobs=dispatched_jobs,
-        elapsed_seconds=elapsed_seconds,
-        jobs_dispatched_per_second=jobs_dispatched_per_second,
-        tick_count=tick_count,
+    _print_aggregate_summary(
+        trials=trial_results,
+        generated_jobs_per_trial=args.count,
     )
     print()
     print(
         format_log_event(
             "benchmark_scheduler_throughput",
-            dispatched_jobs=dispatched_jobs,
-            elapsed_seconds=elapsed_seconds,
-            generated_jobs=generated_jobs,
-            jobs_dispatched_per_second=jobs_dispatched_per_second,
-            tick_count=tick_count,
+            avg_jobs_dispatched_per_second=_mean(rates),
+            generated_jobs_per_trial=args.count,
+            max_jobs_dispatched_per_second=max(rates),
+            min_jobs_dispatched_per_second=min(rates),
+            total_dispatched_jobs=total_dispatched_jobs,
+            trials=args.trials,
         )
     )
 

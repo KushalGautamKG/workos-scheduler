@@ -98,7 +98,7 @@ These numbers are **local baselines** on a shared dev database: useful for regre
 ## 5. Limitations
 
 - **Small job counts** (25 insert, 50 dispatch)—timer noise and warm caches dominate; not sustained load.
-- **No repeated trials**—single runs only; no min/median/max or variance reported.
+- **No repeated trials**—single runs only; no min/median/max or variance reported *(Day 75 snapshot; see Day 76 follow-up below)*.
 - **No multi-worker execution benchmark**—Go workers tested in CI, not throughput-measured under load.
 - **No worker pool / backpressure benchmark**—admission and consumer scaling not exercised.
 - **No p95 execution latency**—queue-wait percentiles seeded; worker execution and end-to-end completion latency not benchmarked.
@@ -109,10 +109,12 @@ These numbers are **local baselines** on a shared dev database: useful for regre
 
 ## 6. Next Benchmarks
 
+**Day 76 follow-up:** `benchmark_scheduler_throughput.py` adds **`--trials`** with **min/avg/max** `jobs_dispatched_per_second` across repeated runs (unique prefix per trial). **Future benchmark reports** (Day 76 and later) should record **trial count**, **min/avg/max throughput**, and **machine environment** in addition to raw observed numbers. This Day 75 report is unchanged—single-trial scheduler results only.
+
 Planned extensions to support **resume-quality throughput and latency claims**:
 
 1. **1k / 10k load generation** — insertion throughput at realistic queue depth.
-2. **Scheduler throughput repeated trials** — multiple runs with environment metadata; include Kafka publish path.
+2. **Scheduler throughput repeated trials** — *partially addressed Day 76 (`--trials`)*; full archived reports with environment metadata and Kafka publish path still TODO.
 3. **Worker pool throughput** — vary Go consumer count; measure dispatch-to-consume and execute rates.
 4. **End-to-end completion throughput** — enqueue → dispatch → Kafka → worker → result → `succeeded` (`jobs_completed_per_second`).
 5. **p95 / p99 queue and execution latency** — histogram or repeated snapshot percentiles under load.

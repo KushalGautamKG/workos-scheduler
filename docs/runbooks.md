@@ -40,7 +40,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `job_duration_snapshot` | `completed_jobs_count`, averages, **`p50_queue_wait_seconds`**, **`p95_queue_wait_seconds`**, **`p99_queue_wait_seconds`** |
 | `seed_latency_metrics` | `created_jobs` |
 | `generate_load_jobs` | `created_jobs`, `elapsed_seconds`, `jobs_per_second`, `tenants` |
-| `benchmark_scheduler_throughput` | `generated_jobs`, `dispatched_jobs`, `jobs_dispatched_per_second`, `tick_count` |
+| `benchmark_scheduler_throughput` | `trials`, `generated_jobs_per_trial`, `min_jobs_dispatched_per_second`, `avg_jobs_dispatched_per_second`, `max_jobs_dispatched_per_second`, `total_dispatched_jobs` |
 
 **Duration metrics:** Queue wait **p50/p95/p99** from **`dispatched_at - created_at`**. JSON: **`GET /metrics/durations`**; Prometheus gauges: **`GET /metrics/prometheus`**. Snapshot quantiles — **not histogram `_bucket` metrics yet**. **`seed_latency_metrics.py`** seeds realistic queue waits for local testing; **`smoke_queue_wait_metrics.sh`** verifies non-zero queue latency end-to-end.
 
@@ -48,7 +48,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 
 ## Performance / Benchmarking
 
-Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throughput (**`jobs_dispatched_per_second`**, **`event=benchmark_scheduler_throughput`**).
+Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throughput. **`--trials`** repeats runs with a unique prefix per trial and reports **min/avg/max** **`jobs_dispatched_per_second`** — use repeated trials for more credible local numbers. Still **local baselines**, not production capacity claims (`event=benchmark_scheduler_throughput`).
 
 If **`dispatched_jobs` < `generated_jobs`**, inspect:
 

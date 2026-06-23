@@ -256,10 +256,11 @@ PYTHONPATH=. python3 control_plane/scripts/generate_load_jobs.py --count 1000 --
 
 ## Scheduler Throughput Benchmark
 
-**`scripts/benchmark_scheduler_throughput.py`** creates a local benchmark workload in Postgres, then dispatches it through repeated **`SchedulerTickRunner`** ticks (no Kafka). It reports **`jobs_dispatched_per_second`** plus a structured **`event=benchmark_scheduler_throughput`** line. This measures **scheduler/Postgres dispatch throughput**, not worker execution throughput.
+**`scripts/benchmark_scheduler_throughput.py`** creates a local benchmark workload in Postgres, then dispatches it through repeated **`SchedulerTickRunner`** ticks (no Kafka). Use **`--trials`** to repeat runs with a **unique prefix per trial**; the summary reports **min/avg/max** **`jobs_dispatched_per_second`** (and elapsed time). Emits **`event=benchmark_scheduler_throughput`**. Measures **scheduler/Postgres dispatch throughput**, not worker execution.
 
 ```bash
 PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 1000 --batch-size 100 --tenants 10
+PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 100 --batch-size 20 --trials 3
 ```
 
 **Benchmark baseline:** archived local results in **[docs/benchmarks/day75-baseline.md](../docs/benchmarks/day75-baseline.md)** — load generation, scheduler throughput, and queue-wait percentile validation. Current values are **local development baselines**, not production capacity claims.

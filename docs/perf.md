@@ -531,11 +531,14 @@ PYTHONPATH=. python3 control_plane/scripts/generate_load_jobs.py --count 1000 --
 
 ## Scheduler Throughput Benchmark
 
-**`./control_plane/scripts/benchmark_scheduler_throughput.py`** measures **`queued` → `dispatched`** throughput via repeated **`SchedulerTickRunner`** ticks (Postgres claim only — no Kafka). It reports **`jobs_dispatched_per_second`** and **`event=benchmark_scheduler_throughput`**. **Does not measure worker execution yet.** **Future benchmarks** will compare worker pool sizes and backpressure settings.
+**`./control_plane/scripts/benchmark_scheduler_throughput.py`** measures **`queued` → `dispatched`** throughput via repeated **`SchedulerTickRunner`** ticks (Postgres claim only — no Kafka). **`--trials`** repeats the run with a **unique prefix per trial**; the summary reports **min/avg/max** **`jobs_dispatched_per_second`** (and elapsed time) plus **`event=benchmark_scheduler_throughput`**. **Does not measure worker execution yet.** Results are **local development baselines**, not production capacity claims.
 
 ```bash
 PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 1000 --batch-size 100 --tenants 10
+PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 100 --batch-size 20 --trials 3
 ```
+
+**Future benchmarks** will compare worker pool sizes and backpressure settings.
 
 ## Benchmark Reports
 
