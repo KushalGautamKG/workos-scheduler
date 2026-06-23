@@ -111,6 +111,8 @@ These numbers are **local baselines** on a shared dev database: useful for regre
 
 **Day 76 follow-up:** `benchmark_scheduler_throughput.py` adds **`--trials`** with **min/avg/max** `jobs_dispatched_per_second` across repeated runs (unique prefix per trial). **Future benchmark reports** (Day 76 and later) should record **trial count**, **min/avg/max throughput**, and **machine environment** in addition to raw observed numbers. This Day 75 report is unchanged—single-trial scheduler results only.
 
+**Day 77:** Larger scheduler benchmark — [day77-scheduler-1000.md](day77-scheduler-1000.md) (1000 jobs per trial, 3 trials).
+
 Planned extensions to support **resume-quality throughput and latency claims**:
 
 1. **1k / 10k load generation** — insertion throughput at realistic queue depth.

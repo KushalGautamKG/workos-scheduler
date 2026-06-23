@@ -542,7 +542,7 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 
 ## Benchmark Reports
 
-Archived benchmark runs live under **`docs/benchmarks/`**. **[Day 75 baseline](benchmarks/day75-baseline.md)** records the **first local benchmark baseline** (load insertion, scheduler dispatch, queue-wait percentiles). Numbers there are **local and small-scale**—smoke-scale job counts on Docker Compose, not production capacity. **Future reports** should use **larger runs** (1k/10k jobs), **repeated trials** with environment metadata, and eventually **end-to-end completion** throughput.
+Archived benchmark runs live under **`docs/benchmarks/`**. **[Day 75 baseline](benchmarks/day75-baseline.md)** records the **first local benchmark baseline** (load insertion, scheduler dispatch, queue-wait percentiles). **[Day 77 scheduler — 1000 jobs](benchmarks/day77-scheduler-1000.md)** records a **3-trial** scheduler run with **1000 jobs per trial** and min/avg/max throughput—still a **local development baseline**, not production capacity. **Future reports** should add environment metadata and eventually **end-to-end completion** throughput.
 
 ## Prometheus Scraping
 

@@ -263,7 +263,7 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 100 --batch-size 20 --trials 3
 ```
 
-**Benchmark baseline:** archived local results in **[docs/benchmarks/day75-baseline.md](../docs/benchmarks/day75-baseline.md)** — load generation, scheduler throughput, and queue-wait percentile validation. Current values are **local development baselines**, not production capacity claims.
+**Benchmark reports:** **[day75-baseline.md](../docs/benchmarks/day75-baseline.md)** (first local baseline) and **[day77-scheduler-1000.md](../docs/benchmarks/day77-scheduler-1000.md)** (1000 jobs/trial, 3 trials, min/avg/max throughput). **Local development baselines only**—not production capacity claims.
 
 ## Structured Script Logs
 
