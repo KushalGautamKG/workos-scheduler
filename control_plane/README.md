@@ -262,6 +262,8 @@ PYTHONPATH=. python3 control_plane/scripts/generate_load_jobs.py --count 1000 --
 PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 1000 --batch-size 100 --tenants 10
 ```
 
+**Benchmark baseline:** archived local results in **[docs/benchmarks/day75-baseline.md](../docs/benchmarks/day75-baseline.md)** — load generation, scheduler throughput, and queue-wait percentile validation. Current values are **local development baselines**, not production capacity claims.
+
 ## Structured Script Logs
 
 One-shot scripts print an extra **key=value summary line** at the end (via `kernelq/logging_utils.py` for Python scripts; bash helpers in smoke tests). Examples:

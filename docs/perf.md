@@ -537,6 +537,10 @@ PYTHONPATH=. python3 control_plane/scripts/generate_load_jobs.py --count 1000 --
 PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 1000 --batch-size 100 --tenants 10
 ```
 
+## Benchmark Reports
+
+Archived benchmark runs live under **`docs/benchmarks/`**. **[Day 75 baseline](benchmarks/day75-baseline.md)** records the **first local benchmark baseline** (load insertion, scheduler dispatch, queue-wait percentiles). Numbers there are **local and small-scale**—smoke-scale job counts on Docker Compose, not production capacity. **Future reports** should use **larger runs** (1k/10k jobs), **repeated trials** with environment metadata, and eventually **end-to-end completion** throughput.
+
 ## Prometheus Scraping
 
 **`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges and **`kernelq_queue_wait_seconds{quantile=...}`** percentile gauges (same Postgres snapshot as `/metrics/durations`).
