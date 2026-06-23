@@ -50,6 +50,8 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 
 Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throughput. **`--trials`** repeats runs with a unique prefix per trial and reports **min/avg/max** **`jobs_dispatched_per_second`** — use repeated trials for more credible local numbers. Still **local baselines**, not production capacity claims (`event=benchmark_scheduler_throughput`).
 
+**Go worker pool:** **`cmd/consumer`** uses a **worker pool** (default **4** workers) — Kafka consumer enqueues decoded jobs; pool goroutines execute concurrently. **Future work:** bounded queues, **backpressure** when saturated, and a **worker throughput benchmark** (plus end-to-end completion metrics).
+
 If **`dispatched_jobs` < `generated_jobs`**, inspect:
 
 - Postgres connectivity

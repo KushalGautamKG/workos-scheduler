@@ -538,7 +538,9 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 100 --batch-size 20 --trials 3
 ```
 
-**Future benchmarks** will compare worker pool sizes and backpressure settings.
+## Worker Pool Concurrency
+
+**Day 78** adds a **configurable Go worker pool** (default **4 workers**): the **Kafka consumer** reads **`kernelq.jobs.dispatch`**; **pool workers** execute jobs concurrently. **Current benchmark reports** ([Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md)) cover **scheduler throughput only** (`queued` → `dispatched`). **Future benchmarks** will measure **worker throughput**, **end-to-end completion throughput**, and **worker scaling** (pool size vs jobs completed per second).
 
 ## Benchmark Reports
 

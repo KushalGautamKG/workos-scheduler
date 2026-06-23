@@ -301,6 +301,10 @@ KernelQ’s control plane now includes **`KafkaResultConsumer`** (`kernelq/kafka
 
 Manual try: **`control_plane/scripts/consume_result_once.py`**. A **long-running result consumer loop** (continuous poll, graceful shutdown) comes later.
 
+## Go Worker Pool
+
+The **Go worker** (`worker/`, see **`worker/README.md`**) uses a **configurable worker pool** for concurrent execution. **Default: 4 workers.** The **Kafka consumer** reads dispatch messages from **`kernelq.jobs.dispatch`**; **pool workers** execute jobs in parallel (`Executor` + result publish). Configure via **`KafkaConsumer.WorkerCount`** in **`cmd/consumer`**.
+
 ## Full Completion Smoke Test
 
 **`scripts/smoke_full_completion.sh`** is the **first MVP feedback-loop smoke test**. It verifies the full path from a **queued job** in Postgres to **`succeeded`** state: **scheduler tick** → **Kafka dispatch** → **Go worker** → **`kernelq.jobs.results`** → **Python result consumer** → **Postgres update**.

@@ -8,6 +8,7 @@ package worker
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
@@ -45,10 +46,13 @@ type ConsumerStats struct {
 type KafkaConsumer struct {
 	Poller KafkaPoller
 	Runner ConsumerRunner
+	// WorkerCount sets pool size in Run (0 => DefaultWorkerCount).
+	WorkerCount int
 	// DeadLetterProducer is optional. When set, processing failures publish
 	// a DeadLetterEvent before the poll loop continues.
 	DeadLetterProducer DeadLetterProducer
 	Stats              ConsumerStats
+	statsMu            sync.Mutex
 }
 
 // ProcessKafkaMessage handles one record from the Kafka client.
@@ -72,13 +76,32 @@ func (c KafkaConsumer) ProcessKafkaMessage(msg *kafka.Message) error {
 
 // Run polls the broker until ctx is canceled.
 //
-// Invalid or unprocessable messages increment MessageErrors and keep polling.
-// When DeadLetterProducer is configured, failures also publish a DeadLetterEvent.
-// Offset commits and retries are not implemented yet.
+// Valid messages are decoded on the poll goroutine, enqueued to a worker pool,
+// and executed concurrently. Invalid or unprocessable messages are handled on
+// the poll goroutine (DLQ + stats) as before.
+//
+// ProcessKafkaMessage remains synchronous for tests and one-off use.
 func (c *KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 	if pollTimeoutMs <= 0 {
 		return fmt.Errorf("poll timeout must be positive, got %d", pollTimeoutMs)
 	}
+
+	if c.Runner.Handler == nil {
+		return fmt.Errorf("dispatch handler is not configured")
+	}
+
+	pool := NewWorkerPool(
+		c.WorkerCount,
+		c.Runner.Handler,
+		func(workerID string, item WorkItem) {
+			c.recordMessageProcessed(workerID, item)
+		},
+		func(workerID string, item WorkItem, err error) {
+			c.handleWorkItemError(workerID, item, err)
+		},
+	)
+	pool.Start()
+	defer pool.Shutdown()
 
 	for {
 		if ctx.Err() != nil {
@@ -99,26 +122,80 @@ func (c *KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 
 		switch e := event.(type) {
 		case *kafka.Message:
-			c.Stats.MessagesSeen++
-			if err := c.ProcessKafkaMessage(e); err != nil {
-				// Bad JSON, validation failures, and handler errors must not
-				// stop the worker. Count the failure and optionally DLQ it.
-				c.handleProcessingError(e, err)
-				continue
-			}
-			c.Stats.MessagesProcessed++
+			c.enqueueKafkaMessage(pool, e)
 		case kafka.Error:
 			// Broker/client problems are still fatal for now.
-			c.Stats.KafkaErrors++
+			c.incKafkaErrors()
 			return e
 		}
 	}
 }
 
+// enqueueKafkaMessage decodes one record and hands it to the worker pool.
+func (c *KafkaConsumer) enqueueKafkaMessage(pool *WorkerPool, msg *kafka.Message) {
+	c.incMessagesSeen()
+
+	event, err := ParseDispatchEvent(msg.Value)
+	if err != nil {
+		c.handleProcessingError(msg, err)
+		return
+	}
+
+	pool.Enqueue(WorkItem{
+		Event:         event,
+		OriginalKey:   string(msg.Key),
+		OriginalValue: msg.Value,
+		SourceTopic:   sourceTopicFromMessage(msg),
+	})
+}
+
+func (c *KafkaConsumer) recordMessageProcessed(workerID string, item WorkItem) {
+	_ = workerID
+	_ = item
+	c.statsMu.Lock()
+	c.Stats.MessagesProcessed++
+	c.statsMu.Unlock()
+}
+
+func (c *KafkaConsumer) incMessagesSeen() {
+	c.statsMu.Lock()
+	c.Stats.MessagesSeen++
+	c.statsMu.Unlock()
+}
+
+func (c *KafkaConsumer) incKafkaErrors() {
+	c.statsMu.Lock()
+	c.Stats.KafkaErrors++
+	c.statsMu.Unlock()
+}
+
+func (c *KafkaConsumer) handleWorkItemError(workerID string, item WorkItem, processingErr error) {
+	msg := &kafka.Message{
+		Key:   []byte(item.OriginalKey),
+		Value: item.OriginalValue,
+	}
+	if item.SourceTopic != "" {
+		topic := item.SourceTopic
+		msg.TopicPartition.Topic = &topic
+	}
+
+	c.handleProcessingErrorWithWorker(msg, processingErr, workerNameForPoolWorker(workerID))
+}
+
 // handleProcessingError records a message failure and optionally publishes
 // a dead-letter event. The poll loop always continues afterward.
 func (c *KafkaConsumer) handleProcessingError(msg *kafka.Message, processingErr error) {
+	c.handleProcessingErrorWithWorker(msg, processingErr, workerIdentity)
+}
+
+func (c *KafkaConsumer) handleProcessingErrorWithWorker(
+	msg *kafka.Message,
+	processingErr error,
+	workerName string,
+) {
+	c.statsMu.Lock()
 	c.Stats.MessageErrors++
+	c.statsMu.Unlock()
 
 	// No DLQ producer wired (common in tests or gradual rollout).
 	if c.DeadLetterProducer == nil {
@@ -131,15 +208,23 @@ func (c *KafkaConsumer) handleProcessingError(msg *kafka.Message, processingErr 
 		OriginalKey:   string(msg.Key),
 		OriginalValue: string(msg.Value),
 		SourceTopic:   sourceTopicFromMessage(msg),
-		Worker:        workerIdentity,
+		Worker:        workerName,
 	}
 
 	if err := c.DeadLetterProducer.PublishDeadLetter(event); err != nil {
+		c.statsMu.Lock()
 		c.Stats.DeadLetterPublishErrors++
+		c.statsMu.Unlock()
 		return
 	}
 
+	c.statsMu.Lock()
 	c.Stats.DeadLettersPublished++
+	c.statsMu.Unlock()
+}
+
+func workerNameForPoolWorker(workerID string) string {
+	return fmt.Sprintf("%s/%s", workerIdentity, workerID)
 }
 
 // sourceTopicFromMessage reads the topic name from a Kafka message when the

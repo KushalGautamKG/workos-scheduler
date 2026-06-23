@@ -54,7 +54,8 @@ func main() {
 		log.Fatalf("create result producer: %v", err)
 	}
 
-	// Wire the worker stack: Kafka → parse/validate → handler → executor → results + DLQ.
+	// Wire the worker stack: Kafka → decode → worker pool → handler → executor → results + DLQ.
+	// WorkerCount 0 uses DefaultWorkerCount (4 concurrent executors).
 	kafkaConsumer := &worker.KafkaConsumer{
 		Poller: brokerConsumer,
 		Runner: worker.ConsumerRunner{
