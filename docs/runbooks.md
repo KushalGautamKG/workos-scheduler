@@ -50,7 +50,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 
 Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throughput. **`--trials`** repeats runs with a unique prefix per trial and reports **min/avg/max** **`jobs_dispatched_per_second`** — use repeated trials for more credible local numbers. Still **local baselines**, not production capacity claims (`event=benchmark_scheduler_throughput`).
 
-**Go worker pool:** **`cmd/consumer`** uses a **worker pool** (default **4** workers) with a **bounded work queue** (default **100** slots). Kafka decodes and enqueues; pool goroutines execute concurrently. Set **`KERNELQ_WORKER_QUEUE_CAPACITY`** to tune queue size. When the queue is full, enqueue returns **`worker queue full`** and **`queue_full_errors`** increments—**first backpressure boundary** (poll loop continues; **Kafka pause/resume** is future work). **Future work:** worker throughput benchmark and end-to-end completion metrics.
+**Go worker pool:** **`cmd/consumer`** uses a **worker pool** (default **4** workers) with a **bounded work queue** (default **100** slots). Kafka decodes and enqueues; pool goroutines execute concurrently. Set **`KERNELQ_WORKER_QUEUE_CAPACITY`** to tune queue size. When the queue is full, enqueue returns **`worker queue full`**, logs **`event=worker_queue_full job_id=… queue_capacity=…`**, and **`work_queue_full_errors`** increments—**first backpressure boundary** (poll loop continues). Shutdown prints **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`**. **Future work:** **Kafka pause/resume**, **worker autoscaling**, throughput benchmark, and end-to-end completion metrics.
 
 If **`dispatched_jobs` < `generated_jobs`**, inspect:
 

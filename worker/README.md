@@ -187,8 +187,10 @@ go run ./cmd/consumer
 
 - **Bounded work queue** — buffered channel caps waiting jobs (**default capacity 100**). This is KernelQ’s **first backpressure boundary** on the worker side: memory stays bounded and saturation is visible.
 - **Configure queue size** — set **`KERNELQ_WORKER_QUEUE_CAPACITY`** before starting **`cmd/consumer`** (unset or `<= 0` → default **100**). Startup logs **`worker_count=… queue_capacity=…`**.
-- **Queue full** — **`Enqueue`** uses a non-blocking send; when the buffer is full it returns **`worker queue full`** and **`KafkaConsumer`** increments **`queue_full_errors`** (printed on shutdown). The poll loop **keeps running**—no DLQ for saturation.
-- **Future work** — **Kafka pause/resume** when the queue is full (slow intake instead of dropping enqueue attempts at the in-process boundary).
+- **Queue full** — **`Enqueue`** uses a non-blocking send; when the buffer is full it returns **`worker queue full`**, logs **`event=worker_queue_full job_id=… queue_capacity=…`**, and increments **`work_queue_full_errors`**. The poll loop **keeps running**—no DLQ for saturation.
+- **Saturation stats** — **`ConsumerStats`** tracks **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** (distinct from **`message_errors`**).
+- **Shutdown summary** — **`cmd/consumer`** prints **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** alongside **`messages_seen`**, **`messages_processed`**, **`message_errors`**, and **`kafka_errors`**.
+- **Future work** — **Kafka pause/resume** on saturation and **worker autoscaling** (today: tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`** manually).
 
 ```bash
 go test ./...
@@ -201,7 +203,7 @@ The worker **no longer exits** when it sees a malformed dispatch message (bad JS
 
 - **`Run`** increments **`MessageErrors`** and **keeps polling** so one poison record does not stop the whole process.
 - When **`DeadLetterProducer`** is wired, failures also publish a **`DeadLetterEvent`** (see **DLQ Routing Boundary**).
-- **`cmd/consumer`** prints **`message_errors`**, **`queue_full_errors`**, and DLQ stats in the shutdown summary.
+- **`cmd/consumer`** prints **`message_errors`**, work-queue saturation stats (**`work_queue_capacity`**, **`work_items_enqueued`**, **`work_queue_full_errors`**), and DLQ stats in the shutdown summary.
 - **Kafka broker errors** (`kafka.Error`) still **stop the worker** for now.
 
 ## Dead Letter Queue Boundary

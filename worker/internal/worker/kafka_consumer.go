@@ -154,7 +154,7 @@ func (c *KafkaConsumer) enqueueKafkaMessage(pool *WorkerPool, msg *kafka.Message
 		OriginalValue: msg.Value,
 		SourceTopic:   sourceTopicFromMessage(msg),
 	}); err != nil {
-		c.handleQueueFull(msg, err)
+		c.handleQueueFull(event, pool.QueueCapacity(), err)
 		return
 	}
 	c.incWorkItemsEnqueued()
@@ -164,12 +164,16 @@ func (c *KafkaConsumer) enqueueKafkaMessage(pool *WorkerPool, msg *kafka.Message
 //
 // This is backpressure at enqueue time, not a processing failure — no DLQ yet.
 // Kafka pause/resume will plug in here later.
-func (c *KafkaConsumer) handleQueueFull(msg *kafka.Message, err error) {
-	_ = msg
+func (c *KafkaConsumer) handleQueueFull(event DispatchEvent, queueCapacity int, err error) {
 	if err != ErrWorkerQueueFull {
 		return
 	}
 	c.incWorkQueueFullErrors()
+	fmt.Printf(
+		"event=worker_queue_full job_id=%s queue_capacity=%d\n",
+		event.JobID,
+		queueCapacity,
+	)
 }
 
 func (c *KafkaConsumer) recordWorkQueueCapacity(capacity int) {

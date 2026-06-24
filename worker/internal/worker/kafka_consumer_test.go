@@ -1,8 +1,10 @@
 package worker
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -174,6 +176,39 @@ func TestRunProcessesValidMessageAndIncrementsMessagesProcessed(t *testing.T) {
 	if consumer.Stats.MessageErrors != 0 {
 		t.Fatalf("expected MessageErrors 0, got %d", consumer.Stats.MessageErrors)
 	}
+	if consumer.Stats.WorkQueueCapacity != DefaultQueueCapacity {
+		t.Fatalf("expected WorkQueueCapacity %d, got %d", DefaultQueueCapacity, consumer.Stats.WorkQueueCapacity)
+	}
+	if consumer.Stats.WorkItemsEnqueued != 1 {
+		t.Fatalf("expected WorkItemsEnqueued 1, got %d", consumer.Stats.WorkItemsEnqueued)
+	}
+	if consumer.Stats.WorkQueueFullErrors != 0 {
+		t.Fatalf("expected WorkQueueFullErrors 0, got %d", consumer.Stats.WorkQueueFullErrors)
+	}
+}
+
+func TestRunRecordsConfiguredWorkQueueCapacity(t *testing.T) {
+	const configuredCapacity = 7
+	handler := &fakeDispatchHandler{}
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessage("job-123", validDispatchJSON()),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller:        poller,
+		Runner:        ConsumerRunner{Handler: handler},
+		QueueCapacity: configuredCapacity,
+	}
+
+	runUntilEventsDelivered(t, consumer, poller, 1)
+
+	if consumer.Stats.WorkQueueCapacity != configuredCapacity {
+		t.Fatalf("expected WorkQueueCapacity %d, got %d", configuredCapacity, consumer.Stats.WorkQueueCapacity)
+	}
+	if consumer.Stats.WorkItemsEnqueued != 1 {
+		t.Fatalf("expected WorkItemsEnqueued 1, got %d", consumer.Stats.WorkItemsEnqueued)
+	}
 }
 
 func TestRunIncrementsMessageErrorsForInvalidJSONAndContinues(t *testing.T) {
@@ -201,6 +236,12 @@ func TestRunIncrementsMessageErrorsForInvalidJSONAndContinues(t *testing.T) {
 	}
 	if consumer.Stats.MessagesProcessed != 0 {
 		t.Fatalf("expected MessagesProcessed 0, got %d", consumer.Stats.MessagesProcessed)
+	}
+	if consumer.Stats.WorkQueueFullErrors != 0 {
+		t.Fatalf("expected WorkQueueFullErrors 0 for decode error, got %d", consumer.Stats.WorkQueueFullErrors)
+	}
+	if consumer.Stats.WorkItemsEnqueued != 0 {
+		t.Fatalf("expected WorkItemsEnqueued 0 for decode error, got %d", consumer.Stats.WorkItemsEnqueued)
 	}
 }
 
@@ -481,7 +522,102 @@ func TestRunWithoutDLQProducerIncrementsMessageErrorsOnly(t *testing.T) {
 	}
 }
 
-func TestEnqueueKafkaMessageIncrementsQueueFullErrorsWhenQueueIsFull(t *testing.T) {
+// failingExecutor simulates handler/execution failures for stats tests.
+type failingExecutor struct{}
+
+func (failingExecutor) Execute(task Task) (ExecutionResult, error) {
+	return ExecutionResult{}, fmt.Errorf("simulated execution failure")
+}
+
+func TestEnqueueKafkaMessageIncrementsWorkItemsEnqueuedOnSuccess(t *testing.T) {
+	handler := &fakeDispatchHandler{}
+	consumer := &KafkaConsumer{
+		Runner: ConsumerRunner{Handler: handler},
+	}
+	pool := NewWorkerPool(1, 4, handler, nil, nil)
+	pool.Start()
+	defer pool.Shutdown()
+
+	consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-1", validDispatchJSON()))
+
+	if consumer.Stats.MessagesSeen != 1 {
+		t.Fatalf("expected MessagesSeen 1, got %d", consumer.Stats.MessagesSeen)
+	}
+	if consumer.Stats.WorkItemsEnqueued != 1 {
+		t.Fatalf("expected WorkItemsEnqueued 1, got %d", consumer.Stats.WorkItemsEnqueued)
+	}
+	if consumer.Stats.WorkQueueFullErrors != 0 {
+		t.Fatalf("expected WorkQueueFullErrors 0, got %d", consumer.Stats.WorkQueueFullErrors)
+	}
+	if consumer.Stats.MessageErrors != 0 {
+		t.Fatalf("expected MessageErrors 0, got %d", consumer.Stats.MessageErrors)
+	}
+}
+
+func TestHandlerErrorsIncrementMessageErrorsNotWorkQueueFullErrors(t *testing.T) {
+	handler := handlerWithExecutor(failingExecutor{})
+	consumer := &KafkaConsumer{
+		Runner: ConsumerRunner{Handler: handler},
+	}
+	pool := NewWorkerPool(1, 4, handler, nil, func(workerID string, item WorkItem, err error) {
+		consumer.handleWorkItemError(workerID, item, err)
+	})
+	pool.Start()
+	defer pool.Shutdown()
+
+	consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-handler-fail", validDispatchJSON()))
+
+	deadline := time.Now().Add(2 * time.Second)
+	for consumer.Stats.MessageErrors == 0 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+
+	if consumer.Stats.MessageErrors != 1 {
+		t.Fatalf("expected MessageErrors 1, got %d", consumer.Stats.MessageErrors)
+	}
+	if consumer.Stats.WorkQueueFullErrors != 0 {
+		t.Fatalf("expected WorkQueueFullErrors 0 for handler error, got %d", consumer.Stats.WorkQueueFullErrors)
+	}
+	if consumer.Stats.WorkItemsEnqueued != 1 {
+		t.Fatalf("expected WorkItemsEnqueued 1, got %d", consumer.Stats.WorkItemsEnqueued)
+	}
+}
+
+func TestHandleQueueFullLogsStructuredEvent(t *testing.T) {
+	consumer := &KafkaConsumer{}
+	event := validDispatchEventForHandler()
+	event.JobID = "job-saturated"
+
+	stdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdout pipe: %v", err)
+	}
+	os.Stdout = writer
+
+	outputDone := make(chan string)
+	go func() {
+		var buf bytes.Buffer
+		_, _ = buf.ReadFrom(reader)
+		outputDone <- buf.String()
+	}()
+
+	consumer.handleQueueFull(event, 5, ErrWorkerQueueFull)
+
+	_ = writer.Close()
+	os.Stdout = stdout
+	output := <-outputDone
+
+	expected := "event=worker_queue_full job_id=job-saturated queue_capacity=5\n"
+	if output != expected {
+		t.Fatalf("expected log %q, got %q", expected, output)
+	}
+	if consumer.Stats.WorkQueueFullErrors != 1 {
+		t.Fatalf("expected WorkQueueFullErrors 1, got %d", consumer.Stats.WorkQueueFullErrors)
+	}
+}
+
+func TestEnqueueKafkaMessageIncrementsWorkQueueFullErrorsWhenQueueIsFull(t *testing.T) {
 	release := make(chan struct{})
 	executor := newBlockingExecutor(release, 2)
 	handler := handlerWithExecutor(executor)
