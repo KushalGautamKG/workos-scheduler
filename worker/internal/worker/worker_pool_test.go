@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"testing"
@@ -54,7 +55,7 @@ func TestWorkerPoolMultipleWorkersProcessJobs(t *testing.T) {
 	var workerMu sync.Mutex
 	workerIDs := make(map[string]struct{})
 
-	pool := NewWorkerPool(3, handler, func(workerID string, _ WorkItem) {
+	pool := NewWorkerPool(3, 0, handler, func(workerID string, _ WorkItem) {
 		workerMu.Lock()
 		workerIDs[workerID] = struct{}{}
 		workerMu.Unlock()
@@ -98,7 +99,7 @@ func TestWorkerPoolProcessesAllSubmittedJobs(t *testing.T) {
 	var processed int
 	var processedMu sync.Mutex
 
-	pool := NewWorkerPool(4, handler, func(_ string, _ WorkItem) {
+	pool := NewWorkerPool(4, 0, handler, func(_ string, _ WorkItem) {
 		processedMu.Lock()
 		processed++
 		processedMu.Unlock()
@@ -124,7 +125,7 @@ func TestWorkerPoolShutdownWaitsForWorkers(t *testing.T) {
 	executor := newBlockingExecutor(release, 1)
 	handler := handlerWithExecutor(executor)
 
-	pool := NewWorkerPool(2, handler, nil, nil)
+	pool := NewWorkerPool(2, 0, handler, nil, nil)
 	pool.Start()
 	pool.Enqueue(workItemForJobID("job-blocking"))
 
@@ -160,12 +161,15 @@ func TestWorkerPoolShutdownWaitsForWorkers(t *testing.T) {
 }
 
 func TestWorkerPoolRespectsWorkerCountConfiguration(t *testing.T) {
-	if NewWorkerPool(0, &countingHandler{}, nil, nil).workerCount != DefaultWorkerCount {
+	if NewWorkerPool(0, 0, &countingHandler{}, nil, nil).workerCount != DefaultWorkerCount {
 		t.Fatalf("expected default worker count %d", DefaultWorkerCount)
+	}
+	if NewWorkerPool(0, 0, &countingHandler{}, nil, nil).queueCapacity != DefaultQueueCapacity {
+		t.Fatalf("expected default queue capacity %d", DefaultQueueCapacity)
 	}
 
 	const configured = 5
-	pool := NewWorkerPool(configured, &countingHandler{}, nil, nil)
+	pool := NewWorkerPool(configured, 0, &countingHandler{}, nil, nil)
 	if pool.workerCount != configured {
 		t.Fatalf("expected worker count %d, got %d", configured, pool.workerCount)
 	}
@@ -174,7 +178,7 @@ func TestWorkerPoolRespectsWorkerCountConfiguration(t *testing.T) {
 	executor := newBlockingExecutor(release, configured)
 	handler := handlerWithExecutor(executor)
 
-	pool = NewWorkerPool(configured, handler, nil, nil)
+	pool = NewWorkerPool(configured, 0, handler, nil, nil)
 	pool.Start()
 
 	for index := 0; index < configured; index++ {
@@ -194,6 +198,48 @@ func TestWorkerPoolRespectsWorkerCountConfiguration(t *testing.T) {
 
 	if len(executor.processedJobIDs()) != configured {
 		t.Fatalf("expected %d processed jobs, got %d", configured, len(executor.processedJobIDs()))
+	}
+}
+
+func TestWorkerPoolEnqueueReturnsErrorWhenQueueFull(t *testing.T) {
+	release := make(chan struct{})
+	executor := newBlockingExecutor(release, 2)
+	handler := handlerWithExecutor(executor)
+
+	pool := NewWorkerPool(1, 1, handler, nil, nil)
+	pool.Start()
+
+	if err := pool.Enqueue(workItemForJobID("job-1")); err != nil {
+		t.Fatalf("expected first enqueue to succeed, got %v", err)
+	}
+
+	select {
+	case <-executor.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for worker to start first job")
+	}
+
+	if err := pool.Enqueue(workItemForJobID("job-2")); err != nil {
+		t.Fatalf("expected second enqueue to fill buffer, got %v", err)
+	}
+
+	err := pool.Enqueue(workItemForJobID("job-3"))
+	if !errors.Is(err, ErrWorkerQueueFull) {
+		t.Fatalf("expected ErrWorkerQueueFull, got %v", err)
+	}
+
+	close(release)
+	pool.Shutdown()
+}
+
+func TestWorkerPoolRespectsQueueCapacityConfiguration(t *testing.T) {
+	const configuredCapacity = 25
+	pool := NewWorkerPool(2, configuredCapacity, &countingHandler{}, nil, nil)
+	if pool.queueCapacity != configuredCapacity {
+		t.Fatalf("expected queue capacity %d, got %d", configuredCapacity, pool.queueCapacity)
+	}
+	if cap(pool.workCh) != configuredCapacity {
+		t.Fatalf("expected work channel capacity %d, got %d", configuredCapacity, cap(pool.workCh))
 	}
 }
 

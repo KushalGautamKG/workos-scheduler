@@ -6,12 +6,23 @@
 package worker
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 )
 
 // DefaultWorkerCount is how many goroutines run jobs when WorkerCount is unset.
 const DefaultWorkerCount = 4
+
+// DefaultQueueCapacity is the bounded work-queue size when QueueCapacity is unset.
+//
+// A bounded queue caps how many decoded jobs wait in memory between the Kafka
+// consumer and pool workers. When the queue fills, Enqueue returns
+// ErrWorkerQueueFull instead of blocking — the first backpressure boundary.
+const DefaultQueueCapacity = 100
+
+// ErrWorkerQueueFull is returned when the bounded work queue has no free slots.
+var ErrWorkerQueueFull = errors.New("worker queue full")
 
 // WorkItem is one decoded dispatch job waiting for a pool worker.
 //
@@ -26,13 +37,14 @@ type WorkItem struct {
 
 // WorkerPool runs DispatchHandler.Handle on a fixed number of goroutines.
 //
-// There is no backpressure policy yet: the work channel is buffered so the
-// poll loop can enqueue without blocking under normal local load.
+// The internal work channel is buffered to queueCapacity. That bounds memory
+// for waiting jobs and makes queue depth observable when saturated.
 type WorkerPool struct {
-	workerCount int
-	handler     DispatchHandler
-	workCh      chan WorkItem
-	wg          sync.WaitGroup
+	workerCount   int
+	queueCapacity int
+	handler       DispatchHandler
+	workCh        chan WorkItem
+	wg            sync.WaitGroup
 
 	onSuccess func(workerID string, item WorkItem)
 	onError   func(workerID string, item WorkItem, err error)
@@ -41,8 +53,10 @@ type WorkerPool struct {
 // NewWorkerPool builds a pool that will call onSuccess/onError after each job.
 //
 // workerCount <= 0 uses DefaultWorkerCount (4).
+// queueCapacity <= 0 uses DefaultQueueCapacity (100).
 func NewWorkerPool(
 	workerCount int,
+	queueCapacity int,
 	handler DispatchHandler,
 	onSuccess func(workerID string, item WorkItem),
 	onError func(workerID string, item WorkItem, err error),
@@ -50,14 +64,17 @@ func NewWorkerPool(
 	if workerCount <= 0 {
 		workerCount = DefaultWorkerCount
 	}
+	if queueCapacity <= 0 {
+		queueCapacity = DefaultQueueCapacity
+	}
 
 	return &WorkerPool{
-		workerCount: workerCount,
-		handler:     handler,
-		// Large buffer: concurrency only for now, not backpressure.
-		workCh:      make(chan WorkItem, 1024),
-		onSuccess:   onSuccess,
-		onError:     onError,
+		workerCount:   workerCount,
+		queueCapacity: queueCapacity,
+		handler:       handler,
+		workCh:        make(chan WorkItem, queueCapacity),
+		onSuccess:     onSuccess,
+		onError:       onError,
 	}
 }
 
@@ -71,8 +88,18 @@ func (pool *WorkerPool) Start() {
 }
 
 // Enqueue adds one decoded job for a pool worker to execute.
-func (pool *WorkerPool) Enqueue(item WorkItem) {
-	pool.workCh <- item
+//
+// Uses a non-blocking send: when the bounded queue is full it returns
+// ErrWorkerQueueFull immediately so the poll loop is not stuck. Kafka
+// pause/resume and retry topics are future work; callers record saturation
+// via stats until then.
+func (pool *WorkerPool) Enqueue(item WorkItem) error {
+	select {
+	case pool.workCh <- item:
+		return nil
+	default:
+		return ErrWorkerQueueFull
+	}
 }
 
 // Shutdown closes the work channel and waits for all workers to finish.

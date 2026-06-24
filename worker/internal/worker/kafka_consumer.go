@@ -33,6 +33,7 @@ type ConsumerStats struct {
 	MessagesSeen            int
 	MessagesProcessed       int
 	MessageErrors           int
+	QueueFullErrors         int
 	KafkaErrors             int
 	DeadLettersPublished    int
 	DeadLetterPublishErrors int
@@ -48,6 +49,8 @@ type KafkaConsumer struct {
 	Runner ConsumerRunner
 	// WorkerCount sets pool size in Run (0 => DefaultWorkerCount).
 	WorkerCount int
+	// QueueCapacity sets the bounded work-queue size in Run (0 => DefaultQueueCapacity).
+	QueueCapacity int
 	// DeadLetterProducer is optional. When set, processing failures publish
 	// a DeadLetterEvent before the poll loop continues.
 	DeadLetterProducer DeadLetterProducer
@@ -92,6 +95,7 @@ func (c *KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 
 	pool := NewWorkerPool(
 		c.WorkerCount,
+		c.QueueCapacity,
 		c.Runner.Handler,
 		func(workerID string, item WorkItem) {
 			c.recordMessageProcessed(workerID, item)
@@ -141,12 +145,26 @@ func (c *KafkaConsumer) enqueueKafkaMessage(pool *WorkerPool, msg *kafka.Message
 		return
 	}
 
-	pool.Enqueue(WorkItem{
+	if err := pool.Enqueue(WorkItem{
 		Event:         event,
 		OriginalKey:   string(msg.Key),
 		OriginalValue: msg.Value,
 		SourceTopic:   sourceTopicFromMessage(msg),
-	})
+	}); err != nil {
+		c.handleQueueFull(msg, err)
+	}
+}
+
+// handleQueueFull records saturation when the bounded worker queue rejects a job.
+//
+// This is backpressure at enqueue time, not a processing failure — no DLQ yet.
+// Kafka pause/resume will plug in here later.
+func (c *KafkaConsumer) handleQueueFull(msg *kafka.Message, err error) {
+	_ = msg
+	if err != ErrWorkerQueueFull {
+		return
+	}
+	c.incQueueFullErrors()
 }
 
 func (c *KafkaConsumer) recordMessageProcessed(workerID string, item WorkItem) {
@@ -166,6 +184,12 @@ func (c *KafkaConsumer) incMessagesSeen() {
 func (c *KafkaConsumer) incKafkaErrors() {
 	c.statsMu.Lock()
 	c.Stats.KafkaErrors++
+	c.statsMu.Unlock()
+}
+
+func (c *KafkaConsumer) incQueueFullErrors() {
+	c.statsMu.Lock()
+	c.Stats.QueueFullErrors++
 	c.statsMu.Unlock()
 }
 

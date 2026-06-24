@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
@@ -477,6 +478,116 @@ func TestRunWithoutDLQProducerIncrementsMessageErrorsOnly(t *testing.T) {
 	}
 	if consumer.Stats.DeadLetterPublishErrors != 0 {
 		t.Fatalf("expected DeadLetterPublishErrors 0, got %d", consumer.Stats.DeadLetterPublishErrors)
+	}
+}
+
+func TestRunIncrementsQueueFullErrorsWhenWorkerQueueIsFull(t *testing.T) {
+	release := make(chan struct{})
+	executor := newBlockingExecutor(release, 2)
+	handler := handlerWithExecutor(executor)
+
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessage("job-1", validDispatchJSON()),
+			newKafkaMessage("job-2", validDispatchJSON()),
+			newKafkaMessage("job-3", validDispatchJSON()),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller:        poller,
+		Runner:        ConsumerRunner{Handler: handler},
+		WorkerCount:   1,
+		QueueCapacity: 1,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- consumer.Run(ctx, 100)
+	}()
+
+	for poller.index < 3 {
+		runtime.Gosched()
+	}
+
+	if consumer.Stats.MessagesSeen != 3 {
+		t.Fatalf("expected MessagesSeen 3, got %d", consumer.Stats.MessagesSeen)
+	}
+	if consumer.Stats.QueueFullErrors != 1 {
+		t.Fatalf("expected QueueFullErrors 1, got %d", consumer.Stats.QueueFullErrors)
+	}
+	if consumer.Stats.MessageErrors != 0 {
+		t.Fatalf("expected MessageErrors 0, got %d", consumer.Stats.MessageErrors)
+	}
+	if consumer.Stats.MessagesProcessed != 0 {
+		t.Fatalf("expected MessagesProcessed 0 while worker blocked, got %d", consumer.Stats.MessagesProcessed)
+	}
+
+	close(release)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("expected nil on cancel, got error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Run to exit")
+	}
+}
+
+func TestRunQueueFullDoesNotPublishDeadLetter(t *testing.T) {
+	release := make(chan struct{})
+	executor := newBlockingExecutor(release, 2)
+	handler := handlerWithExecutor(executor)
+	dlqProducer := &fakeDeadLetterProducer{}
+
+	poller := &fakePoller{
+		events: []kafka.Event{
+			newKafkaMessage("job-1", validDispatchJSON()),
+			newKafkaMessage("job-2", validDispatchJSON()),
+			newKafkaMessage("job-3", validDispatchJSON()),
+		},
+	}
+	consumer := &KafkaConsumer{
+		Poller:             poller,
+		Runner:             ConsumerRunner{Handler: handler},
+		WorkerCount:        1,
+		QueueCapacity:      1,
+		DeadLetterProducer: dlqProducer,
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- consumer.Run(ctx, 100)
+	}()
+
+	for poller.index < 3 {
+		runtime.Gosched()
+	}
+
+	if len(dlqProducer.events) != 0 {
+		t.Fatalf("expected no dead-letter events for queue full, got %d", len(dlqProducer.events))
+	}
+	if consumer.Stats.QueueFullErrors != 1 {
+		t.Fatalf("expected QueueFullErrors 1, got %d", consumer.Stats.QueueFullErrors)
+	}
+
+	close(release)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("expected nil on cancel, got error: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Run to exit")
 	}
 }
 

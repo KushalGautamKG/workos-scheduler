@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/worker"
@@ -25,6 +27,19 @@ type loggingExecutor struct{}
 func (loggingExecutor) Execute(task worker.Task) (worker.ExecutionResult, error) {
 	fmt.Printf("received task job_id=%s\n", task.JobID)
 	return worker.SuccessResult(), nil
+}
+
+// positiveIntFromEnv reads an env var as a positive int. Missing, invalid, or <= 0 returns 0.
+func positiveIntFromEnv(name string) int {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0
+	}
+	return value
 }
 
 func main() {
@@ -54,8 +69,10 @@ func main() {
 		log.Fatalf("create result producer: %v", err)
 	}
 
-	// Wire the worker stack: Kafka → decode → worker pool → handler → executor → results + DLQ.
-	// WorkerCount 0 uses DefaultWorkerCount (4 concurrent executors).
+	// Wire the worker stack: Kafka → decode → bounded worker pool → handler → executor → results + DLQ.
+	// WorkerCount 0 => DefaultWorkerCount (4). QueueCapacity 0 => DefaultQueueCapacity (100).
+	workerCountConfig := positiveIntFromEnv("KERNELQ_WORKER_COUNT")
+	queueCapacity := positiveIntFromEnv("KERNELQ_WORKER_QUEUE_CAPACITY")
 	kafkaConsumer := &worker.KafkaConsumer{
 		Poller: brokerConsumer,
 		Runner: worker.ConsumerRunner{
@@ -65,10 +82,24 @@ func main() {
 				WorkerName:     "kernelq-go-worker",
 			},
 		},
+		WorkerCount:        workerCountConfig,
+		QueueCapacity:      queueCapacity,
 		DeadLetterProducer: dlqProducer,
 	}
 
-	fmt.Println("KernelQ worker consumer started")
+	workerCount := worker.DefaultWorkerCount
+	if workerCountConfig > 0 {
+		workerCount = workerCountConfig
+	}
+	effectiveQueueCapacity := worker.DefaultQueueCapacity
+	if queueCapacity > 0 {
+		effectiveQueueCapacity = queueCapacity
+	}
+	fmt.Printf(
+		"KernelQ worker consumer started worker_count=%d queue_capacity=%d\n",
+		workerCount,
+		effectiveQueueCapacity,
+	)
 
 	// Stop cleanly on Ctrl+C or SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -82,5 +113,6 @@ func main() {
 	fmt.Printf("messages_seen=%d\n", kafkaConsumer.Stats.MessagesSeen)
 	fmt.Printf("messages_processed=%d\n", kafkaConsumer.Stats.MessagesProcessed)
 	fmt.Printf("message_errors=%d\n", kafkaConsumer.Stats.MessageErrors)
+	fmt.Printf("queue_full_errors=%d\n", kafkaConsumer.Stats.QueueFullErrors)
 	fmt.Printf("kafka_errors=%d\n", kafkaConsumer.Stats.KafkaErrors)
 }

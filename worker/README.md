@@ -171,7 +171,7 @@ go test ./...
 
 **`KafkaConsumer.Run`** in `internal/worker/kafka_consumer.go` polls the broker until **`context.Context`** is canceled.
 
-- **`cmd/consumer`** wires the full stack (Kafka → `ConsumerRunner` → `DispatchEventHandler` → logging executor) and runs **`Run(ctx, 1000)`**.
+- **`cmd/consumer`** wires the full stack (Kafka → decode → **bounded worker pool** → `DispatchEventHandler` → logging executor) and runs **`Run(ctx, 1000)`**.
 - The worker **continuously polls** `kernelq.jobs.dispatch` for new messages.
 - **SIGINT / SIGTERM** cancel the context; **`Run`** closes the poller and exits cleanly.
 - **Offset commits**, **retries**, and **real execution** are still future work—today a no-op executor prints received job ids.
@@ -181,13 +181,27 @@ go test ./...
 go run ./cmd/consumer
 ```
 
+## Worker Pool and Bounded Queue
+
+**`WorkerPool`** (`internal/worker/worker_pool.go`) runs jobs on a fixed number of goroutines (**default 4**). The Kafka poll loop decodes messages and enqueues work; pool workers call **`DispatchEventHandler.Handle`**.
+
+- **Bounded work queue** — buffered channel caps waiting jobs (**default capacity 100**). This is KernelQ’s **first backpressure boundary** on the worker side: memory stays bounded and saturation is visible.
+- **Configure queue size** — set **`KERNELQ_WORKER_QUEUE_CAPACITY`** before starting **`cmd/consumer`** (unset or `<= 0` → default **100**). Startup logs **`worker_count=… queue_capacity=…`**.
+- **Queue full** — **`Enqueue`** uses a non-blocking send; when the buffer is full it returns **`worker queue full`** and **`KafkaConsumer`** increments **`queue_full_errors`** (printed on shutdown). The poll loop **keeps running**—no DLQ for saturation.
+- **Future work** — **Kafka pause/resume** when the queue is full (slow intake instead of dropping enqueue attempts at the in-process boundary).
+
+```bash
+go test ./...
+KERNELQ_WORKER_QUEUE_CAPACITY=50 go run ./cmd/consumer
+```
+
 ## Invalid Message Handling
 
 The worker **no longer exits** when it sees a malformed dispatch message (bad JSON, failed validation, handler error).
 
 - **`Run`** increments **`MessageErrors`** and **keeps polling** so one poison record does not stop the whole process.
 - When **`DeadLetterProducer`** is wired, failures also publish a **`DeadLetterEvent`** (see **DLQ Routing Boundary**).
-- **`cmd/consumer`** prints **`message_errors`** and DLQ stats in the shutdown summary.
+- **`cmd/consumer`** prints **`message_errors`**, **`queue_full_errors`**, and DLQ stats in the shutdown summary.
 - **Kafka broker errors** (`kafka.Error`) still **stop the worker** for now.
 
 ## Dead Letter Queue Boundary

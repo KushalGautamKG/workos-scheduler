@@ -354,7 +354,8 @@ The Go worker’s poll loop (`KafkaConsumer.Run` in `worker/internal/worker/kafk
 |--------|---------------|----------------|
 | `messages_seen` | Every **`*kafka.Message`** received from the poll loop (before success/failure) | Baseline volume—how much traffic the worker touched |
 | `messages_processed` | Messages that passed parse, validation, and handler/executor without error | Healthy throughput on **`kernelq.jobs.dispatch`** |
-| `message_errors` | Messages where **`ProcessKafkaMessage`** failed (bad JSON, validation, handler error) | Poison or drift traffic; worker keeps polling but work was not executed |
+| `message_errors` | Messages where parse, validation, or handler/executor failed | Poison or drift traffic; worker keeps polling but work was not executed |
+| `queue_full_errors` | Decoded jobs rejected because the **bounded work queue** was full (`worker queue full`) | **First worker backpressure signal**—execution is not keeping up with Kafka intake; poll loop continues (no DLQ) |
 | `kafka_errors` | Broker **`kafka.Error`** events that stopped **`Run`** | Infra/client problems—different from bad payloads |
 
 **Derived rate (future):**
@@ -381,7 +382,9 @@ The Go worker’s poll loop (`KafkaConsumer.Run` in `worker/internal/worker/kafk
 | `processing_latency` | Time per message from poll to handler/executor completion (p50 / p95 / p99) | Shows whether execution is keeping up with publish rate |
 | `shutdown_count` | How many clean shutdowns (SIGINT/SIGTERM) vs crash exits | Separates operator stops from fatal broker failures |
 
-**Interview sound bite:** *“Log messages_seen, messages_processed, message_errors, and invalid_message_rate = errors/seen—should be near zero when healthy; Prometheus and DLQ come later.”*
+**Bounded work queue (worker plane):** **`cmd/consumer`** uses a **bounded in-process queue** between the Kafka poll loop and the worker pool (**default capacity 100**, env **`KERNELQ_WORKER_QUEUE_CAPACITY`**). When full, **`Enqueue`** returns **`worker queue full`** and **`queue_full_errors`** increments—KernelQ’s **first backpressure boundary** on the worker side. **Kafka pause/resume** on saturation is **future work**.
+
+**Interview sound bite:** *“Log messages_seen, messages_processed, message_errors, queue_full_errors, and invalid_message_rate = errors/seen—should be near zero when healthy; Prometheus and DLQ come later.”*
 
 ## DLQ Metrics Planned
 
@@ -540,7 +543,7 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 
 ## Worker Pool Concurrency
 
-**Day 78** adds a **configurable Go worker pool** (default **4 workers**): the **Kafka consumer** reads **`kernelq.jobs.dispatch`**; **pool workers** execute jobs concurrently. **Current benchmark reports** ([Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md)) cover **scheduler throughput only** (`queued` → `dispatched`). **Future benchmarks** will measure **worker throughput**, **end-to-end completion throughput**, and **worker scaling** (pool size vs jobs completed per second).
+**Day 78** adds a **configurable Go worker pool** (default **4 workers**): the **Kafka consumer** reads **`kernelq.jobs.dispatch`**; **pool workers** execute jobs concurrently. **Day 79** adds a **bounded work queue** (default **100** slots, **`KERNELQ_WORKER_QUEUE_CAPACITY`**)—when full, enqueue fails with **`worker queue full`** and **`queue_full_errors`** rises (**first backpressure boundary**; **Kafka pause/resume** later). **Current benchmark reports** ([Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md)) cover **scheduler throughput only** (`queued` → `dispatched`). **Future benchmarks** will measure **worker throughput**, **end-to-end completion throughput**, and **worker scaling** (pool size vs jobs completed per second).
 
 ## Benchmark Reports
 
