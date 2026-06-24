@@ -33,8 +33,10 @@ type ConsumerStats struct {
 	MessagesSeen            int
 	MessagesProcessed       int
 	MessageErrors           int
-	QueueFullErrors         int
 	KafkaErrors             int
+	WorkQueueCapacity       int
+	WorkItemsEnqueued       int
+	WorkQueueFullErrors     int
 	DeadLettersPublished    int
 	DeadLetterPublishErrors int
 }
@@ -104,6 +106,7 @@ func (c *KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 			c.handleWorkItemError(workerID, item, err)
 		},
 	)
+	c.recordWorkQueueCapacity(pool.QueueCapacity())
 	pool.Start()
 	defer pool.Shutdown()
 
@@ -152,7 +155,9 @@ func (c *KafkaConsumer) enqueueKafkaMessage(pool *WorkerPool, msg *kafka.Message
 		SourceTopic:   sourceTopicFromMessage(msg),
 	}); err != nil {
 		c.handleQueueFull(msg, err)
+		return
 	}
+	c.incWorkItemsEnqueued()
 }
 
 // handleQueueFull records saturation when the bounded worker queue rejects a job.
@@ -164,7 +169,13 @@ func (c *KafkaConsumer) handleQueueFull(msg *kafka.Message, err error) {
 	if err != ErrWorkerQueueFull {
 		return
 	}
-	c.incQueueFullErrors()
+	c.incWorkQueueFullErrors()
+}
+
+func (c *KafkaConsumer) recordWorkQueueCapacity(capacity int) {
+	c.statsMu.Lock()
+	c.Stats.WorkQueueCapacity = capacity
+	c.statsMu.Unlock()
 }
 
 func (c *KafkaConsumer) recordMessageProcessed(workerID string, item WorkItem) {
@@ -187,9 +198,15 @@ func (c *KafkaConsumer) incKafkaErrors() {
 	c.statsMu.Unlock()
 }
 
-func (c *KafkaConsumer) incQueueFullErrors() {
+func (c *KafkaConsumer) incWorkItemsEnqueued() {
 	c.statsMu.Lock()
-	c.Stats.QueueFullErrors++
+	c.Stats.WorkItemsEnqueued++
+	c.statsMu.Unlock()
+}
+
+func (c *KafkaConsumer) incWorkQueueFullErrors() {
+	c.statsMu.Lock()
+	c.Stats.WorkQueueFullErrors++
 	c.statsMu.Unlock()
 }
 

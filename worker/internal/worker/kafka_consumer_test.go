@@ -512,8 +512,11 @@ func TestEnqueueKafkaMessageIncrementsQueueFullErrorsWhenQueueIsFull(t *testing.
 	if consumer.Stats.MessagesSeen != 3 {
 		t.Fatalf("expected MessagesSeen 3, got %d", consumer.Stats.MessagesSeen)
 	}
-	if consumer.Stats.QueueFullErrors != 1 {
-		t.Fatalf("expected QueueFullErrors 1, got %d", consumer.Stats.QueueFullErrors)
+	if consumer.Stats.WorkItemsEnqueued != 2 {
+		t.Fatalf("expected WorkItemsEnqueued 2, got %d", consumer.Stats.WorkItemsEnqueued)
+	}
+	if consumer.Stats.WorkQueueFullErrors != 1 {
+		t.Fatalf("expected WorkQueueFullErrors 1, got %d", consumer.Stats.WorkQueueFullErrors)
 	}
 	if consumer.Stats.MessageErrors != 0 {
 		t.Fatalf("expected MessageErrors 0, got %d", consumer.Stats.MessageErrors)
@@ -551,8 +554,11 @@ func TestEnqueueKafkaMessageQueueFullDoesNotPublishDeadLetter(t *testing.T) {
 	if len(dlqProducer.events) != 0 {
 		t.Fatalf("expected no dead-letter events for queue full, got %d", len(dlqProducer.events))
 	}
-	if consumer.Stats.QueueFullErrors != 1 {
-		t.Fatalf("expected QueueFullErrors 1, got %d", consumer.Stats.QueueFullErrors)
+	if consumer.Stats.WorkItemsEnqueued != 2 {
+		t.Fatalf("expected WorkItemsEnqueued 2, got %d", consumer.Stats.WorkItemsEnqueued)
+	}
+	if consumer.Stats.WorkQueueFullErrors != 1 {
+		t.Fatalf("expected WorkQueueFullErrors 1, got %d", consumer.Stats.WorkQueueFullErrors)
 	}
 }
 

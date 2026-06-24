@@ -108,6 +108,11 @@ func (pool *WorkerPool) Shutdown() {
 	pool.wg.Wait()
 }
 
+// QueueCapacity returns the bounded work-queue size for this pool.
+func (pool *WorkerPool) QueueCapacity() int {
+	return pool.queueCapacity
+}
+
 func (pool *WorkerPool) runWorker(workerID string) {
 	defer pool.wg.Done()
 
