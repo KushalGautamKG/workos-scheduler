@@ -10,6 +10,7 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 | **Retry** | `./control_plane/scripts/smoke_retry_requeue.sh` |
 | **Exhaustion** | `./control_plane/scripts/smoke_retry_exhaustion.sh` |
 | **Queue wait metrics** | `./control_plane/scripts/smoke_queue_wait_metrics.sh` |
+| **Worker queue saturation** | `./worker/scripts/smoke_queue_saturation.sh` |
 | **Dead-letter inspection** | `PYTHONPATH=. python3 control_plane/scripts/list_dead_lettered_jobs.py` |
 | **Manual recovery** | `PYTHONPATH=. python3 control_plane/scripts/requeue_dead_lettered_job.py <job_id>` |
 
@@ -33,6 +34,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_retry_requeue` | `success`, `state_after_retry_result`, `state_after_retry_scanner`, `state_after_scheduler_tick` |
 | `smoke_retry_exhaustion` | `success`, `final_state=dead_lettered`, `state_after_retry_scanner=dead_lettered` |
 | `smoke_queue_wait_metrics` | `success`, `queue_wait_seconds` > 0, `job_id` |
+| `smoke_worker_queue_saturation` | `success=true` — bounded-queue backpressure boundary (no Kafka); test expects **`work_queue_full_errors > 0`** |
 | `scheduler_tick` | `published_count`, `errors_count`, `publish_errors_count` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |
 | `result_consumer` | `processed_message`, `errors_count`, optional `error` |
@@ -50,7 +52,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 
 Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throughput. **`--trials`** repeats runs with a unique prefix per trial and reports **min/avg/max** **`jobs_dispatched_per_second`** — use repeated trials for more credible local numbers. Still **local baselines**, not production capacity claims (`event=benchmark_scheduler_throughput`).
 
-**Go worker pool:** **`cmd/consumer`** uses a **worker pool** (default **4** workers) with a **bounded work queue** (default **100** slots). Kafka decodes and enqueues; pool goroutines execute concurrently. Set **`KERNELQ_WORKER_QUEUE_CAPACITY`** to tune queue size. When the queue is full, enqueue returns **`worker queue full`**, logs **`event=worker_queue_full job_id=… queue_capacity=…`**, and **`work_queue_full_errors`** increments—**first backpressure boundary** (poll loop continues). Shutdown prints **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`**. **Future work:** **Kafka pause/resume**, **worker autoscaling**, throughput benchmark, and end-to-end completion metrics.
+**Go worker pool:** **`cmd/consumer`** uses a **worker pool** (default **4** workers) with a **bounded work queue** (default **100** slots). Kafka decodes and enqueues; pool goroutines execute concurrently. Set **`KERNELQ_WORKER_QUEUE_CAPACITY`** to tune queue size. When the queue is full, enqueue returns **`worker queue full`**, logs **`event=worker_queue_full`**, and **`work_queue_full_errors`** increments—**first backpressure boundary** (poll loop continues). Shutdown prints **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`**. **`./worker/scripts/smoke_queue_saturation.sh`** runs a deterministic saturation test (no Kafka); **`event=smoke_worker_queue_saturation success=true`** confirms the boundary (**`work_queue_full_errors > 0`** in the test). **Future work:** **Kafka pause/resume**, **worker autoscaling**, throughput benchmark, and end-to-end completion metrics.
 
 If **`dispatched_jobs` < `generated_jobs`**, inspect:
 

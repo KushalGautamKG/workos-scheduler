@@ -30,7 +30,7 @@ What works today (local / dev):
 - **Kafka dispatch publishing** — scheduler tick publishes `DispatchEvent` to `kernelq.jobs.dispatch`
 - **Go Kafka worker consumer** — poll loop, message validation, execution handler
 - **Go worker pool** — configurable concurrent executors (**default 4**); consumer reads Kafka, workers run jobs in parallel (`worker/internal/worker/worker_pool.go`)
-- **Bounded worker work queue** — default capacity **100** (`KERNELQ_WORKER_QUEUE_CAPACITY`); saturation stats **`work_queue_capacity`**, **`work_items_enqueued`**, **`work_queue_full_errors`**; queue-full logs **`event=worker_queue_full`** — **first backpressure boundary**; **Kafka pause/resume** and **autoscaling** future work
+- **Bounded worker work queue** — default capacity **100** (`KERNELQ_WORKER_QUEUE_CAPACITY`); saturation stats and **`event=worker_queue_full`** logs; **`./worker/scripts/smoke_queue_saturation.sh`** proves the boundary (**`event=smoke_worker_queue_saturation success=true`**, **`work_queue_full_errors > 0`**) — visibility only; **Kafka pause/resume** and **autoscaling** future work
 - **Worker result publishing** — `WorkerResultEvent` on `kernelq.jobs.results`
 - **Python result consumer skeleton** — `KafkaResultConsumer` + `ResultStateHandler` (one-shot poll)
 - **Postgres state updates from worker results** — `succeeded`, `retryable_failure`, `terminal_failure` mapping
@@ -50,7 +50,7 @@ What works today (local / dev):
 - **Local Prometheus service** — `docker compose up -d prometheus` (UI on `:9090`)
 - **Local Grafana service and starter dashboard** — `docker compose up -d grafana` (UI on `:3000`; **KernelQ MVP** charts `kernelq_jobs_by_state`)
 - **Structured script logs** — one-shot scripts print `event=<name>` summary lines for operator/debug visibility (complements Prometheus)
-- **Smoke tests** — success, retry requeue, exhaustion, and queue-wait latency (`smoke_queue_wait_metrics.sh`)
+- **Smoke tests** — success, retry requeue, exhaustion, queue-wait latency (`smoke_queue_wait_metrics.sh`), and worker queue saturation (`smoke_queue_saturation.sh`)
 
 ---
 
@@ -114,6 +114,7 @@ docker compose up -d postgres zookeeper kafka
 | `./control_plane/scripts/smoke_retry_requeue.sh` | **retryable_failure** → `retry_scheduled` → `queued` → `dispatched` (no Go worker for retry inject) |
 | `./control_plane/scripts/smoke_retry_exhaustion.sh` | Exhausted retries → **dead_lettered**; scanner does not requeue |
 | `./control_plane/scripts/smoke_queue_wait_metrics.sh` | Non-zero queue wait from **`dispatched_at`** (`queue_wait_seconds > 0`) |
+| `./worker/scripts/smoke_queue_saturation.sh` | Bounded worker queue saturation (**`work_queue_full_errors > 0`**); **`event=smoke_worker_queue_saturation success=true`** (no Kafka) |
 
 Each smoke script prints a structured **`event=smoke_*`** summary line (`success=true|false`) at the end — grep these to verify demo success quickly:
 

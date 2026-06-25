@@ -156,6 +156,16 @@ The script starts Kafka, builds and runs the worker, produces a valid **`Dispatc
 ./worker/scripts/smoke_worker_result.sh
 ```
 
+## Worker Queue Saturation Smoke Test
+
+**`worker/scripts/smoke_queue_saturation.sh`** verifies bounded-queue saturation stats on the consumer enqueue path. Run it from the **repository root** (Go only — **no Kafka**).
+
+The underlying test uses **`worker_count=1`** and **`queue_capacity=1`**, blocks worker execution with a barrier so the queue fills, submits multiple jobs quickly, and expects **`work_queue_full_errors > 0`** (plus **`work_items_enqueued > 0`** and **`work_queue_capacity == 1`**).
+
+```bash
+./worker/scripts/smoke_queue_saturation.sh
+```
+
 ## Kafka Consumer
 
 The worker now includes **`KafkaConsumer`** in `internal/worker/kafka_consumer.go`. It adapts confluent-kafka-go records into our in-memory **`Message`** type and passes them to **`ConsumerRunner`**.
