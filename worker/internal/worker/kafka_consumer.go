@@ -43,6 +43,7 @@ type ConsumerStats struct {
 	MessageErrors           int
 	KafkaErrors             int
 	WorkQueueCapacity       int
+	WorkQueueDepth          int
 	WorkItemsEnqueued       int
 	WorkQueueFullErrors     int
 	DeadLettersPublished    int
@@ -116,7 +117,10 @@ func (c *KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 	)
 	c.recordWorkQueueCapacity(pool.QueueCapacity())
 	pool.Start()
-	defer pool.Shutdown()
+	defer func() {
+		c.recordWorkQueueDepth(pool.QueueDepth())
+		pool.Shutdown()
+	}()
 
 	for {
 		if ctx.Err() != nil {
@@ -174,6 +178,7 @@ func (c *KafkaConsumer) enqueueKafkaMessage(pool *WorkerPool, msg *kafka.Message
 		}
 	}
 	c.incWorkItemsEnqueued()
+	c.recordWorkQueueDepth(pool.QueueDepth())
 }
 
 // handleQueueFull records saturation when the bounded worker queue rejects a job.
@@ -195,6 +200,12 @@ func (c *KafkaConsumer) handleQueueFull(event DispatchEvent, queueCapacity int, 
 func (c *KafkaConsumer) recordWorkQueueCapacity(capacity int) {
 	c.statsMu.Lock()
 	c.Stats.WorkQueueCapacity = capacity
+	c.statsMu.Unlock()
+}
+
+func (c *KafkaConsumer) recordWorkQueueDepth(depth int) {
+	c.statsMu.Lock()
+	c.Stats.WorkQueueDepth = depth
 	c.statsMu.Unlock()
 }
 

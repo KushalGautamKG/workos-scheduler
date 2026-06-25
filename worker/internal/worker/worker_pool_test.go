@@ -232,6 +232,108 @@ func TestWorkerPoolEnqueueReturnsErrorWhenQueueFull(t *testing.T) {
 	pool.Shutdown()
 }
 
+func TestQueueDepthStartsAtZero(t *testing.T) {
+	pool := NewWorkerPool(1, 3, &countingHandler{}, nil, nil)
+	if depth := pool.QueueDepth(); depth != 0 {
+		t.Fatalf("expected queue depth 0 before start, got %d", depth)
+	}
+
+	pool.Start()
+	defer pool.Shutdown()
+
+	if depth := pool.QueueDepth(); depth != 0 {
+		t.Fatalf("expected queue depth 0 after start with no enqueues, got %d", depth)
+	}
+}
+
+func TestQueueDepthIncreasesWhenWorkerBlocked(t *testing.T) {
+	release := make(chan struct{})
+	executor := newBlockingExecutor(release, 3)
+	handler := handlerWithExecutor(executor)
+
+	pool := NewWorkerPool(1, 3, handler, nil, nil)
+	pool.Start()
+	defer func() {
+		close(release)
+		pool.Shutdown()
+	}()
+
+	if err := pool.Enqueue(workItemForJobID("job-1")); err != nil {
+		t.Fatalf("expected first enqueue to succeed, got %v", err)
+	}
+
+	select {
+	case <-executor.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for worker to start first job")
+	}
+
+	if pool.QueueDepth() != 0 {
+		t.Fatalf("expected queue depth 0 while worker holds first job, got %d", pool.QueueDepth())
+	}
+
+	if err := pool.Enqueue(workItemForJobID("job-2")); err != nil {
+		t.Fatalf("expected second enqueue to succeed, got %v", err)
+	}
+	if err := pool.Enqueue(workItemForJobID("job-3")); err != nil {
+		t.Fatalf("expected third enqueue to succeed, got %v", err)
+	}
+
+	if depth := pool.QueueDepth(); depth != 2 {
+		t.Fatalf("expected queue depth 2 with worker blocked, got %d", depth)
+	}
+}
+
+func TestQueueDepthDecreasesAfterWorkerDrains(t *testing.T) {
+	release := make(chan struct{})
+	executor := newBlockingExecutor(release, 2)
+	handler := handlerWithExecutor(executor)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	pool := NewWorkerPool(1, 2, handler, func(_ string, _ WorkItem) {
+		wg.Done()
+	}, nil)
+	pool.Start()
+	defer pool.Shutdown()
+
+	if err := pool.Enqueue(workItemForJobID("job-1")); err != nil {
+		t.Fatalf("expected first enqueue to succeed, got %v", err)
+	}
+
+	select {
+	case <-executor.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for worker to start first job")
+	}
+
+	if err := pool.Enqueue(workItemForJobID("job-2")); err != nil {
+		t.Fatalf("expected second enqueue to succeed, got %v", err)
+	}
+	if depth := pool.QueueDepth(); depth != 1 {
+		t.Fatalf("expected queue depth 1 before drain, got %d", depth)
+	}
+
+	close(release)
+
+	drained := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(drained)
+	}()
+
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for workers to drain queued jobs")
+	}
+
+	if depth := pool.QueueDepth(); depth != 0 {
+		t.Fatalf("expected queue depth 0 after drain, got %d", depth)
+	}
+}
+
 func TestWorkerPoolRespectsQueueCapacityConfiguration(t *testing.T) {
 	const configuredCapacity = 25
 	pool := NewWorkerPool(2, configuredCapacity, &countingHandler{}, nil, nil)

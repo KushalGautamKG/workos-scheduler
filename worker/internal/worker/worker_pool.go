@@ -113,6 +113,11 @@ func (pool *WorkerPool) QueueCapacity() int {
 	return pool.queueCapacity
 }
 
+// QueueDepth returns how many items are waiting in the bounded queue.
+func (pool *WorkerPool) QueueDepth() int {
+	return len(pool.workCh)
+}
+
 func (pool *WorkerPool) runWorker(workerID string) {
 	defer pool.wg.Done()
 

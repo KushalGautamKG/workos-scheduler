@@ -110,11 +110,7 @@ func main() {
 	}
 
 	fmt.Println("KernelQ worker consumer stopped")
-	fmt.Printf("messages_seen=%d\n", kafkaConsumer.Stats.MessagesSeen)
-	fmt.Printf("messages_processed=%d\n", kafkaConsumer.Stats.MessagesProcessed)
-	fmt.Printf("message_errors=%d\n", kafkaConsumer.Stats.MessageErrors)
-	fmt.Printf("kafka_errors=%d\n", kafkaConsumer.Stats.KafkaErrors)
-	fmt.Printf("work_queue_capacity=%d\n", kafkaConsumer.Stats.WorkQueueCapacity)
-	fmt.Printf("work_items_enqueued=%d\n", kafkaConsumer.Stats.WorkItemsEnqueued)
-	fmt.Printf("work_queue_full_errors=%d\n", kafkaConsumer.Stats.WorkQueueFullErrors)
+	for _, line := range worker.ConsumerShutdownStatsLines(kafkaConsumer.Stats) {
+		fmt.Println(line)
+	}
 }

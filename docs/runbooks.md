@@ -56,9 +56,9 @@ Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throug
 
 **Worker saturation**
 
-- **Symptoms:** **`work_queue_full_errors`** rising in shutdown stats; grep **`event=worker_queue_full`** in consumer logs.
-- **Current mitigation:** Inspect **`work_queue_full_errors`** and worker capacity—tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`**, confirm executors are not stuck; run **`./worker/scripts/smoke_queue_saturation.sh`** to verify the boundary locally.
-- **Future mitigation:** **Kafka pause/resume** policy (pause partition fetch at high watermark, resume after drain)—design in [`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md); **not implemented yet**.
+- **Symptoms:** **`work_queue_full_errors`** rising; high **`work_queue_depth`** vs **`work_queue_capacity`** at shutdown; grep **`event=worker_queue_full`**.
+- **Current mitigation:** Inspect **`work_queue_full_errors`**, **`work_queue_depth`** (gauge), and worker capacity—tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`**; run **`./worker/scripts/smoke_queue_saturation.sh`**. **`work_items_enqueued`** is cumulative, not current load.
+- **Future mitigation:** **Kafka pause/resume** driven by **`work_queue_depth`** vs **high/low watermarks**—[`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md); **not implemented yet**.
 
 If **`dispatched_jobs` < `generated_jobs`**, inspect:
 

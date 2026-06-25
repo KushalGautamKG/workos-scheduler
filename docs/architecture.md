@@ -124,7 +124,7 @@ A **bounded queue** is a waiting line with a **maximum capacity**. When it is fu
 
 **Where this fits in KernelQ:** rejection semantics are enforced in the **Python control plane**—API validation, admission checks, and queueing—**before** work is **dispatched to Kafka**. That is where KernelQ can return **clear, distinct outcomes** to callers and attach **metrics and logs** per reason.
 
-**Worker plane (Go):** the consumer also uses a **bounded in-process queue** between Kafka poll and executor pool. **Today:** saturation logs **`event=worker_queue_full`**, increments **`work_queue_full_errors`**, and applies **local backoff** (50ms, one retry)—reactive throttling inside the process. **Planned upgrade:** **Kafka pause/resume** ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))—**pause partition fetch** when depth crosses a **high watermark**, **resume** after drain below a **low watermark** (hysteresis). **Not implemented yet**; design doc only.
+**Worker plane (Go):** bounded in-process queue between Kafka poll and executor pool. **Today:** **`work_queue_depth`** reported at shutdown (point-in-time **gauge**); **`work_items_enqueued`** stays **cumulative**; local backoff on **`event=worker_queue_full`**. **Planned:** **Kafka pause/resume** using **`work_queue_depth`** vs **high/low watermarks** ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))—not implemented yet.
 
 ## Combined Scheduling Pipeline
 

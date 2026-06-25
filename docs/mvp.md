@@ -30,7 +30,7 @@ What works today (local / dev):
 - **Kafka dispatch publishing** — scheduler tick publishes `DispatchEvent` to `kernelq.jobs.dispatch`
 - **Go Kafka worker consumer** — poll loop, message validation, execution handler
 - **Go worker pool** — configurable concurrent executors (**default 4**); consumer reads Kafka, workers run jobs in parallel (`worker/internal/worker/worker_pool.go`)
-- **Bounded worker work queue** — default **100** (`KERNELQ_WORKER_QUEUE_CAPACITY`); **`event=worker_queue_full`** + saturation stats; **local backoff only today** (Day 82: **50ms**, one retry); **`smoke_queue_saturation.sh`** proves visibility. **Kafka pause/resume** is a **planned backpressure upgrade** ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))—future implementation will **pause partition consumption** at a **high queue watermark** and **resume** below a **low watermark** (not built yet)
+- **Bounded worker work queue** — default **100** (`KERNELQ_WORKER_QUEUE_CAPACITY`); **`work_queue_depth`** (point-in-time gauge, shutdown stats) + cumulative **`work_items_enqueued`**; **local backoff** today (Day 82); **`work_queue_depth`** will drive future **high/low watermark** Kafka pause/resume ([design doc](design/kafka-pause-resume-backpressure.md), not built yet)
 - **Worker result publishing** — `WorkerResultEvent` on `kernelq.jobs.results`
 - **Python result consumer skeleton** — `KafkaResultConsumer` + `ResultStateHandler` (one-shot poll)
 - **Postgres state updates from worker results** — `succeeded`, `retryable_failure`, `terminal_failure` mapping

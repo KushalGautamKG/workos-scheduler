@@ -198,8 +198,8 @@ go run ./cmd/consumer
 - **Bounded work queue** — buffered channel caps waiting jobs (**default capacity 100**). This is KernelQ’s **first backpressure boundary** on the worker side: memory stays bounded and saturation is visible.
 - **Configure queue size** — set **`KERNELQ_WORKER_QUEUE_CAPACITY`** before starting **`cmd/consumer`** (unset or `<= 0` → default **100**). Startup logs **`worker_count=… queue_capacity=…`**.
 - **Queue full** — non-blocking **`Enqueue`**; on **`worker queue full`**: log **`event=worker_queue_full`**, increment **`work_queue_full_errors`**, **50ms backoff**, **retry enqueue once**. If the retry succeeds, processing continues; if not, the job is dropped (no DLQ). Poll loop **keeps running**—still **not Kafka pause/resume**.
-- **Saturation stats** — **`ConsumerStats`** tracks **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** (distinct from **`message_errors`**).
-- **Shutdown summary** — **`cmd/consumer`** prints **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** alongside **`messages_seen`**, **`messages_processed`**, **`message_errors`**, and **`kafka_errors`**.
+- **Saturation stats** — **`ConsumerStats`** tracks **`work_queue_capacity`**, **`work_queue_depth`** (point-in-time gauge—jobs waiting in the buffer now), **`work_items_enqueued`** (cumulative), and **`work_queue_full_errors`** (distinct from **`message_errors`**). **`work_queue_depth`** will drive future **high/low watermark** Kafka pause/resume.
+- **Shutdown summary** — **`cmd/consumer`** prints **`work_queue_capacity`**, **`work_queue_depth`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** alongside **`messages_seen`**, **`messages_processed`**, **`message_errors`**, and **`kafka_errors`**.
 - **Future work** — **worker autoscaling** (today: tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`** manually). See **Kafka Pause/Resume Backpressure** below.
 
 ```bash
@@ -211,7 +211,7 @@ KERNELQ_WORKER_QUEUE_CAPACITY=50 go run ./cmd/consumer
 
 **Today:** **bounded queue** + **local backoff** (50ms, one retry on queue full). See **Worker Pool and Bounded Queue** above.
 
-**Future:** full design in [`docs/design/kafka-pause-resume-backpressure.md`](../docs/design/kafka-pause-resume-backpressure.md). When the queue is saturated, **pause** assigned Kafka partitions (stop fetching); after the queue drains below a low watermark, **resume** consumption. Workers keep executing in-flight work during pause.
+**Future:** full design in [`docs/design/kafka-pause-resume-backpressure.md`](../docs/design/kafka-pause-resume-backpressure.md). **`work_queue_depth`** (now in shutdown stats) is the planned input for **high/low watermarks**—**pause** partition fetch when saturated, **resume** after drain. Workers keep executing in-flight work during pause.
 
 ## Invalid Message Handling
 
@@ -219,7 +219,7 @@ The worker **no longer exits** when it sees a malformed dispatch message (bad JS
 
 - **`Run`** increments **`MessageErrors`** and **keeps polling** so one poison record does not stop the whole process.
 - When **`DeadLetterProducer`** is wired, failures also publish a **`DeadLetterEvent`** (see **DLQ Routing Boundary**).
-- **`cmd/consumer`** prints **`message_errors`**, work-queue saturation stats (**`work_queue_capacity`**, **`work_items_enqueued`**, **`work_queue_full_errors`**), and DLQ stats in the shutdown summary.
+- **`cmd/consumer`** prints **`message_errors`**, work-queue stats (**`work_queue_capacity`**, **`work_queue_depth`**, **`work_items_enqueued`**, **`work_queue_full_errors`**), and DLQ stats in the shutdown summary.
 - **Kafka broker errors** (`kafka.Error`) still **stop the worker** for now.
 
 ## Dead Letter Queue Boundary
