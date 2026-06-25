@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
@@ -16,6 +17,13 @@ import (
 // workerIdentity is stored on DeadLetterEvent records so operators know
 // which worker process rejected a message.
 const workerIdentity = "kernelq-go-worker"
+
+// queueFullEnqueueRetryDelay is how long the poll loop waits before one retry
+// when the bounded work queue rejects a job. Kafka pause/resume is future work.
+var queueFullEnqueueRetryDelay = 50 * time.Millisecond
+
+// sleepQueueFullRetry backs off before a queue-full retry (overridable in tests).
+var sleepQueueFullRetry = time.Sleep
 
 // KafkaPoller is the small broker surface Run needs for polling.
 //
@@ -148,14 +156,22 @@ func (c *KafkaConsumer) enqueueKafkaMessage(pool *WorkerPool, msg *kafka.Message
 		return
 	}
 
-	if err := pool.Enqueue(WorkItem{
+	item := WorkItem{
 		Event:         event,
 		OriginalKey:   string(msg.Key),
 		OriginalValue: msg.Value,
 		SourceTopic:   sourceTopicFromMessage(msg),
-	}); err != nil {
+	}
+
+	if err := pool.Enqueue(item); err != nil {
+		if err != ErrWorkerQueueFull {
+			return
+		}
 		c.handleQueueFull(event, pool.QueueCapacity(), err)
-		return
+		sleepQueueFullRetry(queueFullEnqueueRetryDelay)
+		if err := pool.Enqueue(item); err != nil {
+			return
+		}
 	}
 	c.incWorkItemsEnqueued()
 }

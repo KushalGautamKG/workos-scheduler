@@ -197,7 +197,7 @@ go run ./cmd/consumer
 
 - **Bounded work queue** — buffered channel caps waiting jobs (**default capacity 100**). This is KernelQ’s **first backpressure boundary** on the worker side: memory stays bounded and saturation is visible.
 - **Configure queue size** — set **`KERNELQ_WORKER_QUEUE_CAPACITY`** before starting **`cmd/consumer`** (unset or `<= 0` → default **100**). Startup logs **`worker_count=… queue_capacity=…`**.
-- **Queue full** — **`Enqueue`** uses a non-blocking send; when the buffer is full it returns **`worker queue full`**, logs **`event=worker_queue_full job_id=… queue_capacity=…`**, and increments **`work_queue_full_errors`**. The poll loop **keeps running**—no DLQ for saturation.
+- **Queue full** — non-blocking **`Enqueue`**; on **`worker queue full`**: log **`event=worker_queue_full`**, increment **`work_queue_full_errors`**, **50ms backoff**, **retry enqueue once**. If the retry succeeds, processing continues; if not, the job is dropped (no DLQ). Poll loop **keeps running**—still **not Kafka pause/resume**.
 - **Saturation stats** — **`ConsumerStats`** tracks **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** (distinct from **`message_errors`**).
 - **Shutdown summary** — **`cmd/consumer`** prints **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** alongside **`messages_seen`**, **`messages_processed`**, **`message_errors`**, and **`kafka_errors`**.
 - **Future work** — **Kafka pause/resume** on saturation and **worker autoscaling** (today: tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`** manually).

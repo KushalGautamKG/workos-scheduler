@@ -11,7 +11,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WORKER_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${WORKER_DIR}"
-go test ./internal/worker -run TestWorkerQueueSaturation -v
+go test ./internal/worker -run TestQueueFull -v
 
 echo "PASS: worker queue saturation smoke test succeeded"
-echo "event=smoke_worker_queue_saturation success=true"
+echo "event=smoke_worker_queue_saturation"
+echo "backoff_enabled=true"
+echo "success=true"

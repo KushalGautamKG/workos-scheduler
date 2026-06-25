@@ -1,34 +1,42 @@
 package worker
 
 import (
-	"fmt"
+	"runtime"
+	"sync"
 	"testing"
 	"time"
 )
 
-// TestWorkerQueueSaturationStats exercises the consumer enqueue path under a
-// blocked executor. No real Kafka — pool capacity 1, one worker, barrier sync.
-func TestWorkerQueueSaturationStats(t *testing.T) {
-	const (
-		workerCount   = 1
-		queueCapacity = 1
-		extraJobs     = 3
-	)
+func restoreQueueFullRetrySleep(t *testing.T) {
+	t.Helper()
+	original := sleepQueueFullRetry
+	t.Cleanup(func() {
+		sleepQueueFullRetry = original
+	})
+}
+
+// saturatedPoolForQueueFullTests returns a blocked pool (worker_count=1, queue_capacity=1)
+// with job-1 running and job-2 waiting in the buffer.
+func saturatedPoolForQueueFullTests(t *testing.T) (*KafkaConsumer, *WorkerPool, *blockingExecutor, chan struct{}) {
+	t.Helper()
 
 	release := make(chan struct{})
-	executor := newBlockingExecutor(release, 1+extraJobs)
+	var releaseOnce sync.Once
+	closeRelease := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
+
+	executor := newBlockingExecutor(release, 4)
 	handler := handlerWithExecutor(executor)
 	consumer := &KafkaConsumer{
 		Runner: ConsumerRunner{Handler: handler},
 	}
-
-	pool := NewWorkerPool(workerCount, queueCapacity, handler, nil, nil)
-	consumer.recordWorkQueueCapacity(pool.QueueCapacity())
+	pool := NewWorkerPool(1, 1, handler, nil, nil)
 	pool.Start()
-	defer func() {
-		close(release)
+	t.Cleanup(func() {
+		closeRelease()
 		pool.Shutdown()
-	}()
+	})
 
 	consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-1", validDispatchJSON()))
 
@@ -38,21 +46,149 @@ func TestWorkerQueueSaturationStats(t *testing.T) {
 		t.Fatal("timed out waiting for worker to block on first job")
 	}
 
-	for index := 2; index <= 1+extraJobs; index++ {
-		key := fmt.Sprintf("job-%d", index)
-		consumer.enqueueKafkaMessage(pool, newKafkaMessage(key, validDispatchJSON()))
+	consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-2", validDispatchJSON()))
+	return consumer, pool, executor, release
+}
+
+func TestQueueFullTriggersBackoff(t *testing.T) {
+	restoreQueueFullRetrySleep(t)
+
+	backoffObserved := make(chan struct{}, 1)
+	sleepQueueFullRetry = func(time.Duration) {
+		backoffObserved <- struct{}{}
 	}
 
-	if consumer.Stats.WorkQueueCapacity != queueCapacity {
-		t.Fatalf("expected WorkQueueCapacity %d, got %d", queueCapacity, consumer.Stats.WorkQueueCapacity)
+	consumer, pool, _, _ := saturatedPoolForQueueFullTests(t)
+	consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-3", validDispatchJSON()))
+
+	select {
+	case <-backoffObserved:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected queue-full backoff before retry")
 	}
-	if consumer.Stats.WorkItemsEnqueued <= 0 {
-		t.Fatalf("expected WorkItemsEnqueued > 0, got %d", consumer.Stats.WorkItemsEnqueued)
+}
+
+func TestQueueFullRetrySucceedsAfterQueueFrees(t *testing.T) {
+	restoreQueueFullRetrySleep(t)
+
+	backoffStarted := make(chan struct{}, 1)
+	backoffRelease := make(chan struct{})
+	sleepQueueFullRetry = func(time.Duration) {
+		backoffStarted <- struct{}{}
+		<-backoffRelease
 	}
-	if consumer.Stats.WorkQueueFullErrors <= 0 {
-		t.Fatalf("expected WorkQueueFullErrors > 0, got %d", consumer.Stats.WorkQueueFullErrors)
+
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	closeRelease := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
+
+	executor := newBlockingExecutor(release, 3)
+	handler := handlerWithExecutor(executor)
+	consumer := &KafkaConsumer{
+		Runner: ConsumerRunner{Handler: handler},
+	}
+	pool := NewWorkerPool(1, 1, handler, nil, nil)
+	pool.Start()
+	t.Cleanup(func() {
+		closeRelease()
+		pool.Shutdown()
+	})
+
+	consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-1", validDispatchJSON()))
+
+	select {
+	case <-executor.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for worker to block on first job")
+	}
+
+	consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-2", validDispatchJSON()))
+
+	done := make(chan struct{})
+	go func() {
+		consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-3", validDispatchJSON()))
+		close(done)
+	}()
+
+	select {
+	case <-backoffStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for queue-full backoff")
+	}
+
+	closeRelease()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for len(executor.processedJobIDs()) < 2 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if len(executor.processedJobIDs()) < 2 {
+		t.Fatal("timed out waiting for in-flight jobs to finish")
+	}
+
+	backoffRelease <- struct{}{}
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for enqueue with retry")
+	}
+
+	if consumer.Stats.WorkQueueFullErrors != 1 {
+		t.Fatalf("expected WorkQueueFullErrors 1, got %d", consumer.Stats.WorkQueueFullErrors)
+	}
+	if consumer.Stats.WorkItemsEnqueued != 3 {
+		t.Fatalf("expected WorkItemsEnqueued 3 after retry, got %d", consumer.Stats.WorkItemsEnqueued)
+	}
+}
+
+func TestQueueFullRetryFailurePreservesDroppedBehavior(t *testing.T) {
+	restoreQueueFullRetrySleep(t)
+
+	sleepQueueFullRetry = func(time.Duration) {}
+
+	consumer, pool, _, _ := saturatedPoolForQueueFullTests(t)
+	consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-3", validDispatchJSON()))
+
+	if consumer.Stats.MessagesSeen != 3 {
+		t.Fatalf("expected MessagesSeen 3, got %d", consumer.Stats.MessagesSeen)
+	}
+	if consumer.Stats.WorkItemsEnqueued != 2 {
+		t.Fatalf("expected WorkItemsEnqueued 2, got %d", consumer.Stats.WorkItemsEnqueued)
+	}
+	if consumer.Stats.WorkQueueFullErrors != 1 {
+		t.Fatalf("expected WorkQueueFullErrors 1, got %d", consumer.Stats.WorkQueueFullErrors)
 	}
 	if consumer.Stats.MessageErrors != 0 {
-		t.Fatalf("expected MessageErrors 0 (saturation is not a decode/handler error), got %d", consumer.Stats.MessageErrors)
+		t.Fatalf("expected MessageErrors 0, got %d", consumer.Stats.MessageErrors)
+	}
+	if consumer.Stats.MessagesProcessed != 0 {
+		t.Fatalf("expected MessagesProcessed 0 while worker blocked, got %d", consumer.Stats.MessagesProcessed)
+	}
+}
+
+func TestQueueFullCounterIncrementsOncePerMessage(t *testing.T) {
+	restoreQueueFullRetrySleep(t)
+
+	sleepQueueFullRetry = func(time.Duration) {}
+
+	consumer, pool, _, _ := saturatedPoolForQueueFullTests(t)
+
+	before := consumer.Stats.WorkQueueFullErrors
+	consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-3", validDispatchJSON()))
+	afterOneDrop := consumer.Stats.WorkQueueFullErrors
+	consumer.enqueueKafkaMessage(pool, newKafkaMessage("job-4", validDispatchJSON()))
+	afterTwoDrops := consumer.Stats.WorkQueueFullErrors
+
+	if afterOneDrop-before != 1 {
+		t.Fatalf("expected 1 queue-full error for first dropped message, got %d", afterOneDrop-before)
+	}
+	if afterTwoDrops-afterOneDrop != 1 {
+		t.Fatalf("expected 1 queue-full error for second dropped message, got %d", afterTwoDrops-afterOneDrop)
+	}
+	if afterTwoDrops-before != 2 {
+		t.Fatalf("expected 2 total queue-full errors, got %d", afterTwoDrops-before)
 	}
 }

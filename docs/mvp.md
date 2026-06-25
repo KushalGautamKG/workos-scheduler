@@ -30,7 +30,7 @@ What works today (local / dev):
 - **Kafka dispatch publishing** — scheduler tick publishes `DispatchEvent` to `kernelq.jobs.dispatch`
 - **Go Kafka worker consumer** — poll loop, message validation, execution handler
 - **Go worker pool** — configurable concurrent executors (**default 4**); consumer reads Kafka, workers run jobs in parallel (`worker/internal/worker/worker_pool.go`)
-- **Bounded worker work queue** — default capacity **100** (`KERNELQ_WORKER_QUEUE_CAPACITY`); saturation stats and **`event=worker_queue_full`** logs; **`./worker/scripts/smoke_queue_saturation.sh`** proves the boundary (**`event=smoke_worker_queue_saturation success=true`**, **`work_queue_full_errors > 0`**) — visibility only; **Kafka pause/resume** and **autoscaling** future work
+- **Bounded worker work queue** — default **100** (`KERNELQ_WORKER_QUEUE_CAPACITY`); **`event=worker_queue_full`** + saturation stats; **Day 82 local backoff** (**50ms**, one retry) reduces burst enqueue pressure; **`smoke_queue_saturation.sh`** proves visibility — **Kafka pause/resume** and **autoscaling** future work
 - **Worker result publishing** — `WorkerResultEvent` on `kernelq.jobs.results`
 - **Python result consumer skeleton** — `KafkaResultConsumer` + `ResultStateHandler` (one-shot poll)
 - **Postgres state updates from worker results** — `succeeded`, `retryable_failure`, `terminal_failure` mapping
