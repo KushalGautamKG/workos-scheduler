@@ -200,12 +200,18 @@ go run ./cmd/consumer
 - **Queue full** — non-blocking **`Enqueue`**; on **`worker queue full`**: log **`event=worker_queue_full`**, increment **`work_queue_full_errors`**, **50ms backoff**, **retry enqueue once**. If the retry succeeds, processing continues; if not, the job is dropped (no DLQ). Poll loop **keeps running**—still **not Kafka pause/resume**.
 - **Saturation stats** — **`ConsumerStats`** tracks **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** (distinct from **`message_errors`**).
 - **Shutdown summary** — **`cmd/consumer`** prints **`work_queue_capacity`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** alongside **`messages_seen`**, **`messages_processed`**, **`message_errors`**, and **`kafka_errors`**.
-- **Future work** — **Kafka pause/resume** on saturation and **worker autoscaling** (today: tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`** manually).
+- **Future work** — **worker autoscaling** (today: tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`** manually). See **Kafka Pause/Resume Backpressure** below.
 
 ```bash
 go test ./...
 KERNELQ_WORKER_QUEUE_CAPACITY=50 go run ./cmd/consumer
 ```
+
+## Kafka Pause/Resume Backpressure
+
+**Today:** **bounded queue** + **local backoff** (50ms, one retry on queue full). See **Worker Pool and Bounded Queue** above.
+
+**Future:** full design in [`docs/design/kafka-pause-resume-backpressure.md`](../docs/design/kafka-pause-resume-backpressure.md). When the queue is saturated, **pause** assigned Kafka partitions (stop fetching); after the queue drains below a low watermark, **resume** consumption. Workers keep executing in-flight work during pause.
 
 ## Invalid Message Handling
 

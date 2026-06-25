@@ -30,7 +30,7 @@ What works today (local / dev):
 - **Kafka dispatch publishing** — scheduler tick publishes `DispatchEvent` to `kernelq.jobs.dispatch`
 - **Go Kafka worker consumer** — poll loop, message validation, execution handler
 - **Go worker pool** — configurable concurrent executors (**default 4**); consumer reads Kafka, workers run jobs in parallel (`worker/internal/worker/worker_pool.go`)
-- **Bounded worker work queue** — default **100** (`KERNELQ_WORKER_QUEUE_CAPACITY`); **`event=worker_queue_full`** + saturation stats; **Day 82 local backoff** (**50ms**, one retry) reduces burst enqueue pressure; **`smoke_queue_saturation.sh`** proves visibility — **Kafka pause/resume** and **autoscaling** future work
+- **Bounded worker work queue** — default **100** (`KERNELQ_WORKER_QUEUE_CAPACITY`); **`event=worker_queue_full`** + saturation stats; **local backoff only today** (Day 82: **50ms**, one retry); **`smoke_queue_saturation.sh`** proves visibility. **Kafka pause/resume** is a **planned backpressure upgrade** ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))—future implementation will **pause partition consumption** at a **high queue watermark** and **resume** below a **low watermark** (not built yet)
 - **Worker result publishing** — `WorkerResultEvent` on `kernelq.jobs.results`
 - **Python result consumer skeleton** — `KafkaResultConsumer` + `ResultStateHandler` (one-shot poll)
 - **Postgres state updates from worker results** — `succeeded`, `retryable_failure`, `terminal_failure` mapping
@@ -176,7 +176,7 @@ Honest gaps — not production-ready yet:
 - **Structured logs** — one-shot scripts only; no centralized log aggregation yet
 - **Security** — no auth, no multi-user tenancy enforcement beyond `tenant_id` on rows
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
-- **Retry backoff** — basic fixed delay (`retry_after`); no exponential backoff + jitter
+- **Worker Kafka backpressure** — **local backoff only** (queue full → 50ms retry); **Kafka pause/resume** designed but not implemented ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
 - **Config / secrets** — no production-grade secret management or env-based config layering
 

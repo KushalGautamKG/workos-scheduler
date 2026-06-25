@@ -52,7 +52,13 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 
 Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throughput. **`--trials`** repeats runs with a unique prefix per trial and reports **min/avg/max** **`jobs_dispatched_per_second`** — use repeated trials for more credible local numbers. Still **local baselines**, not production capacity claims (`event=benchmark_scheduler_throughput`).
 
-**Go worker pool:** **`cmd/consumer`** uses a **worker pool** (default **4** workers) with a **bounded work queue** (default **100** slots). When full: log **`event=worker_queue_full`**, increment **`work_queue_full_errors`**, then **Day 82 local backoff** (**50ms**, **one retry**) to **reduce enqueue pressure during bursts**—poll loop continues. **`smoke_queue_saturation.sh`** validates saturation (no Kafka). **Future work:** **Kafka pause/resume**, **autoscaling**, throughput benchmark.
+**Go worker pool:** **`cmd/consumer`** uses a **worker pool** (default **4** workers) with a **bounded work queue** (default **100** slots). When full: log **`event=worker_queue_full`**, increment **`work_queue_full_errors`**, then **Day 82 local backoff** (**50ms**, **one retry**) to **reduce enqueue pressure during bursts**—poll loop continues. **`smoke_queue_saturation.sh`** validates saturation (no Kafka).
+
+**Worker saturation**
+
+- **Symptoms:** **`work_queue_full_errors`** rising in shutdown stats; grep **`event=worker_queue_full`** in consumer logs.
+- **Current mitigation:** Inspect **`work_queue_full_errors`** and worker capacity—tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`**, confirm executors are not stuck; run **`./worker/scripts/smoke_queue_saturation.sh`** to verify the boundary locally.
+- **Future mitigation:** **Kafka pause/resume** policy (pause partition fetch at high watermark, resume after drain)—design in [`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md); **not implemented yet**.
 
 If **`dispatched_jobs` < `generated_jobs`**, inspect:
 
