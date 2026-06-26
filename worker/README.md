@@ -209,9 +209,9 @@ KERNELQ_WORKER_QUEUE_CAPACITY=50 go run ./cmd/consumer
 
 ## Kafka Pause/Resume Backpressure
 
-**Today:** **bounded queue** + **local backoff** (50ms, one retry on queue full). See **Worker Pool and Bounded Queue** above.
+**Today:** **bounded queue** + **local backoff** (50ms, one retry on queue full). **`BackpressurePolicy`** (`backpressure_policy.go`) exists—default **high 80%** / **low 50%** watermarks with **hysteresis** to avoid pause/resume flapping (`ShouldPause` / `ShouldResume` on **`work_queue_depth`**). **Policy-only**; not wired to Kafka yet.
 
-**Future:** full design in [`docs/design/kafka-pause-resume-backpressure.md`](../docs/design/kafka-pause-resume-backpressure.md). **`work_queue_depth`** (now in shutdown stats) is the planned input for **high/low watermarks**—**pause** partition fetch when saturated, **resume** after drain. Workers keep executing in-flight work during pause.
+**Next:** wire policy into the poll loop—**pause** partition fetch at high watermark, **resume** after drain. Design: [`docs/design/kafka-pause-resume-backpressure.md`](../docs/design/kafka-pause-resume-backpressure.md).
 
 ## Invalid Message Handling
 

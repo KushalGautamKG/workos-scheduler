@@ -30,7 +30,7 @@ What works today (local / dev):
 - **Kafka dispatch publishing** — scheduler tick publishes `DispatchEvent` to `kernelq.jobs.dispatch`
 - **Go Kafka worker consumer** — poll loop, message validation, execution handler
 - **Go worker pool** — configurable concurrent executors (**default 4**); consumer reads Kafka, workers run jobs in parallel (`worker/internal/worker/worker_pool.go`)
-- **Bounded worker work queue** — default **100** (`KERNELQ_WORKER_QUEUE_CAPACITY`); **`work_queue_depth`** (point-in-time gauge, shutdown stats) + cumulative **`work_items_enqueued`**; **local backoff** today (Day 82); **`work_queue_depth`** will drive future **high/low watermark** Kafka pause/resume ([design doc](design/kafka-pause-resume-backpressure.md), not built yet)
+- **Bounded worker work queue** — default **100**; **`work_queue_depth`** + **`work_queue_capacity`**; **Day 85** testable **`BackpressurePolicy`** (high/low watermarks, hysteresis)—**policy-only**, no Kafka **`Pause`/`Resume`** yet; **Day 82** local backoff active at runtime ([design doc](design/kafka-pause-resume-backpressure.md))
 - **Worker result publishing** — `WorkerResultEvent` on `kernelq.jobs.results`
 - **Python result consumer skeleton** — `KafkaResultConsumer` + `ResultStateHandler` (one-shot poll)
 - **Postgres state updates from worker results** — `succeeded`, `retryable_failure`, `terminal_failure` mapping
@@ -176,7 +176,7 @@ Honest gaps — not production-ready yet:
 - **Structured logs** — one-shot scripts only; no centralized log aggregation yet
 - **Security** — no auth, no multi-user tenancy enforcement beyond `tenant_id` on rows
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
-- **Worker Kafka backpressure** — **local backoff only** (queue full → 50ms retry); **Kafka pause/resume** designed but not implemented ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
+- **Worker Kafka backpressure** — **Day 82** local backoff at runtime; **Day 85** **`BackpressurePolicy`** (high/low watermarks on depth/capacity)—no Kafka pause/resume API yet ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
