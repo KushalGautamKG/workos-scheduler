@@ -1,6 +1,16 @@
 # Kafka Pause/Resume Backpressure Design
 
-Design for the next worker backpressure layer after Day 82 local backoff. **`BackpressurePolicy`** is implemented (`worker/internal/worker/backpressure_policy.go`); **Kafka pause/resume wiring** comes later.
+Design for the next worker backpressure layer after Day 82 local backoff.
+
+**Implementation status**
+
+| Day | Delivered |
+|-----|-----------|
+| **85** | **`BackpressurePolicy`** — high/low watermarks on depth vs capacity |
+| **86** | **`PauseResumeController`** boundary + **`InMemoryPauseResumeController`** for deterministic tests |
+| **Future** | Real Kafka **`Pause`/`Resume`** adapter (isolates broker calls); wire policy + controller into `KafkaConsumer.Run` |
+
+The **adapter** keeps Kafka-specific calls out of policy logic; the **fake controller** supports unit tests without a broker.
 
 ---
 
@@ -32,7 +42,9 @@ Today (`worker/internal/worker/kafka_consumer.go`, Day 79–82):
 
 Poll loop **keeps running**; workers **keep executing** in-flight and queued jobs. Shutdown stats include `work_queue_capacity`, `work_queue_depth`, `work_items_enqueued`, `work_queue_full_errors`.
 
-**`BackpressurePolicy` (policy-only today):** `NewBackpressurePolicy` with default **high 80%** / **low 50%**; invalid ratios fall back to defaults. **`ShouldPause(depth, capacity)`** when depth ≥ `ceil(capacity × high)`; **`ShouldResume`** when depth ≤ `floor(capacity × low)`. **Hysteresis** (two thresholds) avoids pause/resume **flapping**. Not yet called from `KafkaConsumer.Run`.
+**`BackpressurePolicy` (Day 85):** `backpressure_policy.go` — default **high 80%** / **low 50%**; **`ShouldPause` / `ShouldResume`** with hysteresis. Not yet called from `KafkaConsumer.Run`.
+
+**`PauseResumeController` (Day 86):** `pause_resume_controller.go` — **`InMemoryPauseResumeController`** for tests/policy wiring; idempotent **`Pause`/`Resume`**. Real Kafka adapter still future work.
 
 **Smoke:** `./worker/scripts/smoke_queue_saturation.sh` runs `TestQueueFull*` (no real Kafka).
 
@@ -110,8 +122,8 @@ Future Prometheus / shutdown counters:
 ## 7. Implementation Plan
 
 1. ~~**Expose queue depth**~~ — `WorkerPool.QueueDepth()` (Day 84).
-2. **Pause/resume interface** — thin wrapper around `kafka.Consumer` (`Pause`, `Resume`, assigned partition list) for test doubles.
-3. ~~**Policy module**~~ — **`BackpressurePolicy`** (`backpressure_policy.go`); wire into `KafkaConsumer.Run` next.
+2. ~~**Pause/resume interface**~~ — **`PauseResumeController`** + in-memory fake (Day 86); **Kafka adapter** still future work.
+3. ~~**Policy module**~~ — **`BackpressurePolicy`** (Day 85); wire into `KafkaConsumer.Run` next.
 4. **Policy integration tests** — fake consumer records pause/resume calls; deterministic depth transitions.
 5. **Smoke test** — `./worker/scripts/smoke_kafka_pause_resume.sh` (or extend saturation smoke) with fake broker surface.
 6. **Prometheus metrics** — counters/gauges from §5.
@@ -123,7 +135,7 @@ Wire policy into `KafkaConsumer.Run` loop and `handleQueueFull` comment hook (`k
 
 ## 8. Non-Goals
 
-- **Kafka pause/resume not wired yet** — `BackpressurePolicy` is policy-only; Day 82 backoff remains the active runtime control.
+- **Real Kafka pause/resume not wired yet** — policy + in-memory controller exist; Day 82 backoff remains active runtime control until `Run` integration.
 - **Not replacing Redis idempotency** — pause/resume is flow control, not deduplication.
 - **Not changing retry / DLQ semantics** — invalid messages, terminal failures, and dead-letter routing stay as-is.
 - **Not autoscaling** — separate future work (pool size / replica count).
