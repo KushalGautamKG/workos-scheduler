@@ -46,6 +46,8 @@ type ConsumerStats struct {
 	WorkQueueDepth          int
 	WorkItemsEnqueued       int
 	WorkQueueFullErrors     int
+	BackpressurePauseEvents int
+	BackpressureResumeEvents int
 	DeadLettersPublished    int
 	DeadLetterPublishErrors int
 }
@@ -65,6 +67,12 @@ type KafkaConsumer struct {
 	// DeadLetterProducer is optional. When set, processing failures publish
 	// a DeadLetterEvent before the poll loop continues.
 	DeadLetterProducer DeadLetterProducer
+	// BackpressurePolicy is optional. When set with PauseResumeController,
+	// Run evaluates queue depth against watermarks and drives pause/resume.
+	BackpressurePolicy *BackpressurePolicy
+	// PauseResumeController is optional. Use InMemoryPauseResumeController in
+	// tests; a Kafka adapter will call broker Pause/Resume later.
+	PauseResumeController PauseResumeController
 	Stats              ConsumerStats
 	statsMu            sync.Mutex
 }
@@ -104,12 +112,14 @@ func (c *KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 		return fmt.Errorf("dispatch handler is not configured")
 	}
 
-	pool := NewWorkerPool(
+	var pool *WorkerPool
+	pool = NewWorkerPool(
 		c.WorkerCount,
 		c.QueueCapacity,
 		c.Runner.Handler,
 		func(workerID string, item WorkItem) {
 			c.recordMessageProcessed(workerID, item)
+			c.maybeApplyBackpressure(pool)
 		},
 		func(workerID string, item WorkItem, err error) {
 			c.handleWorkItemError(workerID, item, err)
@@ -127,6 +137,8 @@ func (c *KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 			_ = c.Poller.Close()
 			return nil
 		}
+
+		c.maybeApplyBackpressure(pool)
 
 		event := c.Poller.Poll(pollTimeoutMs)
 
@@ -178,13 +190,53 @@ func (c *KafkaConsumer) enqueueKafkaMessage(pool *WorkerPool, msg *kafka.Message
 		}
 	}
 	c.incWorkItemsEnqueued()
-	c.recordWorkQueueDepth(pool.QueueDepth())
+	c.maybeApplyBackpressure(pool)
+}
+
+// maybeApplyBackpressure records queue depth and, when policy and controller are
+// both configured, drives pause/resume from watermark thresholds.
+func (c *KafkaConsumer) maybeApplyBackpressure(pool *WorkerPool) {
+	depth := pool.QueueDepth()
+	capacity := pool.QueueCapacity()
+	c.recordWorkQueueDepth(depth)
+
+	if c.BackpressurePolicy == nil || c.PauseResumeController == nil {
+		return
+	}
+
+	policy := *c.BackpressurePolicy
+	controller := c.PauseResumeController
+
+	if !controller.IsPaused() && policy.ShouldPause(depth, capacity) {
+		if err := controller.Pause(); err != nil {
+			return
+		}
+		c.incBackpressurePauseEvents()
+		fmt.Printf(
+			"event=worker_backpressure_pause queue_depth=%d queue_capacity=%d\n",
+			depth,
+			capacity,
+		)
+		return
+	}
+
+	if controller.IsPaused() && policy.ShouldResume(depth, capacity) {
+		if err := controller.Resume(); err != nil {
+			return
+		}
+		c.incBackpressureResumeEvents()
+		fmt.Printf(
+			"event=worker_backpressure_resume queue_depth=%d queue_capacity=%d\n",
+			depth,
+			capacity,
+		)
+	}
 }
 
 // handleQueueFull records saturation when the bounded worker queue rejects a job.
 //
 // This is backpressure at enqueue time, not a processing failure — no DLQ yet.
-// Kafka pause/resume will plug in here later.
+// Proactive pause is handled by maybeApplyBackpressure when policy is wired.
 func (c *KafkaConsumer) handleQueueFull(event DispatchEvent, queueCapacity int, err error) {
 	if err != ErrWorkerQueueFull {
 		return
@@ -238,6 +290,18 @@ func (c *KafkaConsumer) incWorkItemsEnqueued() {
 func (c *KafkaConsumer) incWorkQueueFullErrors() {
 	c.statsMu.Lock()
 	c.Stats.WorkQueueFullErrors++
+	c.statsMu.Unlock()
+}
+
+func (c *KafkaConsumer) incBackpressurePauseEvents() {
+	c.statsMu.Lock()
+	c.Stats.BackpressurePauseEvents++
+	c.statsMu.Unlock()
+}
+
+func (c *KafkaConsumer) incBackpressureResumeEvents() {
+	c.statsMu.Lock()
+	c.Stats.BackpressureResumeEvents++
 	c.statsMu.Unlock()
 }
 

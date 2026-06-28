@@ -198,8 +198,8 @@ go run ./cmd/consumer
 - **Bounded work queue** — buffered channel caps waiting jobs (**default capacity 100**). This is KernelQ’s **first backpressure boundary** on the worker side: memory stays bounded and saturation is visible.
 - **Configure queue size** — set **`KERNELQ_WORKER_QUEUE_CAPACITY`** before starting **`cmd/consumer`** (unset or `<= 0` → default **100**). Startup logs **`worker_count=… queue_capacity=…`**.
 - **Queue full** — non-blocking **`Enqueue`**; on **`worker queue full`**: log **`event=worker_queue_full`**, increment **`work_queue_full_errors`**, **50ms backoff**, **retry enqueue once**. If the retry succeeds, processing continues; if not, the job is dropped (no DLQ). Poll loop **keeps running**—still **not Kafka pause/resume**.
-- **Saturation stats** — **`ConsumerStats`** tracks **`work_queue_capacity`**, **`work_queue_depth`** (point-in-time gauge—jobs waiting in the buffer now), **`work_items_enqueued`** (cumulative), and **`work_queue_full_errors`** (distinct from **`message_errors`**). **`work_queue_depth`** will drive future **high/low watermark** Kafka pause/resume.
-- **Shutdown summary** — **`cmd/consumer`** prints **`work_queue_capacity`**, **`work_queue_depth`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** alongside **`messages_seen`**, **`messages_processed`**, **`message_errors`**, and **`kafka_errors`**.
+- **Saturation stats** — **`work_queue_capacity`**, **`work_queue_depth`**, **`work_items_enqueued`**, **`work_queue_full_errors`**, **`backpressure_pause_events`**, **`backpressure_resume_events`** (when policy wired).
+- **Shutdown summary** — above work-queue stats plus **`messages_seen`**, **`messages_processed`**, **`message_errors`**, **`kafka_errors`**.
 - **Future work** — **worker autoscaling** (today: tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`** manually). See **Kafka Pause/Resume Backpressure** below.
 
 ```bash
@@ -209,9 +209,9 @@ KERNELQ_WORKER_QUEUE_CAPACITY=50 go run ./cmd/consumer
 
 ## Kafka Pause/Resume Backpressure
 
-**Today:** **bounded queue** + **local backoff** (50ms, one retry on queue full). **`BackpressurePolicy`** (`backpressure_policy.go`)—default **high 80%** / **low 50%** watermarks with **hysteresis** (`ShouldPause` / `ShouldResume` on **`work_queue_depth`**). **`PauseResumeController`** (`pause_resume_controller.go`) + **`InMemoryPauseResumeController`** for tests and policy wiring—keeps backpressure **testable without Kafka**. Real broker **`Pause`/`Resume`** comes later.
+**Day 87:** **`KafkaConsumer.Run`** wires **`BackpressurePolicy`** decisions to **`PauseResumeController`** (`maybeApplyBackpressure` before poll, after enqueue, after worker success)—logs **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`**; shutdown stats include **`backpressure_pause_events`** and **`backpressure_resume_events`**. Opt-in: set both **`BackpressurePolicy`** and **`PauseResumeController`** on the consumer (disabled by default in **`cmd/consumer`**).
 
-**Next:** wire policy + controller into the poll loop. Design: [`docs/design/kafka-pause-resume-backpressure.md`](../docs/design/kafka-pause-resume-backpressure.md).
+**Controller today:** **`InMemoryPauseResumeController`** only—test/policy boundary, **not** real Kafka partition **`Pause`/`Resume`** (future adapter). **Day 82** local backoff remains fallback when policy is unset.
 
 ## Invalid Message Handling
 

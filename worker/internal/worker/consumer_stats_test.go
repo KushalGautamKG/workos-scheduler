@@ -56,6 +56,14 @@ func TestRunRecordsWorkQueueDepthOnShutdown(t *testing.T) {
 		t.Fatal("timed out waiting for worker to block on first job")
 	}
 
+	deadline := time.Now().Add(2 * time.Second)
+	for consumer.Stats.WorkQueueDepth != 1 && time.Now().Before(deadline) {
+		runtime.Gosched()
+	}
+	if consumer.Stats.WorkQueueDepth != 1 {
+		t.Fatalf("expected WorkQueueDepth 1 with one buffered job, got %d", consumer.Stats.WorkQueueDepth)
+	}
+
 	cancel()
 
 	go func() {
@@ -65,32 +73,42 @@ func TestRunRecordsWorkQueueDepthOnShutdown(t *testing.T) {
 	if err := <-done; err != nil {
 		t.Fatalf("expected nil on cancel, got error: %v", err)
 	}
-
-	if consumer.Stats.WorkQueueDepth != 1 {
-		t.Fatalf("expected WorkQueueDepth 1 at shutdown with one buffered job, got %d", consumer.Stats.WorkQueueDepth)
-	}
 }
 
 func TestConsumerShutdownOutputIncludesWorkQueueDepth(t *testing.T) {
 	lines := ConsumerShutdownStatsLines(ConsumerStats{
-		MessagesSeen:      10,
-		MessagesProcessed: 8,
-		MessageErrors:     1,
-		KafkaErrors:       0,
-		WorkQueueCapacity: 100,
-		WorkQueueDepth:    2,
-		WorkItemsEnqueued: 9,
-		WorkQueueFullErrors: 1,
+		MessagesSeen:             10,
+		MessagesProcessed:        8,
+		MessageErrors:            1,
+		KafkaErrors:              0,
+		WorkQueueCapacity:        100,
+		WorkQueueDepth:           2,
+		WorkItemsEnqueued:        9,
+		WorkQueueFullErrors:      1,
+		BackpressurePauseEvents:  2,
+		BackpressureResumeEvents: 1,
 	})
 
-	found := false
+	foundDepth := false
+	foundPause := false
+	foundResume := false
 	for _, line := range lines {
-		if line == "work_queue_depth=2" {
-			found = true
-			break
+		switch line {
+		case "work_queue_depth=2":
+			foundDepth = true
+		case "backpressure_pause_events=2":
+			foundPause = true
+		case "backpressure_resume_events=1":
+			foundResume = true
 		}
 	}
-	if !found {
+	if !foundDepth {
 		t.Fatalf("expected work_queue_depth line in shutdown stats, got %v", lines)
+	}
+	if !foundPause {
+		t.Fatalf("expected backpressure_pause_events line in shutdown stats, got %v", lines)
+	}
+	if !foundResume {
+		t.Fatalf("expected backpressure_resume_events line in shutdown stats, got %v", lines)
 	}
 }

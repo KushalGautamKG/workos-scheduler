@@ -30,7 +30,7 @@ What works today (local / dev):
 - **Kafka dispatch publishing** — scheduler tick publishes `DispatchEvent` to `kernelq.jobs.dispatch`
 - **Go Kafka worker consumer** — poll loop, message validation, execution handler
 - **Go worker pool** — configurable concurrent executors (**default 4**); consumer reads Kafka, workers run jobs in parallel (`worker/internal/worker/worker_pool.go`)
-- **Bounded worker work queue** — **`work_queue_depth`** / capacity; **Day 85** **`BackpressurePolicy`**; **Day 86** **`PauseResumeController`** (in-memory, test-only); Kafka adapter future; **Day 82** backoff active ([design doc](design/kafka-pause-resume-backpressure.md))
+- **Bounded worker work queue** — **Day 87** evaluates depth vs high/low watermarks; **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`**; **`backpressure_pause_events`** / **`backpressure_resume_events`** at shutdown—in-memory controller; real Kafka pause/resume future; **Day 82** backoff default ([design doc](design/kafka-pause-resume-backpressure.md))
 - **Worker result publishing** — `WorkerResultEvent` on `kernelq.jobs.results`
 - **Python result consumer skeleton** — `KafkaResultConsumer` + `ResultStateHandler` (one-shot poll)
 - **Postgres state updates from worker results** — `succeeded`, `retryable_failure`, `terminal_failure` mapping
@@ -176,7 +176,7 @@ Honest gaps — not production-ready yet:
 - **Structured logs** — one-shot scripts only; no centralized log aggregation yet
 - **Security** — no auth, no multi-user tenancy enforcement beyond `tenant_id` on rows
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
-- **Worker Kafka backpressure** — **Day 82** backoff at runtime; **Day 85–86** policy + **`PauseResumeController`** boundary (in-memory/test-only)—Kafka implementation future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
+- **Worker Kafka backpressure** — **Day 87** watermark evaluation + pause/resume events/stats (in-memory); **Day 82** backoff default in **`cmd/consumer`**; real Kafka partition pause/resume future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
 - **Config / secrets** — no production-grade secret management or env-based config layering
 

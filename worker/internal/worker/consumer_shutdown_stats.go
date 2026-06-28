@@ -13,5 +13,7 @@ func ConsumerShutdownStatsLines(stats ConsumerStats) []string {
 		fmt.Sprintf("work_queue_depth=%d", stats.WorkQueueDepth),
 		fmt.Sprintf("work_items_enqueued=%d", stats.WorkItemsEnqueued),
 		fmt.Sprintf("work_queue_full_errors=%d", stats.WorkQueueFullErrors),
+		fmt.Sprintf("backpressure_pause_events=%d", stats.BackpressurePauseEvents),
+		fmt.Sprintf("backpressure_resume_events=%d", stats.BackpressureResumeEvents),
 	}
 }

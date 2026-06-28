@@ -356,7 +356,9 @@ The Go worker’s poll loop (`KafkaConsumer.Run` in `worker/internal/worker/kafk
 | `messages_processed` | Messages that passed parse, validation, and handler/executor without error | Healthy throughput on **`kernelq.jobs.dispatch`** |
 | `message_errors` | Messages where parse, validation, or handler/executor failed | Poison or drift traffic; worker keeps polling but work was not executed |
 | `work_queue_capacity` | Configured bounded work-queue size for this run | Baseline for saturation—compare to **`work_queue_depth`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** |
-| `work_queue_depth` | Jobs **waiting in the bounded buffer now** (point-in-time **gauge**) | **`BackpressurePolicy`** input; **`PauseResumeController`** boundary exists (Day 86 in-memory/test-only)—Kafka adapter future work |
+| `work_queue_depth` | Jobs **waiting in the bounded buffer now** (point-in-time **gauge**) | **Day 87:** evaluated vs high/low watermarks; drives **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`** (in-memory controller—real Kafka pause/resume future) |
+| `backpressure_pause_events` | Successful pause transitions when policy + controller wired | Shutdown counter; grep **`event=worker_backpressure_pause`** |
+| `backpressure_resume_events` | Successful resume transitions when depth ≤ low watermark | Shutdown counter; grep **`event=worker_backpressure_resume`** |
 | `work_items_enqueued` | Decoded jobs successfully placed on the worker pool queue (**cumulative**) | Healthy handoff volume from Kafka poll loop to executors |
 | `work_queue_full_errors` | Decoded jobs rejected because the **bounded work queue** was full (`worker queue full`) | **First worker backpressure signal**—each event also logs **`event=worker_queue_full`**; poll loop continues (no DLQ) |
 | `kafka_errors` | Broker **`kafka.Error`** events that stopped **`Run`** | Infra/client problems—different from bad payloads |
@@ -385,7 +387,7 @@ The Go worker’s poll loop (`KafkaConsumer.Run` in `worker/internal/worker/kafk
 | `processing_latency` | Time per message from poll to handler/executor completion (p50 / p95 / p99) | Shows whether execution is keeping up with publish rate |
 | `shutdown_count` | How many clean shutdowns (SIGINT/SIGTERM) vs crash exits | Separates operator stops from fatal broker failures |
 
-**Bounded work queue (worker plane):** **`cmd/consumer`** bounded queue + **Day 82** backoff; **`work_queue_depth`** gauge at shutdown. **Day 85** **`BackpressurePolicy`**; **Day 86** **`PauseResumeController`** (in-memory, test-only)—Kafka **`Pause`/`Resume`** adapter future work ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md)).
+**Bounded work queue (worker plane):** **Day 87** evaluates **`work_queue_depth`** vs **`work_queue_capacity`** high/low watermarks (opt-in policy + controller); logs **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`**; shutdown **`backpressure_pause_events`** / **`backpressure_resume_events`**. In-memory controller only—**real Kafka partition pause/resume** future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md)). **Day 82** backoff when policy unset.
 
 **Interview sound bite:** *“Log messages_seen, messages_processed, message_errors, work_queue_full_errors, and invalid_message_rate = errors/seen—should be near zero when healthy; grep event=worker_queue_full for saturation; Prometheus and DLQ come later.”*
 
@@ -546,7 +548,7 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 
 ## Worker Pool Concurrency
 
-**Day 78–86** — worker pool through **`BackpressurePolicy`** + in-memory **`PauseResumeController`** (test-only); **Kafka pause/resume adapter** future work. **Current benchmark reports** ([Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md)) cover **scheduler throughput only**.
+**Day 78–87** — worker pool through watermark policy wired to in-memory **`PauseResumeController`**; **real Kafka pause/resume adapter** future work. **Current benchmark reports** ([Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md)) cover **scheduler throughput only**.
 
 ## Benchmark Reports
 

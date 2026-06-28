@@ -56,9 +56,9 @@ Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throug
 
 **Worker saturation**
 
-- **Symptoms:** **`work_queue_full_errors`** rising; high **`work_queue_depth`** vs **`work_queue_capacity`** at shutdown; grep **`event=worker_queue_full`**.
-- **Current mitigation:** Inspect **`work_queue_full_errors`**, **`work_queue_depth`** (gauge), and worker capacity—tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`**; run **`./worker/scripts/smoke_queue_saturation.sh`**. **`work_items_enqueued`** is cumulative, not current load.
-- **Future mitigation:** **Day 85–86** — **`BackpressurePolicy`** + **`PauseResumeController`** (in-memory/test-only)—[`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md). **Kafka-specific `Pause`/`Resume`** adapter and `Run` wiring still future work.
+- **Symptoms:** **`work_queue_full_errors`** rising; high **`work_queue_depth`** vs **`work_queue_capacity`**; grep **`event=worker_queue_full`**, **`event=worker_backpressure_pause`**, **`event=worker_backpressure_resume`**.
+- **Current mitigation:** Inspect **`work_queue_full_errors`**, **`backpressure_pause_events`** / **`backpressure_resume_events`**, and worker capacity—tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`**; run **`./worker/scripts/smoke_queue_saturation.sh`**.
+- **Day 87 behavior:** worker evaluates queue depth vs high/low watermarks (when policy + controller configured); increments pause/resume counters—**in-memory controller only**; **real Kafka partition pause/resume** still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md)).
 
 If **`dispatched_jobs` < `generated_jobs`**, inspect:
 
