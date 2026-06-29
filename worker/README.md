@@ -207,11 +207,33 @@ go test ./...
 KERNELQ_WORKER_QUEUE_CAPACITY=50 go run ./cmd/consumer
 ```
 
+## Backpressure Configuration
+
+**`cmd/consumer`** reads backpressure settings from the environment. **Disabled by default**—the worker runs with no **`BackpressurePolicy`** or **`PauseResumeController`** unless you opt in.
+
+| Env var | Type | Default | Purpose |
+|---------|------|---------|---------|
+| **`KERNELQ_WORKER_BACKPRESSURE_ENABLED`** | bool (`true` / `false`) | **`false`** | Turn on watermark-based pause/resume wiring in **`KafkaConsumer`**. |
+| **`KERNELQ_WORKER_BACKPRESSURE_HIGH_RATIO`** | float (`0`–`1`) | **`0.80`** | Queue depth ratio at which intake should **pause** (high watermark). |
+| **`KERNELQ_WORKER_BACKPRESSURE_LOW_RATIO`** | float (`0`–`1`) | **`0.50`** | Queue depth ratio at which intake should **resume** (low watermark; must be **below** high). |
+
+When **`KERNELQ_WORKER_BACKPRESSURE_ENABLED=true`**, **`cmd/consumer`** builds **`NewBackpressurePolicy(high, low)`** and **`NewInMemoryPauseResumeController()`** and passes both to **`KafkaConsumer`**. Invalid or inconsistent ratios fall back to **0.80 / 0.50** inside **`NewBackpressurePolicy`**. Startup logs include **`backpressure_enabled=…`**, **`backpressure_high_ratio=…`**, and **`backpressure_low_ratio=…`** (alongside **`worker_count`** and **`queue_capacity`**).
+
+**Controller today:** **`InMemoryPauseResumeController`** is an **in-memory / test boundary**—it records pause/resume decisions and drives policy tests without touching the broker. **Real Kafka partition `Pause`/`Resume`** will come in a later milestone (Kafka adapter replacing the in-memory controller).
+
+```bash
+go test ./cmd/consumer -v
+KERNELQ_WORKER_BACKPRESSURE_ENABLED=true \
+  KERNELQ_WORKER_BACKPRESSURE_HIGH_RATIO=0.80 \
+  KERNELQ_WORKER_BACKPRESSURE_LOW_RATIO=0.50 \
+  go run ./cmd/consumer
+```
+
 ## Kafka Pause/Resume Backpressure
 
-**Day 87:** **`KafkaConsumer.Run`** wires **`BackpressurePolicy`** decisions to **`PauseResumeController`** (`maybeApplyBackpressure` before poll, after enqueue, after worker success)—logs **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`**; shutdown stats include **`backpressure_pause_events`** and **`backpressure_resume_events`**. Opt-in: set both **`BackpressurePolicy`** and **`PauseResumeController`** on the consumer (disabled by default in **`cmd/consumer`**).
+When enabled (see **Backpressure Configuration**), **`KafkaConsumer.Run`** wires **`BackpressurePolicy`** decisions to **`PauseResumeController`** via **`maybeApplyBackpressure`** (before poll, after enqueue, after worker success)—logs **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`**; shutdown stats include **`backpressure_pause_events`** and **`backpressure_resume_events`**.
 
-**Controller today:** **`InMemoryPauseResumeController`** only—test/policy boundary, **not** real Kafka partition **`Pause`/`Resume`** (future adapter). **Day 82** local backoff remains fallback when policy is unset.
+**Day 82** local queue-full backoff remains the fallback when backpressure is disabled or the queue is saturated before watermarks trigger.
 
 ## Invalid Message Handling
 

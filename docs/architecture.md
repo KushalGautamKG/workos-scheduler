@@ -124,7 +124,7 @@ A **bounded queue** is a waiting line with a **maximum capacity**. When it is fu
 
 **Where this fits in KernelQ:** rejection semantics are enforced in the **Python control plane**—API validation, admission checks, and queueing—**before** work is **dispatched to Kafka**. That is where KernelQ can return **clear, distinct outcomes** to callers and attach **metrics and logs** per reason.
 
-**Worker plane (Go):** bounded in-process queue between Kafka poll and executor pool. **Today:** **`work_queue_depth`** reported at shutdown (point-in-time **gauge**); **`work_items_enqueued`** stays **cumulative**; local backoff on **`event=worker_queue_full`**. **Planned:** **Kafka pause/resume** using **`work_queue_depth`** vs **high/low watermarks** ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))—not implemented yet.
+**Worker plane (Go):** bounded in-process queue between Kafka poll and executor pool. **Today:** **`work_queue_depth`** at shutdown; local backoff on **`event=worker_queue_full`**. **Day 88:** watermark policy is **runtime-configurable** via **`KERNELQ_WORKER_BACKPRESSURE_ENABLED`** (default **`false`**), **`KERNELQ_WORKER_BACKPRESSURE_HIGH_RATIO`**, **`KERNELQ_WORKER_BACKPRESSURE_LOW_RATIO`**—prepares for **Kubernetes/EKS ConfigMaps** later. When enabled, **Day 87** wiring evaluates depth vs watermarks through an **in-memory** pause/resume controller. **Real Kafka partition pause/resume** still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md)).
 
 ## Combined Scheduling Pipeline
 

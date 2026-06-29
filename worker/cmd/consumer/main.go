@@ -18,6 +18,9 @@ const (
 	consumerGroupID  = "kernelq-worker"
 	dispatchTopic    = "kernelq.jobs.dispatch"
 	pollTimeoutMs    = 1000
+
+	defaultBackpressureHighRatio = 0.80
+	defaultBackpressureLowRatio  = 0.50
 )
 
 // loggingExecutor is a no-op executor for local development.
@@ -38,6 +41,32 @@ func positiveIntFromEnv(name string) int {
 	value, err := strconv.Atoi(raw)
 	if err != nil || value <= 0 {
 		return 0
+	}
+	return value
+}
+
+// boolFromEnv reads an env var as a bool. Missing or invalid returns defaultValue.
+func boolFromEnv(name string, defaultValue bool) bool {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return defaultValue
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return defaultValue
+	}
+	return value
+}
+
+// floatFromEnv reads an env var as a float64. Missing or invalid returns defaultValue.
+func floatFromEnv(name string, defaultValue float64) float64 {
+	raw := os.Getenv(name)
+	if raw == "" {
+		return defaultValue
+	}
+	value, err := strconv.ParseFloat(raw, 64)
+	if err != nil {
+		return defaultValue
 	}
 	return value
 }
@@ -73,6 +102,16 @@ func main() {
 	// WorkerCount 0 => DefaultWorkerCount (4). QueueCapacity 0 => DefaultQueueCapacity (100).
 	workerCountConfig := positiveIntFromEnv("KERNELQ_WORKER_COUNT")
 	queueCapacity := positiveIntFromEnv("KERNELQ_WORKER_QUEUE_CAPACITY")
+	backpressureEnabled := boolFromEnv("KERNELQ_WORKER_BACKPRESSURE_ENABLED", false)
+	backpressureHighRatio := floatFromEnv(
+		"KERNELQ_WORKER_BACKPRESSURE_HIGH_RATIO",
+		defaultBackpressureHighRatio,
+	)
+	backpressureLowRatio := floatFromEnv(
+		"KERNELQ_WORKER_BACKPRESSURE_LOW_RATIO",
+		defaultBackpressureLowRatio,
+	)
+
 	kafkaConsumer := &worker.KafkaConsumer{
 		Poller: brokerConsumer,
 		Runner: worker.ConsumerRunner{
@@ -85,6 +124,12 @@ func main() {
 		WorkerCount:        workerCountConfig,
 		QueueCapacity:      queueCapacity,
 		DeadLetterProducer: dlqProducer,
+	}
+
+	if backpressureEnabled {
+		policy := worker.NewBackpressurePolicy(backpressureHighRatio, backpressureLowRatio)
+		kafkaConsumer.BackpressurePolicy = &policy
+		kafkaConsumer.PauseResumeController = worker.NewInMemoryPauseResumeController()
 	}
 
 	workerCount := worker.DefaultWorkerCount
@@ -100,6 +145,9 @@ func main() {
 		workerCount,
 		effectiveQueueCapacity,
 	)
+	fmt.Printf("backpressure_enabled=%t\n", backpressureEnabled)
+	fmt.Printf("backpressure_high_ratio=%g\n", backpressureHighRatio)
+	fmt.Printf("backpressure_low_ratio=%g\n", backpressureLowRatio)
 
 	// Stop cleanly on Ctrl+C or SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

@@ -58,7 +58,8 @@ Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throug
 
 - **Symptoms:** **`work_queue_full_errors`** rising; high **`work_queue_depth`** vs **`work_queue_capacity`**; grep **`event=worker_queue_full`**, **`event=worker_backpressure_pause`**, **`event=worker_backpressure_resume`**.
 - **Current mitigation:** Inspect **`work_queue_full_errors`**, **`backpressure_pause_events`** / **`backpressure_resume_events`**, and worker capacity—tune **`KERNELQ_WORKER_COUNT`** / **`KERNELQ_WORKER_QUEUE_CAPACITY`**; run **`./worker/scripts/smoke_queue_saturation.sh`**.
-- **Day 87 behavior:** worker evaluates queue depth vs high/low watermarks (when policy + controller configured); increments pause/resume counters—**in-memory controller only**; **real Kafka partition pause/resume** still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md)).
+- **Day 88 config:** **`KERNELQ_WORKER_BACKPRESSURE_ENABLED`** (default **`false`**), **`KERNELQ_WORKER_BACKPRESSURE_HIGH_RATIO`**, **`KERNELQ_WORKER_BACKPRESSURE_LOW_RATIO`**—runtime watermark tuning; prepares for **Kubernetes/EKS ConfigMaps** later. See **`worker/README.md`**.
+- **Day 87–88 behavior:** when enabled, worker evaluates queue depth vs watermarks; increments pause/resume counters—**in-memory controller only**; **real Kafka partition pause/resume** still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md)).
 
 If **`dispatched_jobs` < `generated_jobs`**, inspect:
 

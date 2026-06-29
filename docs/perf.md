@@ -356,7 +356,7 @@ The Go worker’s poll loop (`KafkaConsumer.Run` in `worker/internal/worker/kafk
 | `messages_processed` | Messages that passed parse, validation, and handler/executor without error | Healthy throughput on **`kernelq.jobs.dispatch`** |
 | `message_errors` | Messages where parse, validation, or handler/executor failed | Poison or drift traffic; worker keeps polling but work was not executed |
 | `work_queue_capacity` | Configured bounded work-queue size for this run | Baseline for saturation—compare to **`work_queue_depth`**, **`work_items_enqueued`**, and **`work_queue_full_errors`** |
-| `work_queue_depth` | Jobs **waiting in the bounded buffer now** (point-in-time **gauge**) | **Day 87:** evaluated vs high/low watermarks; drives **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`** (in-memory controller—real Kafka pause/resume future) |
+| `work_queue_depth` | Jobs **waiting in the bounded buffer now** (point-in-time **gauge**) | **Day 87–88:** evaluated vs high/low watermarks when backpressure enabled; drives pause/resume events (in-memory controller—real Kafka pause/resume future) |
 | `backpressure_pause_events` | Successful pause transitions when policy + controller wired | Shutdown counter; grep **`event=worker_backpressure_pause`** |
 | `backpressure_resume_events` | Successful resume transitions when depth ≤ low watermark | Shutdown counter; grep **`event=worker_backpressure_resume`** |
 | `work_items_enqueued` | Decoded jobs successfully placed on the worker pool queue (**cumulative**) | Healthy handoff volume from Kafka poll loop to executors |
@@ -387,7 +387,7 @@ The Go worker’s poll loop (`KafkaConsumer.Run` in `worker/internal/worker/kafk
 | `processing_latency` | Time per message from poll to handler/executor completion (p50 / p95 / p99) | Shows whether execution is keeping up with publish rate |
 | `shutdown_count` | How many clean shutdowns (SIGINT/SIGTERM) vs crash exits | Separates operator stops from fatal broker failures |
 
-**Bounded work queue (worker plane):** **Day 87** evaluates **`work_queue_depth`** vs **`work_queue_capacity`** high/low watermarks (opt-in policy + controller); logs **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`**; shutdown **`backpressure_pause_events`** / **`backpressure_resume_events`**. In-memory controller only—**real Kafka partition pause/resume** future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md)). **Day 82** backoff when policy unset.
+**Bounded work queue (worker plane):** **Day 88** makes watermark policy **runtime-configurable** via **`KERNELQ_WORKER_BACKPRESSURE_ENABLED`** (default **`false`**), **`KERNELQ_WORKER_BACKPRESSURE_HIGH_RATIO`**, **`KERNELQ_WORKER_BACKPRESSURE_LOW_RATIO`**—prepares for **Kubernetes/EKS ConfigMaps** later. When enabled, **Day 87** wiring evaluates **`work_queue_depth`** vs capacity, logs pause/resume events, and increments shutdown counters. **In-memory controller only**—**real Kafka partition pause/resume** still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md)). **Day 82** backoff when disabled.
 
 **Interview sound bite:** *“Log messages_seen, messages_processed, message_errors, work_queue_full_errors, and invalid_message_rate = errors/seen—should be near zero when healthy; grep event=worker_queue_full for saturation; Prometheus and DLQ come later.”*
 
@@ -548,7 +548,7 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 
 ## Worker Pool Concurrency
 
-**Day 78–87** — worker pool through watermark policy wired to in-memory **`PauseResumeController`**; **real Kafka pause/resume adapter** future work. **Current benchmark reports** ([Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md)) cover **scheduler throughput only**.
+**Day 78–88** — worker pool through env-configurable watermark policy (disabled by default) wired to in-memory **`PauseResumeController`**; **real Kafka pause/resume adapter** future work. **Current benchmark reports** ([Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md)) cover **scheduler throughput only**.
 
 ## Benchmark Reports
 
