@@ -229,6 +229,19 @@ KERNELQ_WORKER_BACKPRESSURE_ENABLED=true \
   go run ./cmd/consumer
 ```
 
+## Backpressure Config Smoke Test
+
+**`worker/scripts/smoke_backpressure_config.sh`** verifies **`cmd/consumer`** startup logs for backpressure env config. Run from the **repository root** (requires Docker, Go, and Kafka on **`localhost:9092`**).
+
+The script builds the consumer, runs it briefly (background + **SIGINT**), and checks:
+
+- Default: **`backpressure_enabled=false`**
+- Enabled: **`backpressure_enabled=true`**, **`backpressure_high_ratio=0.8`**, **`backpressure_low_ratio=0.5`**
+
+```bash
+./worker/scripts/smoke_backpressure_config.sh
+```
+
 ## Kafka Pause/Resume Backpressure
 
 When enabled (see **Backpressure Configuration**), **`KafkaConsumer.Run`** wires **`BackpressurePolicy`** decisions to **`PauseResumeController`** via **`maybeApplyBackpressure`** (before poll, after enqueue, after worker success)—logs **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`**; shutdown stats include **`backpressure_pause_events`** and **`backpressure_resume_events`**.

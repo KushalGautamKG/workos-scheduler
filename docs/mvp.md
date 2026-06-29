@@ -50,7 +50,7 @@ What works today (local / dev):
 - **Local Prometheus service** — `docker compose up -d prometheus` (UI on `:9090`)
 - **Local Grafana service and starter dashboard** — `docker compose up -d grafana` (UI on `:3000`; **KernelQ MVP** charts `kernelq_jobs_by_state`)
 - **Structured script logs** — one-shot scripts print `event=<name>` summary lines for operator/debug visibility (complements Prometheus)
-- **Smoke tests** — success, retry requeue, exhaustion, queue-wait latency (`smoke_queue_wait_metrics.sh`), and worker queue saturation (`smoke_queue_saturation.sh`)
+- **Smoke tests** — success, retry requeue, exhaustion, queue-wait latency (`smoke_queue_wait_metrics.sh`), worker queue saturation (`smoke_queue_saturation.sh`), and backpressure config startup (`smoke_backpressure_config.sh`)
 
 ---
 
@@ -115,6 +115,7 @@ docker compose up -d postgres zookeeper kafka
 | `./control_plane/scripts/smoke_retry_exhaustion.sh` | Exhausted retries → **dead_lettered**; scanner does not requeue |
 | `./control_plane/scripts/smoke_queue_wait_metrics.sh` | Non-zero queue wait from **`dispatched_at`** (`queue_wait_seconds > 0`) |
 | `./worker/scripts/smoke_queue_saturation.sh` | Bounded worker queue saturation (**`work_queue_full_errors > 0`**); **`event=smoke_worker_queue_saturation success=true`** (no Kafka) |
+| `./worker/scripts/smoke_backpressure_config.sh` | **`cmd/consumer`** backpressure startup lines; **`event=smoke_worker_backpressure_config success=true`** |
 
 Each smoke script prints a structured **`event=smoke_*`** summary line (`success=true|false`) at the end — grep these to verify demo success quickly:
 
