@@ -45,6 +45,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `seed_latency_metrics` | `created_jobs` |
 | `generate_load_jobs` | `created_jobs`, `elapsed_seconds`, `jobs_per_second`, `tenants` |
 | `benchmark_scheduler_throughput` | `trials`, `generated_jobs_per_trial`, `min_jobs_dispatched_per_second`, `avg_jobs_dispatched_per_second`, `max_jobs_dispatched_per_second`, `total_dispatched_jobs` |
+| `benchmark_worker_throughput` | `generated_jobs`, `processed_jobs`, `elapsed_seconds`, `jobs_processed_per_second`, `worker_count`, `queue_capacity` |
 
 **Duration metrics:** Queue wait **p50/p95/p99** from **`dispatched_at - created_at`**. JSON: **`GET /metrics/durations`**; Prometheus gauges: **`GET /metrics/prometheus`**. Snapshot quantiles — **not histogram `_bucket` metrics yet**. **`seed_latency_metrics.py`** seeds realistic queue waits for local testing; **`smoke_queue_wait_metrics.sh`** verifies non-zero queue latency end-to-end.
 
@@ -53,6 +54,8 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 ## Performance / Benchmarking
 
 Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throughput. **`--trials`** repeats runs with a unique prefix per trial and reports **min/avg/max** **`jobs_dispatched_per_second`** — use repeated trials for more credible local numbers. Still **local baselines**, not production capacity claims (`event=benchmark_scheduler_throughput`).
+
+**Day 91 worker throughput:** **`./worker/scripts/benchmark_worker_throughput.sh`** measures **dispatch → worker → result** on local Kafka (`event=benchmark_worker_throughput`)—**complements** scheduler benchmarks above. **End-to-end** enqueue → Postgres **`succeeded`** throughput is still **future work**. See **[benchmarks/day91-worker-throughput.md](benchmarks/day91-worker-throughput.md)**.
 
 **Go worker pool:** **`cmd/consumer`** uses a **worker pool** (default **4** workers) with a **bounded work queue** (default **100** slots). When full: log **`event=worker_queue_full`**, increment **`work_queue_full_errors`**, then **Day 82 local backoff** (**50ms**, **one retry**) to **reduce enqueue pressure during bursts**—poll loop continues. **`smoke_queue_saturation.sh`** validates saturation (no Kafka).
 

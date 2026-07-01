@@ -1,6 +1,6 @@
 # Performance
 
-**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, performance gaps (worker/end-to-end throughput pending), and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
+**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91** adds the first **worker throughput** benchmark; **end-to-end completion** throughput is still pending.
 
 ## Baseline Metrics Plan
 
@@ -548,13 +548,21 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --count 100 --batch-size 20 --trials 3
 ```
 
+## Worker Throughput Benchmark
+
+**Day 91:** **`./worker/scripts/benchmark_worker_throughput.sh`** measures **dispatch → worker → result** throughput on local Kafka—**complements** scheduler benchmarks above (Postgres claim only). Emits **`event=benchmark_worker_throughput`** with **`jobs_processed_per_second`**, **`worker_count`**, and **`queue_capacity`**. **End-to-end** enqueue → Postgres **`succeeded`** throughput is still **future work**. Archived report: **[day91-worker-throughput.md](benchmarks/day91-worker-throughput.md)** (local development baseline, not production capacity).
+
+```bash
+COUNT=100 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughput.sh
+```
+
 ## Worker Pool Concurrency
 
-**Day 78–88** — worker pool through env-configurable watermark policy (disabled by default) wired to in-memory **`PauseResumeController`**; **real Kafka pause/resume adapter** future work. **Current benchmark reports** ([Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md)) cover **scheduler throughput only**.
+**Day 78–91** — worker pool through env-configurable watermark policy; **Day 91** worker throughput benchmark. **Real Kafka pause/resume adapter** future work. Benchmark reports: [Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md) (scheduler); [Day 91](benchmarks/day91-worker-throughput.md) (worker). **End-to-end completion** throughput still future work.
 
 ## Benchmark Reports
 
-Archived benchmark runs live under **`docs/benchmarks/`**. **[Day 75 baseline](benchmarks/day75-baseline.md)** records the **first local benchmark baseline** (load insertion, scheduler dispatch, queue-wait percentiles). **[Day 77 scheduler — 1000 jobs](benchmarks/day77-scheduler-1000.md)** records a **3-trial** scheduler run with **1000 jobs per trial** and min/avg/max throughput—still a **local development baseline**, not production capacity. **Future reports** should add environment metadata and eventually **end-to-end completion** throughput.
+Archived benchmark runs live under **`docs/benchmarks/`**. **[Day 75 baseline](benchmarks/day75-baseline.md)** (load insertion, scheduler dispatch, queue-wait percentiles). **[Day 77 scheduler — 1000 jobs](benchmarks/day77-scheduler-1000.md)** (3-trial scheduler throughput). **[Day 91 worker throughput](benchmarks/day91-worker-throughput.md)** (first dispatch → worker → result benchmark; complements scheduler reports). All are **local development baselines**, not production capacity. **End-to-end completion** throughput remains **future work**.
 
 ## Prometheus Scraping
 

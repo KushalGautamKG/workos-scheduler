@@ -242,6 +242,14 @@ The script builds the consumer, runs it briefly (background + **SIGINT**), and c
 ./worker/scripts/smoke_backpressure_config.sh
 ```
 
+## Worker Throughput Benchmark
+
+**Day 91:** **`worker/scripts/benchmark_worker_throughput.sh`** is KernelQ’s **first worker throughput benchmark**—complements control-plane **scheduler throughput** benchmarks (Day 75/77). It produces **`COUNT`** dispatch events to Kafka, runs **`cmd/consumer`**, and records **`jobs_processed_per_second`** when matching results appear on **`kernelq.jobs.results`**. Tune via **`COUNT`**, **`WORKERS`**, **`QUEUE_CAPACITY`**. **End-to-end** enqueue → `succeeded` throughput is still **future work**. Report: **[day91-worker-throughput.md](../docs/benchmarks/day91-worker-throughput.md)** (local dev only, not production capacity).
+
+```bash
+COUNT=100 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughput.sh
+```
+
 ## Kafka Pause/Resume Backpressure
 
 When enabled (see **Backpressure Configuration**), **`KafkaConsumer.Run`** wires **`BackpressurePolicy`** decisions to **`PauseResumeController`** via **`maybeApplyBackpressure`** (before poll, after enqueue, after worker success)—logs **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`**; shutdown stats include **`backpressure_pause_events`** and **`backpressure_resume_events`**.
