@@ -1,5 +1,7 @@
 # Performance
 
+**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, performance gaps (worker/end-to-end throughput pending), and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
+
 ## Baseline Metrics Plan
 
 | Metric | What it means | How we'll measure it | Why it matters | Target |

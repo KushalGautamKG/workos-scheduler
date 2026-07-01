@@ -6,6 +6,8 @@ Distributed job orchestration prototype: **Python control plane** (API, scheduli
 
 KernelQ has reached an **MVP checkpoint**. See **[docs/mvp.md](docs/mvp.md)** for capabilities, demo commands, limitations, and resume talking points.
 
+**Day 90 checkpoint:** **[docs/checkpoints/day90.md](docs/checkpoints/day90.md)** summarizes current platform status, benchmarks, limitations, and the post-MVP roadmap (production-readiness phase).
+
 **Happy path (smoke-tested):**
 
 ```
@@ -37,6 +39,7 @@ Provisioned dashboard **KernelQ MVP** — first metric **`kernelq_jobs_by_state`
 
 | Doc | Purpose |
 |-----|---------|
+| [docs/checkpoints/day90.md](docs/checkpoints/day90.md) | Day 90 checkpoint — platform status, benchmarks, limitations, roadmap |
 | [docs/mvp.md](docs/mvp.md) | MVP checkpoint — demo, tests, talking points |
 | [docs/architecture.md](docs/architecture.md) | System design |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |

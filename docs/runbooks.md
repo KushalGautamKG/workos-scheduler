@@ -2,7 +2,7 @@
 
 ## MVP Operational Smoke Tests
 
-Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context.
+Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
 | Path | Command |
 |------|---------|

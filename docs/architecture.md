@@ -10,7 +10,7 @@ The control plane handles scheduling, state management, and coordination. The wo
 
 KernelQ now has a **complete success feedback loop**: **queued** job → scheduler → **Kafka dispatch** → **Go worker** → **result event** → Postgres **`SUCCEEDED`**.
 
-It also supports **retry scheduling** (`retryable_failure` → **`RETRY_SCHEDULED`**), **retry requeue** (scanner → **`QUEUED`**), **retry exhaustion** → **`DEAD_LETTERED`**, and **manual dead-letter recovery** (`DEAD_LETTERED` → **`QUEUED`**). For the full capability list, demo commands, and limitations, see **[docs/mvp.md](mvp.md)**.
+It also supports **retry scheduling** (`retryable_failure` → **`RETRY_SCHEDULED`**), **retry requeue** (scanner → **`QUEUED`**), **retry exhaustion** → **`DEAD_LETTERED`**, and **manual dead-letter recovery** (`DEAD_LETTERED` → **`QUEUED`**). For the full capability list, demo commands, and limitations, see **[docs/mvp.md](mvp.md)**. **[Day 90 checkpoint](checkpoints/day90.md)** records production-readiness status, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
 ## Control Plane (Python)
 

@@ -2,6 +2,8 @@
 
 A beginner-friendly snapshot of what KernelQ does today — useful for demos, onboarding, and interviews.
 
+For the **post-MVP production-readiness view**, see **[Day 90 checkpoint](checkpoints/day90.md)** — completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
+
 ---
 
 ## 1. What KernelQ Is
