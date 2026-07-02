@@ -55,7 +55,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 
 Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throughput. **`--trials`** repeats runs with a unique prefix per trial and reports **min/avg/max** **`jobs_dispatched_per_second`** — use repeated trials for more credible local numbers. Still **local baselines**, not production capacity claims (`event=benchmark_scheduler_throughput`).
 
-**Day 91 worker throughput:** **`./worker/scripts/benchmark_worker_throughput.sh`** measures **dispatch → worker → result** on local Kafka (`event=benchmark_worker_throughput`)—**complements** scheduler benchmarks above. **End-to-end** enqueue → Postgres **`succeeded`** throughput is still **future work**. See **[benchmarks/day91-worker-throughput.md](benchmarks/day91-worker-throughput.md)**.
+**Day 91 worker throughput:** **`./worker/scripts/benchmark_worker_throughput.sh`** — **prefix-isolated** dispatch → worker → result on local Kafka; **exits once all matching results are observed** (`event=benchmark_worker_throughput`). **Local dev only — not production capacity.** Complements scheduler benchmarks above; **end-to-end** enqueue → Postgres **`succeeded`** throughput still **future work**. See **[benchmarks/day91-worker-throughput.md](benchmarks/day91-worker-throughput.md)**.
 
 **Go worker pool:** **`cmd/consumer`** uses a **worker pool** (default **4** workers) with a **bounded work queue** (default **100** slots). When full: log **`event=worker_queue_full`**, increment **`work_queue_full_errors`**, then **Day 82 local backoff** (**50ms**, **one retry**) to **reduce enqueue pressure during bursts**—poll loop continues. **`smoke_queue_saturation.sh`** validates saturation (no Kafka).
 

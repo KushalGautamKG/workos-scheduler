@@ -244,7 +244,7 @@ The script builds the consumer, runs it briefly (background + **SIGINT**), and c
 
 ## Worker Throughput Benchmark
 
-**Day 91:** **`worker/scripts/benchmark_worker_throughput.sh`** is KernelQ’s **first worker throughput benchmark**—complements control-plane **scheduler throughput** benchmarks (Day 75/77). It produces **`COUNT`** dispatch events to Kafka, runs **`cmd/consumer`**, and records **`jobs_processed_per_second`** when all prefix-isolated **`received task`** lines appear in worker stdout (default **`COUNT=25`**). Tune via **`COUNT`**, **`WORKERS`**, **`QUEUE_CAPACITY`**. **End-to-end** enqueue → `succeeded` throughput is still **future work**. Report: **[day91-worker-throughput.md](../docs/benchmarks/day91-worker-throughput.md)** (local dev only, not production capacity).
+**Day 91:** **`worker/scripts/benchmark_worker_throughput.sh`** complements control-plane **scheduler throughput** benchmarks (Day 75/77). Prefix-isolated run (`worker-bench-<run_id>-*`), polls **`kernelq.jobs.results`** for exact **`job_id`** matches, exits when all are observed (default **`COUNT=25`**). Tune via **`COUNT`**, **`WORKERS`**, **`QUEUE_CAPACITY`**. **Local dev only — not production capacity.** **End-to-end** enqueue → `succeeded` throughput still **future work**. Report: **[day91-worker-throughput.md](../docs/benchmarks/day91-worker-throughput.md)**.
 
 ```bash
 COUNT=25 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughput.sh
