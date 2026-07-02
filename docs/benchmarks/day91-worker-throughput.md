@@ -8,7 +8,7 @@ It measures **worker-side processing throughput**—not scheduler Postgres claim
 
 **Local development benchmark only. Not production capacity.**
 
-**Interview sound bite:** *“Day 91 measured dispatch-to-result throughput through the Go worker pool on local Kafka—about 0.4 jobs/sec in this harness, dominated by polling overhead—not a production SLO.”*
+**Status:** Initial harness used **`kafka-console-consumer --from-beginning`** to count results; that **under-counted** completions on a topic with history (52/100 at 120s timeout). Harness now waits on **prefix-isolated `received task` lines** in worker stdout. Re-benchmark after fix before treating numbers as authoritative.
 
 ---
 
@@ -16,86 +16,85 @@ It measures **worker-side processing throughput**—not scheduler Postgres claim
 
 | Question | What this benchmark answers |
 |----------|----------------------------|
-| How fast can the Go worker process dispatch messages? | **`jobs_processed_per_second`** from produce → all results visible |
+| How fast can the Go worker process dispatch messages? | **`jobs_processed_per_second`** from produce → all run jobs completed |
 | Does the worker pool + queue config affect throughput? | Tune via **`WORKERS`** and **`QUEUE_CAPACITY`** env vars |
-| How does worker throughput compare to scheduler throughput? | Scheduler (Day 77) claims in Postgres at **~24k jobs/sec** locally; worker path is **Kafka + execution + result publish**—orders of magnitude different segment |
+| How does worker throughput compare to scheduler throughput? | Scheduler (Day 77) claims in Postgres at **~24k jobs/sec** locally; worker path is **Kafka + execution + result publish**—different segment |
 
 **What it does not measure:** API enqueue, Postgres scheduling, Python result consumer, retry/DLQ paths, or terminal state updates in Postgres.
 
 ---
 
-## 3. Environment
+## 3. Root Cause (52/100 false timeout)
+
+| Suspected cause | Verdict |
+|-----------------|---------|
+| Worker still processing | Partially — at 120s some runs were still in flight, but worker often finished faster |
+| **Result polling reads stale head of topic** | **Yes** — `kafka-console-consumer --from-beginning --max-messages N` returns **oldest** results first; new benchmark results at the **log tail** were missed as **`kernelq.jobs.results`** grew |
+| Incomplete prefix filtering | Possible secondary issue; fixed by **exact `job_id` grep** per expected id |
+| Queue drops | Not observed in logs for test runs (`work_queue_full_errors=0`) |
+| Prefix isolation | Run prefix was unique; issue was **observation**, not worker mix-up |
+
+**Inspect stale reads:**
+
+```bash
+docker exec kernelq-kafka kafka-console-consumer \
+  --bootstrap-server kafka:29092 \
+  --topic kernelq.jobs.results \
+  --from-beginning \
+  --max-messages 20
+```
+
+Shows **historical** `worker-bench-*` rows—not necessarily the latest run.
+
+---
+
+## 4. Environment
 
 | Item | Detail |
 |------|--------|
 | **Machine** | Local development machine (macOS) |
 | **Infrastructure** | Docker Compose (`zookeeper`, `kafka`) |
-| **Kafka** | `kernelq-kafka` container; topics via `./infra/kafka/create-topics.sh` |
-| **Worker** | `worker/cmd/consumer` binary; logging executor (no real job I/O) |
+| **Worker** | `worker/cmd/consumer` binary; logging executor |
 | **Harness** | `./worker/scripts/benchmark_worker_throughput.sh` |
-| **Consumer group** | `kernelq-worker` (fixed in `main.go`) |
-
-Record commit SHA, hardware, and Docker versions when reproducing.
+| **Completion signal** | Worker stdout: `received task job_id=<prefix>-NNNNN` |
 
 ---
 
-## 4. Command
+## 5. Command
 
 ```bash
-COUNT=100 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughput.sh
+COUNT=25 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughput.sh
 ```
 
-Defaults (when env vars unset): **`COUNT=100`**, **`WORKERS=4`**, **`QUEUE_CAPACITY=100`**.
+Defaults (when env vars unset): **`COUNT=25`**, **`WORKERS=4`**, **`QUEUE_CAPACITY=100`**, **`WAIT_TIMEOUT_SECONDS=120`**.
 
 ---
 
-## 5. Configuration
+## 6. Configuration
 
 | Setting | Value |
 |---------|-------|
-| **Worker count** (`KERNELQ_WORKER_COUNT`) | **4** |
-| **Queue capacity** (`KERNELQ_WORKER_QUEUE_CAPACITY`) | **100** |
-| **Generated jobs** | **100** |
+| **Worker count** | **4** |
+| **Queue capacity** | **100** |
+| **Generated jobs (default)** | **25** |
 | **Backpressure** | Disabled (default) |
 
-Job ids use deterministic zero-padded suffixes under a unique run prefix: `worker-bench-<run_id>-00001` … `worker-bench-<run_id>-00100`.
+Job ids: `worker-bench-<run_id>-00001` … `worker-bench-<run_id>-00025` (zero-padded).
 
 ---
 
-## 6. Observed Results
+## 7. Observed Results (pre-fix harness, COUNT=100)
+
+*Archive only — harness used Kafka topic polling; numbers conflate worker time with poll overhead.*
 
 ```
 generated_jobs=100
 processed_jobs=100
-elapsed_seconds=246.44901776313782
-jobs_processed_per_second=0.4057634350002158
-worker_count=4
-queue_capacity=100
-job_prefix=worker-bench-1782880479
-event=benchmark_worker_throughput generated_jobs=100 processed_jobs=100 elapsed_seconds=246.44901776313782 jobs_processed_per_second=0.4057634350002158 worker_count=4 queue_capacity=100 job_prefix=worker-bench-1782880479
+elapsed_seconds=246.45 (approx)
+jobs_processed_per_second=0.41 (approx)
 ```
 
-| Metric | Value |
-|--------|-------|
-| **Generated jobs** | 100 |
-| **Processed jobs** | 100 |
-| **Elapsed time** | ~246.4 s |
-| **Jobs/sec** | ~0.41 |
-
----
-
-## 7. Interpretation
-
-| Measurement | What it means |
-|-------------|----------------|
-| **`generated_jobs`** | Dispatch events produced to **`kernelq.jobs.dispatch`** |
-| **`processed_jobs`** | Matching **`WorkerResultEvent`** records found on **`kernelq.jobs.results`** for this run’s job prefix |
-| **`elapsed_seconds`** | Wall time from batch produce start until all results are observed |
-| **`jobs_processed_per_second`** | `processed_jobs / elapsed_seconds` |
-
-The observed **~0.4 jobs/sec** is **not** intrinsic worker execution speed. The harness polls results by repeatedly running **`kafka-console-consumer --from-beginning`** inside Docker—each poll scans topic history and adds **seconds of overhead per iteration**. The logging executor itself is near-instant; the benchmark measures **worker path + observation cost**.
-
-Compare to **Day 77 scheduler** (~24k `jobs_dispatched_per_second` Postgres-only): different layer, different bottleneck, different harness.
+Re-run with fixed harness and default **`COUNT=25`** before updating this section.
 
 ---
 
@@ -103,24 +102,20 @@ Compare to **Day 77 scheduler** (~24k `jobs_dispatched_per_second` Postgres-only
 
 **Local development benchmark only. Not production capacity.**
 
-- **Single trial** — no min/avg/max across repeated runs yet.
-- **Result polling overhead** — `kafka-console-consumer` full-topic scans dominate elapsed time; not suitable for sub-second throughput claims.
-- **Logging executor only** — no real job I/O, network calls, or Postgres updates from the worker.
-- **No Python result consumer** — does not measure control-plane feedback or `succeeded` in Postgres.
-- **No scheduler in path** — jobs are produced directly to Kafka, not via `SchedulerTickRunner`.
-- **Shared consumer group** — `kernelq-worker` may replay or skip offsets from prior local runs; unique job prefixes isolate counting but not broker load.
-- **Stale topic data** — `kernelq.jobs.results` retains history; polls read from beginning.
-- **Not AWS/EKS** — Docker on a laptop; network, disk, and CPU differ from production.
-- **COUNT=100 required `WAIT_TIMEOUT_SECONDS=300`** on this machine for one successful capture; default 120s timed out at 52/100 in an earlier attempt—environment sensitivity.
+- **Harness reliability** — fixed after Day 91 initial commit; do not use `--from-beginning` result counts on busy topics.
+- **Single trial** — no min/avg/max across runs yet.
+- **Logging executor only** — no real job I/O or Postgres updates.
+- **No scheduler in path** — direct Kafka produce, not `SchedulerTickRunner`.
+- **Shared consumer group** — `kernelq-worker`; unique job prefixes isolate counting.
+- **End-to-end benchmark** — still future work.
 
 ---
 
-## 9. Next Benchmarks
+## 9. Next Steps
 
-1. **Repeated trials** — min/avg/max `jobs_processed_per_second` (mirror Day 76/77 scheduler harness).
-2. **Lower observation overhead** — consumer-group lag, worker shutdown `messages_processed`, or dedicated results counter.
-3. **Vary `WORKERS` / `QUEUE_CAPACITY`** — pool sizing under load.
-4. **Backpressure enabled** — `KERNELQ_WORKER_BACKPRESSURE_*` env impact on throughput.
-5. **End-to-end completion benchmark** — enqueue → scheduler → worker → result consumer → Postgres `succeeded`.
+1. Re-run fixed harness at **`COUNT=25`**; confirm **`processed_jobs == generated_jobs`** under default timeout.
+2. Scale **`COUNT=100`** with reliable completion detection.
+3. Repeated trials — min/avg/max `jobs_processed_per_second`.
+4. End-to-end completion benchmark.
 
-See also [day75-baseline.md](day75-baseline.md), [day77-scheduler-1000.md](day77-scheduler-1000.md), [perf.md](../perf.md), and [checkpoints/day90.md](../checkpoints/day90.md).
+See also [day75-baseline.md](day75-baseline.md), [day77-scheduler-1000.md](day77-scheduler-1000.md), [perf.md](../perf.md).

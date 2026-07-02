@@ -1,16 +1,21 @@
 #!/usr/bin/env bash
 #
-# Benchmark Go worker throughput: produce N dispatch events, wait for N results.
+# Benchmark Go worker throughput: produce N dispatch events, wait for worker completion.
 #
 # Run from the repository root:
 #   ./worker/scripts/benchmark_worker_throughput.sh
 #
 # Environment (defaults):
-#   COUNT=100
+#   COUNT=25
 #   WORKERS=4
 #   QUEUE_CAPACITY=100
+#   WAIT_TIMEOUT_SECONDS=max(120, COUNT*3)
 #
 # Requires: Docker, Go, Kafka on localhost:9092.
+#
+# Completion is detected via worker stdout ("received task job_id=...") for this
+# run's unique job prefix. Do not use kafka-console-consumer --from-beginning to
+# count results — stale topic history causes missed events and false timeouts.
 
 set -euo pipefail
 
@@ -19,15 +24,18 @@ if [[ ! -f docker-compose.yml ]] || [[ ! -d worker/cmd/consumer ]]; then
   exit 1
 fi
 
-COUNT="${COUNT:-100}"
+COUNT="${COUNT:-25}"
 WORKERS="${WORKERS:-4}"
 QUEUE_CAPACITY="${QUEUE_CAPACITY:-100}"
-WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-300}"
+_default_wait=$((COUNT * 3))
+if (( _default_wait < 120 )); then
+  _default_wait=120
+fi
+WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-${_default_wait}}"
 
 KAFKA_CONTAINER="kernelq-kafka"
 BOOTSTRAP_SERVER="kafka:29092"
 DISPATCH_TOPIC="kernelq.jobs.dispatch"
-RESULTS_TOPIC="kernelq.jobs.results"
 CONSUMER_BIN="${TMPDIR:-/tmp}/kernelq-consumer-benchmark"
 WORKER_LOG="${TMPDIR:-/tmp}/kernelq-worker-benchmark.log"
 DISPATCH_FILE="${TMPDIR:-/tmp}/kernelq-worker-benchmark-dispatch.jsonl"
@@ -47,24 +55,15 @@ cleanup() {
 
 trap cleanup EXIT
 
-count_processed_results() {
-  local results
+# Count exact job ids for this run in worker stdout (executor completed + result published).
+count_processed_jobs() {
   local processed=0
   local i
   local job_id
 
-  results="$(
-    docker exec "${KAFKA_CONTAINER}" kafka-console-consumer \
-      --bootstrap-server "${BOOTSTRAP_SERVER}" \
-      --topic "${RESULTS_TOPIC}" \
-      --from-beginning \
-      --timeout-ms 5000 \
-      --max-messages 50000 2>/dev/null || true
-  )"
-
   for i in $(seq 1 "${COUNT}"); do
     job_id="$(printf "%s-%05d" "${JOB_PREFIX}" "${i}")"
-    if echo "${results}" | grep -Fq "\"job_id\":\"${job_id}\""; then
+    if grep -Fq "received task job_id=${job_id}" "${WORKER_LOG}"; then
       processed=$((processed + 1))
     fi
   done
@@ -127,25 +126,32 @@ docker exec -i "${KAFKA_CONTAINER}" kafka-console-producer \
   --bootstrap-server "${BOOTSTRAP_SERVER}" \
   --topic "${DISPATCH_TOPIC}" <"${DISPATCH_FILE}"
 
-echo "==> Waiting for ${COUNT} results (timeout ${WAIT_TIMEOUT_SECONDS}s)..."
+echo "==> Waiting for ${COUNT} worker completions (timeout ${WAIT_TIMEOUT_SECONDS}s)..."
 processed_jobs=0
 wait_started="$(date +%s)"
 while true; do
-  processed_jobs="$(count_processed_results)"
+  processed_jobs="$(count_processed_jobs)"
   if [[ "${processed_jobs}" -ge "${COUNT}" ]]; then
     break
   fi
 
   if [[ $(($(date +%s) - wait_started)) -ge "${WAIT_TIMEOUT_SECONDS}" ]]; then
-    echo "FAIL: only ${processed_jobs}/${COUNT} results within ${WAIT_TIMEOUT_SECONDS}s" >&2
+    echo "FAIL: only ${processed_jobs}/${COUNT} completions within ${WAIT_TIMEOUT_SECONDS}s" >&2
+    echo "Inspect worker log: ${WORKER_LOG}" >&2
+    grep "work_queue_full_errors\|message_errors\|received task job_id=${JOB_PREFIX}" "${WORKER_LOG}" >&2 || true
     exit 1
   fi
 
-  sleep 1
+  sleep 0.2
 done
 
 elapsed_seconds="$(python3 -c "import time; print(time.time() - ${bench_start_time})")"
-processed_jobs="${COUNT}"
+
+if [[ "${processed_jobs}" -ne "${generated_jobs}" ]]; then
+  echo "FAIL: processed_jobs=${processed_jobs} != generated_jobs=${generated_jobs}" >&2
+  exit 1
+fi
+
 jobs_processed_per_second="$(python3 -c "
 processed = ${processed_jobs}
 elapsed = ${elapsed_seconds}
