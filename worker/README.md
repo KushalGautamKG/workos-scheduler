@@ -244,10 +244,11 @@ The script builds the consumer, runs it briefly (background + **SIGINT**), and c
 
 ## Worker Throughput Benchmark
 
-**Day 91:** **`worker/scripts/benchmark_worker_throughput.sh`** complements control-plane **scheduler throughput** benchmarks (Day 75/77). Prefix-isolated run (`worker-bench-<run_id>-*`), polls **`kernelq.jobs.results`** for exact **`job_id`** matches, exits when all are observed (default **`COUNT=25`**). Tune via **`COUNT`**, **`WORKERS`**, **`QUEUE_CAPACITY`**. **Local dev only — not production capacity.** **End-to-end** enqueue → `succeeded` throughput still **future work**. Report: **[day91-worker-throughput.md](../docs/benchmarks/day91-worker-throughput.md)**.
+**Day 91+:** **`worker/scripts/benchmark_worker_throughput.sh`** complements scheduler throughput benchmarks (Day 75/77). Prefix-isolated runs; polls **`kernelq.jobs.results`** and exits when all matching **`job_id`** values are observed. **`TRIALS`** (default **`1`**) repeats runs; **`TRIALS>1`** reports **min/avg/max** worker throughput. Tune via **`COUNT`**, **`WORKERS`**, **`QUEUE_CAPACITY`**, **`TRIALS`**. **Local dev only — not production capacity.** Report: **[day91-worker-throughput.md](../docs/benchmarks/day91-worker-throughput.md)**.
 
 ```bash
 COUNT=25 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughput.sh
+TRIALS=3 COUNT=25 ./worker/scripts/benchmark_worker_throughput.sh
 ```
 
 ## Kafka Pause/Resume Backpressure

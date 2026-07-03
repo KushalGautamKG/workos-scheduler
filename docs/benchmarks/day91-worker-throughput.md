@@ -8,11 +8,11 @@ It measures **worker-side processing throughput**—not scheduler Postgres claim
 
 **Local development benchmark only. Not production capacity.**
 
-**Day 91 baseline was intentionally conservative** — small default batch (**`COUNT=25`**), reliable completion detection, and honest local numbers before scaling trials. **Day 92** improves the harness: **per-run Kafka consumer group** (`auto.offset.reset=latest`), **prefix-isolated result polling**, and faster exit when all matching **`job_id`** values appear—without reading stale **`kernelq.jobs.results`** history.
+**Day 91 baseline was intentionally conservative** — small default batch (**`COUNT=25`**), reliable completion detection, and honest local numbers before scaling trials. **Day 92** improves the harness: **per-run Kafka consumer group** (`auto.offset.reset=latest`), **prefix-isolated result polling**, and faster exit when all matching **`job_id`** values appear—without reading stale **`kernelq.jobs.results`** history. **Day 93** adds **repeated worker trials** via **`TRIALS`** (default **`1`**); each trial uses a unique prefix (`worker-bench-<timestamp>-trial-<n>`). **Future benchmark reports** should record **min/avg/max** `jobs_processed_per_second` and elapsed time across trials—not a single run only.
 
 **Do not compare worker `jobs_processed_per_second` directly to scheduler `jobs_dispatched_per_second` (Day 75/77).** Scheduler benchmarks measure **Postgres claim only** (often no Kafka). The worker benchmark includes **Kafka dispatch intake, execution, and result publication**—a wider, slower segment by design.
 
-**Status:** Day 91 initial harness used **`kafka-console-consumer --from-beginning`** and **under-counted** (52/100 at 120s). Intermediate fix used worker stdout; **Day 92** uses prefix-isolated **results-topic** polling. Observed numbers in §7 remain the **historical Day 91 capture** (pre–Day 92 harness).
+**Status:** Day 91 initial harness used **`kafka-console-consumer --from-beginning`** and **under-counted** (52/100 at 120s). Intermediate fix used worker stdout; **Day 92** uses prefix-isolated **results-topic** polling. **Day 93** adds **`TRIALS`** for min/avg/max summaries. Observed numbers in §7 remain the **historical Day 91 capture** (pre–Day 92 harness); no Day 92/Day 93 re-benchmark numbers are pasted here yet.
 
 ---
 
@@ -60,7 +60,8 @@ Shows **historical** `worker-bench-*` rows—not necessarily the latest run.
 | **Infrastructure** | Docker Compose (`zookeeper`, `kafka`) |
 | **Worker** | `worker/cmd/consumer` binary; logging executor |
 | **Harness** | `./worker/scripts/benchmark_worker_throughput.sh` |
-| **Completion signal (Day 92+)** | Per-run results consumer group; exact **`job_id`** match on **`kernelq.jobs.results`** after seek-to-latest |
+| **Completion signal (Day 93+)** | Same as Day 92; **`TRIALS`** repeats the flow with per-trial prefix isolation |
+| **Completion signal (Day 92)** | Per-run results consumer group; exact **`job_id`** match on **`kernelq.jobs.results`** after seek-to-latest |
 | **Completion signal (Day 91 archive)** | Worker stdout or flawed `--from-beginning` poll — see §3, §7 |
 
 ---
@@ -69,9 +70,10 @@ Shows **historical** `worker-bench-*` rows—not necessarily the latest run.
 
 ```bash
 COUNT=25 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughput.sh
+TRIALS=3 COUNT=25 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughput.sh
 ```
 
-Defaults (when env vars unset): **`COUNT=25`**, **`WORKERS=4`**, **`QUEUE_CAPACITY=100`**, **`WAIT_TIMEOUT_SECONDS=120`**.
+Defaults (when env vars unset): **`COUNT=25`**, **`WORKERS=4`**, **`QUEUE_CAPACITY=100`**, **`TRIALS=1`**, **`WAIT_TIMEOUT_SECONDS=120`**.
 
 ---
 
@@ -84,7 +86,7 @@ Defaults (when env vars unset): **`COUNT=25`**, **`WORKERS=4`**, **`QUEUE_CAPACI
 | **Generated jobs (default)** | **25** |
 | **Backpressure** | Disabled (default) |
 
-Job ids: `worker-bench-<run_id>-00001` … `worker-bench-<run_id>-00025` (zero-padded).
+Job ids (Day 93+): `worker-bench-<run_id>-trial-<n>-00001` … (zero-padded). Day 92 single-run ids: `worker-bench-<run_id>-00001` … `worker-bench-<run_id>-00025`.
 
 ---
 
@@ -99,7 +101,7 @@ elapsed_seconds=246.45 (approx)
 jobs_processed_per_second=0.41 (approx)
 ```
 
-Day 92+ harness defaults to **`COUNT=25`** with prefix-isolated result polling; re-benchmark for updated throughput tables when ready.
+Day 92+ harness defaults to **`COUNT=25`** with prefix-isolated result polling; **Day 93+** supports **`TRIALS`** for min/avg/max. Re-benchmark and record new tables separately from this §7 archive.
 
 ---
 
@@ -109,7 +111,7 @@ Day 92+ harness defaults to **`COUNT=25`** with prefix-isolated result polling; 
 
 - **Day 91 numbers (§7)** — historically accurate for that harness; conservative and not comparable to scheduler-only benchmarks.
 - **Day 92 harness** — prefix-isolated results polling; still local Docker, logging executor, shared **`kernelq-worker`** dispatch group (dispatch backlog can affect elapsed time).
-- **Single trial** — no min/avg/max across runs yet.
+- **Day 93 trials** — **`TRIALS=1`** preserves single-run output; **`TRIALS>1`** prints min/avg/max. Still local dev only.
 - **No scheduler in path** — direct Kafka produce, not `SchedulerTickRunner`.
 - **End-to-end benchmark** — enqueue → Postgres **`succeeded`** still future work.
 
@@ -126,11 +128,22 @@ Day 92+ harness defaults to **`COUNT=25`** with prefix-isolated result polling; 
 
 ---
 
-## 10. Next Steps
+## 10. Day 93 Repeated Trials
 
-1. Re-run with **Day 92** harness at **`COUNT=25`**; record new observed table (separate from §7 archive).
+| Change | Why |
+|--------|-----|
+| **`TRIALS`** env var (default **`1`**) | Repeated runs reduce noise from local Kafka backlog and timing variance |
+| Per-trial prefix **`worker-bench-<timestamp>-trial-<n>`** | Isolate each trial’s **`job_id`** set on **`kernelq.jobs.results`** |
+| Summary **`min` / `avg` / `max`** `jobs_processed_per_second` and elapsed time | Match scheduler benchmark (Day 76/77); future reports should archive these stats |
+
+**`TRIALS=1`** keeps the original single-trial human output and structured log. **`TRIALS>1`** emits per-trial lines plus an aggregate summary and `event=benchmark_worker_throughput` with trial stats.
+
+---
+
+## 11. Next Steps
+
+1. Re-run with **Day 93** harness (`TRIALS=3`, **`COUNT=25`**); record **min/avg/max** in a new report section (do not overwrite §7).
 2. Scale **`COUNT=100`** with reliable prefix-isolated completion.
-3. Repeated trials — min/avg/max `jobs_processed_per_second`.
-4. End-to-end completion benchmark.
+3. End-to-end completion benchmark.
 
 See also [day75-baseline.md](day75-baseline.md), [day77-scheduler-1000.md](day77-scheduler-1000.md), [perf.md](../perf.md).

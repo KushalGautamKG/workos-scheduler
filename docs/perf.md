@@ -550,10 +550,11 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 
 ## Worker Throughput Benchmark
 
-**Day 91:** **`./worker/scripts/benchmark_worker_throughput.sh`** measures **dispatch → worker → result** on local Kafka—**complements** scheduler benchmarks (Postgres claim only). **Prefix-isolated** run; polls **`kernelq.jobs.results`** for matching **`job_id`** values and **exits once all are observed** (default **`COUNT=25`**). Emits **`event=benchmark_worker_throughput`**. **Local dev only — not production capacity.** **End-to-end** enqueue → Postgres **`succeeded`** throughput still **future work**. Report: **[day91-worker-throughput.md](benchmarks/day91-worker-throughput.md)**.
+**Day 91+:** **`./worker/scripts/benchmark_worker_throughput.sh`** — dispatch → worker → result on local Kafka (**complements** scheduler benchmarks). Prefix-isolated; **`TRIALS`** (default **`1`**) with **min/avg/max** when **`TRIALS>1`**. **`event=benchmark_worker_throughput`**. **Local dev only — not production capacity.** Report: **[day91-worker-throughput.md](benchmarks/day91-worker-throughput.md)**.
 
 ```bash
 COUNT=25 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughput.sh
+TRIALS=3 COUNT=25 ./worker/scripts/benchmark_worker_throughput.sh
 ```
 
 ## Worker Pool Concurrency

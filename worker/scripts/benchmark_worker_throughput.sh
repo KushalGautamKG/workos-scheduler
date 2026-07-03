@@ -9,6 +9,7 @@
 #   COUNT=25
 #   WORKERS=4
 #   QUEUE_CAPACITY=100
+#   TRIALS=1
 #   WAIT_TIMEOUT_SECONDS=max(120, COUNT*3)
 #
 # Requires: Docker, Go, Kafka on localhost:9092.
@@ -27,11 +28,26 @@ fi
 COUNT="${COUNT:-25}"
 WORKERS="${WORKERS:-4}"
 QUEUE_CAPACITY="${QUEUE_CAPACITY:-100}"
+TRIALS="${TRIALS:-1}"
 _default_wait=$((COUNT * 3))
 if (( _default_wait < 120 )); then
   _default_wait=120
 fi
 WAIT_TIMEOUT_SECONDS="${WAIT_TIMEOUT_SECONDS:-${_default_wait}}"
+
+_validate_positive_int() {
+  local name="$1"
+  local value="$2"
+  if ! [[ "${value}" =~ ^[0-9]+$ ]] || (( value <= 0 )); then
+    echo "ERROR: ${name} must be a positive integer (got: ${value})" >&2
+    exit 1
+  fi
+}
+
+_validate_positive_int "COUNT" "${COUNT}"
+_validate_positive_int "WORKERS" "${WORKERS}"
+_validate_positive_int "QUEUE_CAPACITY" "${QUEUE_CAPACITY}"
+_validate_positive_int "TRIALS" "${TRIALS}"
 
 KAFKA_CONTAINER="kernelq-kafka"
 BOOTSTRAP_SERVER="kafka:29092"
@@ -42,11 +58,10 @@ WORKER_LOG="${TMPDIR:-/tmp}/kernelq-worker-benchmark.log"
 DISPATCH_FILE="${TMPDIR:-/tmp}/kernelq-worker-benchmark-dispatch.jsonl"
 WORKER_PID=""
 
-# Unique per run; job ids are deterministic within the run (00001..COUNT).
-RUN_ID="$(date +%s)"
-JOB_PREFIX="worker-bench-${RUN_ID}"
-RESULTS_CACHE="${TMPDIR:-/tmp}/kernelq-bench-results-${RUN_ID}.txt"
-RESULTS_GROUP="kernelq-bench-results-${RUN_ID}"
+BASE_RUN_ID="$(date +%s)"
+JOB_PREFIX=""
+RESULTS_CACHE=""
+RESULTS_GROUP=""
 
 cleanup() {
   if [[ -n "${WORKER_PID}" ]] && kill -0 "${WORKER_PID}" 2>/dev/null; then
@@ -118,6 +133,96 @@ print_failure_diagnostics() {
   grep -E "work_queue_full_errors=|message_errors=|kafka_errors=" "${WORKER_LOG}" 2>/dev/null | tail -5 >&2 || true
 }
 
+run_single_trial() {
+  local trial_number="$1"
+  local generated_jobs processed_jobs elapsed_seconds jobs_processed_per_second
+
+  JOB_PREFIX="worker-bench-${BASE_RUN_ID}-trial-${trial_number}"
+  RESULTS_CACHE="${TMPDIR:-/tmp}/kernelq-bench-results-${BASE_RUN_ID}-trial-${trial_number}.txt"
+  RESULTS_GROUP="kernelq-bench-results-${BASE_RUN_ID}-trial-${trial_number}"
+
+  if (( TRIALS > 1 )); then
+    echo "==> Trial ${trial_number}/${TRIALS}: generating ${COUNT} dispatch events (prefix=${JOB_PREFIX})..."
+  else
+    echo "==> Generating ${COUNT} dispatch events (prefix=${JOB_PREFIX})..."
+  fi
+
+  : >"${DISPATCH_FILE}"
+  for i in $(seq 1 "${COUNT}"); do
+    job_id="$(printf "%s-%05d" "${JOB_PREFIX}" "${i}")"
+    printf '%s\n' \
+      "{\"event_type\":\"job.dispatch\",\"job_id\":\"${job_id}\",\"tenant_id\":\"tenant-bench\",\"priority\":100,\"state\":\"dispatched\",\"payload\":{\"kind\":\"worker-throughput-bench\"}}" \
+      >>"${DISPATCH_FILE}"
+  done
+
+  generated_jobs="${COUNT}"
+
+  echo "==> Seeking results consumer to latest (group=${RESULTS_GROUP})..."
+  seek_results_consumer_to_latest
+
+  bench_start_time="$(python3 -c 'import time; print(time.time())')"
+
+  echo "==> Producing dispatch batch..."
+  docker exec -i "${KAFKA_CONTAINER}" kafka-console-producer \
+    --bootstrap-server "${BOOTSTRAP_SERVER}" \
+    --topic "${DISPATCH_TOPIC}" <"${DISPATCH_FILE}"
+
+  echo "==> Waiting for ${COUNT} results (timeout ${WAIT_TIMEOUT_SECONDS}s)..."
+  processed_jobs=0
+  wait_started="${SECONDS}"
+  while true; do
+    poll_new_results
+    processed_jobs="$(count_processed_jobs)"
+
+    if [[ "${processed_jobs}" -ge "${COUNT}" ]]; then
+      break
+    fi
+
+    if (( SECONDS - wait_started >= WAIT_TIMEOUT_SECONDS )); then
+      print_failure_diagnostics "${processed_jobs}"
+      exit 1
+    fi
+
+    sleep 0.05
+  done
+
+  elapsed_seconds="$(python3 -c "import time; print(time.time() - ${bench_start_time})")"
+
+  if [[ "${processed_jobs}" -ne "${generated_jobs}" ]]; then
+    print_failure_diagnostics "${processed_jobs}"
+    exit 1
+  fi
+
+  jobs_processed_per_second="$(python3 -c "
+processed = ${processed_jobs}
+elapsed = ${elapsed_seconds}
+print(processed / elapsed if elapsed > 0 else 0.0)
+")"
+
+  if (( TRIALS > 1 )); then
+    echo "Trial ${trial_number} (${JOB_PREFIX})"
+    echo "  generated_jobs:             ${generated_jobs}"
+    echo "  processed_jobs:             ${processed_jobs}"
+    echo "  elapsed_seconds:            ${elapsed_seconds}"
+    echo "  jobs_processed_per_second:    ${jobs_processed_per_second}"
+    echo
+  fi
+
+  TRIAL_GENERATED_JOBS+=("${generated_jobs}")
+  TRIAL_PROCESSED_JOBS+=("${processed_jobs}")
+  TRIAL_ELAPSED_SECONDS+=("${elapsed_seconds}")
+  TRIAL_JOBS_PER_SECOND+=("${jobs_processed_per_second}")
+  TRIAL_PREFIXES+=("${JOB_PREFIX}")
+
+  if (( TRIALS == 1 )); then
+    SINGLE_TRIAL_GENERATED_JOBS="${generated_jobs}"
+    SINGLE_TRIAL_PROCESSED_JOBS="${processed_jobs}"
+    SINGLE_TRIAL_ELAPSED_SECONDS="${elapsed_seconds}"
+    SINGLE_TRIAL_JOBS_PER_SECOND="${jobs_processed_per_second}"
+    SINGLE_TRIAL_PREFIX="${JOB_PREFIX}"
+  fi
+}
+
 echo "==> Starting Kafka and Zookeeper..."
 docker compose up -d kafka zookeeper
 
@@ -153,66 +258,59 @@ while ! grep -Fq "KernelQ worker consumer started" "${WORKER_LOG}"; do
   sleep 0.25
 done
 
-echo "==> Generating ${COUNT} dispatch events (prefix=${JOB_PREFIX})..."
-: >"${DISPATCH_FILE}"
-for i in $(seq 1 "${COUNT}"); do
-  job_id="$(printf "%s-%05d" "${JOB_PREFIX}" "${i}")"
-  printf '%s\n' \
-    "{\"event_type\":\"job.dispatch\",\"job_id\":\"${job_id}\",\"tenant_id\":\"tenant-bench\",\"priority\":100,\"state\":\"dispatched\",\"payload\":{\"kind\":\"worker-throughput-bench\"}}" \
-    >>"${DISPATCH_FILE}"
+TRIAL_GENERATED_JOBS=()
+TRIAL_PROCESSED_JOBS=()
+TRIAL_ELAPSED_SECONDS=()
+TRIAL_JOBS_PER_SECOND=()
+TRIAL_PREFIXES=()
+
+for trial_number in $(seq 1 "${TRIALS}"); do
+  run_single_trial "${trial_number}"
 done
 
-generated_jobs="${COUNT}"
-
-echo "==> Seeking results consumer to latest (group=${RESULTS_GROUP})..."
-seek_results_consumer_to_latest
-
-bench_start_time="$(python3 -c 'import time; print(time.time())')"
-
-echo "==> Producing dispatch batch..."
-docker exec -i "${KAFKA_CONTAINER}" kafka-console-producer \
-  --bootstrap-server "${BOOTSTRAP_SERVER}" \
-  --topic "${DISPATCH_TOPIC}" <"${DISPATCH_FILE}"
-
-echo "==> Waiting for ${COUNT} results (timeout ${WAIT_TIMEOUT_SECONDS}s)..."
-processed_jobs=0
-wait_started="${SECONDS}"
-while true; do
-  poll_new_results
-  processed_jobs="$(count_processed_jobs)"
-
-  if [[ "${processed_jobs}" -ge "${COUNT}" ]]; then
-    break
-  fi
-
-  if (( SECONDS - wait_started >= WAIT_TIMEOUT_SECONDS )); then
-    print_failure_diagnostics "${processed_jobs}"
-    exit 1
-  fi
-
-  sleep 0.05
-done
-
-elapsed_seconds="$(python3 -c "import time; print(time.time() - ${bench_start_time})")"
-
-if [[ "${processed_jobs}" -ne "${generated_jobs}" ]]; then
-  print_failure_diagnostics "${processed_jobs}"
-  exit 1
-fi
-
-jobs_processed_per_second="$(python3 -c "
-processed = ${processed_jobs}
-elapsed = ${elapsed_seconds}
-print(processed / elapsed if elapsed > 0 else 0.0)
+if (( TRIALS == 1 )); then
+  echo
+  echo "Worker throughput benchmark finished."
+  echo "  generated_jobs:             ${SINGLE_TRIAL_GENERATED_JOBS}"
+  echo "  processed_jobs:             ${SINGLE_TRIAL_PROCESSED_JOBS}"
+  echo "  elapsed_seconds:            ${SINGLE_TRIAL_ELAPSED_SECONDS}"
+  echo "  jobs_processed_per_second:    ${SINGLE_TRIAL_JOBS_PER_SECOND}"
+  echo "  worker_count:               ${WORKERS}"
+  echo "  queue_capacity:             ${QUEUE_CAPACITY}"
+  echo
+  echo "event=benchmark_worker_throughput generated_jobs=${SINGLE_TRIAL_GENERATED_JOBS} processed_jobs=${SINGLE_TRIAL_PROCESSED_JOBS} elapsed_seconds=${SINGLE_TRIAL_ELAPSED_SECONDS} jobs_processed_per_second=${SINGLE_TRIAL_JOBS_PER_SECOND} worker_count=${WORKERS} queue_capacity=${QUEUE_CAPACITY} job_prefix=${SINGLE_TRIAL_PREFIX}"
+else
+  _rates_csv="$(IFS=,; echo "${TRIAL_JOBS_PER_SECOND[*]}")"
+  _elapsed_csv="$(IFS=,; echo "${TRIAL_ELAPSED_SECONDS[*]}")"
+  _processed_csv="$(IFS=,; echo "${TRIAL_PROCESSED_JOBS[*]}")"
+  read -r total_processed_jobs min_jobs_processed_per_second avg_jobs_processed_per_second max_jobs_processed_per_second min_elapsed_seconds avg_elapsed_seconds max_elapsed_seconds <<<"$(python3 -c "
+processed = [int(x) for x in '${_processed_csv}'.split(',')]
+rates = [float(x) for x in '${_rates_csv}'.split(',')]
+elapsed = [float(x) for x in '${_elapsed_csv}'.split(',')]
+total = sum(processed)
+print(
+    total,
+    min(rates),
+    sum(rates) / len(rates),
+    max(rates),
+    min(elapsed),
+    sum(elapsed) / len(elapsed),
+    max(elapsed),
+)
 ")"
 
-echo
-echo "Worker throughput benchmark finished."
-echo "  generated_jobs:             ${generated_jobs}"
-echo "  processed_jobs:             ${processed_jobs}"
-echo "  elapsed_seconds:            ${elapsed_seconds}"
-echo "  jobs_processed_per_second:    ${jobs_processed_per_second}"
-echo "  worker_count:               ${WORKERS}"
-echo "  queue_capacity:             ${QUEUE_CAPACITY}"
-echo
-echo "event=benchmark_worker_throughput generated_jobs=${generated_jobs} processed_jobs=${processed_jobs} elapsed_seconds=${elapsed_seconds} jobs_processed_per_second=${jobs_processed_per_second} worker_count=${WORKERS} queue_capacity=${QUEUE_CAPACITY} job_prefix=${JOB_PREFIX}"
+  echo "Worker throughput benchmark finished."
+  echo "  trials:                           ${TRIALS}"
+  echo "  generated_jobs_per_trial:         ${COUNT}"
+  echo "  total_processed_jobs:             ${total_processed_jobs}"
+  echo "  min_jobs_processed_per_second:    ${min_jobs_processed_per_second}"
+  echo "  avg_jobs_processed_per_second:    ${avg_jobs_processed_per_second}"
+  echo "  max_jobs_processed_per_second:    ${max_jobs_processed_per_second}"
+  echo "  min_elapsed_seconds:              ${min_elapsed_seconds}"
+  echo "  avg_elapsed_seconds:              ${avg_elapsed_seconds}"
+  echo "  max_elapsed_seconds:              ${max_elapsed_seconds}"
+  echo "  worker_count:                     ${WORKERS}"
+  echo "  queue_capacity:                   ${QUEUE_CAPACITY}"
+  echo
+  echo "event=benchmark_worker_throughput trials=${TRIALS} generated_jobs_per_trial=${COUNT} total_processed_jobs=${total_processed_jobs} min_jobs_processed_per_second=${min_jobs_processed_per_second} avg_jobs_processed_per_second=${avg_jobs_processed_per_second} max_jobs_processed_per_second=${max_jobs_processed_per_second} worker_count=${WORKERS} queue_capacity=${QUEUE_CAPACITY}"
+fi
