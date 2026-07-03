@@ -45,7 +45,7 @@ The worker plane prioritizes throughput, low latency, and resource efficiency. I
 - **Job State Machine**: Manages job lifecycle transitions (pending → queued → running → completed/failed)
 - **Kafka**: Durable messaging backbone used to transport runnable jobs from the Python control plane to Go workers, support consumer-group-based scaling, and enable retry / replay workflows.
 - **Postgres**: Persistent storage for job definitions, schedules, and state
-- **Redis**: Caching layer
+- **Redis**: Fast **idempotency / duplicate-suppression** boundary (planned)—**Day 96** adds **`redis`** to Docker Compose (`kernelq-redis`, `localhost:6379`). Postgres stays source of truth; see **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**. **No application dedupe logic wired yet.**
 - **Workers**: Go processes that consume from Kafka and execute tasks
 
 ## FIFO Scheduling Policy

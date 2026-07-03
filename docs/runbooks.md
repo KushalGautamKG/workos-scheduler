@@ -2,7 +2,9 @@
 
 ## MVP Operational Smoke Tests
 
-Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
+Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
+
+**Redis (Day 96):** **`docker compose up -d redis`** — `kernelq-redis` on **`localhost:6379`**. Planned for **idempotency/deduplication** at Kafka handoffs; design **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**. **No application logic wired yet** — verify with `docker exec kernelq-redis redis-cli ping` → `PONG`.
 
 | Path | Command |
 |------|---------|

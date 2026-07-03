@@ -1,6 +1,6 @@
 # Performance
 
-**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91–93** worker throughput; **Day 94** adds the first **end-to-end completion** benchmark.
+**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91–95** segment and E2E benchmarks. **Day 96:** **`redis`** in Docker Compose for planned **idempotency/dedupe** — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)** (no app logic yet).
 
 ## Baseline Metrics Plan
 

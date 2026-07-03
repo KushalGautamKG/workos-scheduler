@@ -53,6 +53,7 @@ What works today (local / dev):
 - **Prometheus scrape configuration example** — `infra/prometheus/prometheus.yml` (15s scrape of `/metrics/prometheus`; see `docs/deploy.md`)
 - **Local Prometheus service** — `docker compose up -d prometheus` (UI on `:9090`)
 - **Local Grafana service and starter dashboard** — `docker compose up -d grafana` (UI on `:3000`; **KernelQ MVP** charts `kernelq_jobs_by_state`)
+- **Local Redis service** — `docker compose up -d redis` (`kernelq-redis`, `:6379`) for planned idempotency/dedupe; design **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)** — **no app logic wired yet**
 - **Structured script logs** — one-shot scripts print `event=<name>` summary lines for operator/debug visibility (complements Prometheus)
 - **Smoke tests** — success, retry requeue, exhaustion, queue-wait latency (`smoke_queue_wait_metrics.sh`), worker queue saturation (`smoke_queue_saturation.sh`), and backpressure config startup (`smoke_backpressure_config.sh`)
 
@@ -183,6 +184,7 @@ Honest gaps — not production-ready yet:
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
 - **Worker Kafka backpressure** — **Day 88** env-configurable watermarks (**disabled by default**; EKS ConfigMaps later); **Day 87** in-memory pause/resume wiring; **Day 82** backoff default; real Kafka partition pause/resume still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
+- **Redis dedupe** — local **`redis`** service in Docker Compose; idempotency design in **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)** — **not integrated in control plane or workers yet**
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
 ---

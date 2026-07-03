@@ -1,4 +1,4 @@
-# Local development stack for KernelQ (Postgres + Kafka + Prometheus + Grafana).
+# Local development stack for KernelQ (Postgres + Kafka + Redis + Prometheus + Grafana).
 #
 # Start all services:
 #   docker compose up -d
@@ -69,6 +69,13 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+
+  # Redis: fast dedupe / idempotency keys (future control-plane and worker paths).
+  redis:
+    image: redis:7
+    container_name: kernelq-redis
+    ports:
+      - "6379:6379"
 
   # Prometheus: pulls job-state gauges from the control-plane API on the host.
   # Start FastAPI on port 8000 first; scrape target is host.docker.internal in prometheus.yml.
