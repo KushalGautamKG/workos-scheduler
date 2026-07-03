@@ -46,7 +46,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `generate_load_jobs` | `created_jobs`, `elapsed_seconds`, `jobs_per_second`, `tenants` |
 | `benchmark_scheduler_throughput` | `trials`, `generated_jobs_per_trial`, `min_jobs_dispatched_per_second`, `avg_jobs_dispatched_per_second`, `max_jobs_dispatched_per_second`, `total_dispatched_jobs` |
 | `benchmark_worker_throughput` | Single trial: `generated_jobs`, `processed_jobs`, `elapsed_seconds`, `jobs_processed_per_second`, `worker_count`, `queue_capacity`. Multi-trial: `trials`, `generated_jobs_per_trial`, `total_processed_jobs`, `min_jobs_processed_per_second`, `avg_jobs_processed_per_second`, `max_jobs_processed_per_second` |
-| `benchmark_end_to_end_completion` | `generated_jobs`, `dispatched_jobs`, `succeeded_jobs`, `elapsed_seconds`, `jobs_completed_per_second`, `worker_count`, `queue_capacity`, `job_prefix` |
+| `benchmark_end_to_end_completion` | Single trial: `generated_jobs`, `dispatched_jobs`, `succeeded_jobs`, `elapsed_seconds`, `jobs_completed_per_second`, `worker_count`, `queue_capacity`, `job_prefix`. Multi-trial: `trials`, `generated_jobs_per_trial`, `total_succeeded_jobs`, `min_jobs_completed_per_second`, `avg_jobs_completed_per_second`, `max_jobs_completed_per_second` |
 
 **Duration metrics:** Queue wait **p50/p95/p99** from **`dispatched_at - created_at`**. JSON: **`GET /metrics/durations`**; Prometheus gauges: **`GET /metrics/prometheus`**. Snapshot quantiles — **not histogram `_bucket` metrics yet**. **`seed_latency_metrics.py`** seeds realistic queue waits for local testing; **`smoke_queue_wait_metrics.sh`** verifies non-zero queue latency end-to-end.
 
@@ -58,7 +58,7 @@ Use **`benchmark_scheduler_throughput.py`** to measure scheduler dispatch throug
 
 **Worker throughput:** **`./worker/scripts/benchmark_worker_throughput.sh`** — prefix-isolated dispatch → worker → result; **`TRIALS`** for repeated runs (**min/avg/max** when **`TRIALS>1`**). **Local dev only — not production capacity.** See **[benchmarks/day91-worker-throughput.md](benchmarks/day91-worker-throughput.md)**.
 
-**End-to-end completion (Day 94):** **`./control_plane/scripts/benchmark_end_to_end_completion.sh`** — **`queued` → `dispatched` → worker result → `succeeded`**. Complements scheduler and worker benchmarks. **Local dev only.** See **[benchmarks/day94-end-to-end-completion.md](benchmarks/day94-end-to-end-completion.md)**.
+**End-to-end completion:** **`./control_plane/scripts/benchmark_end_to_end_completion.sh`** — **`queued` → `succeeded`**; **`TRIALS`** for repeated runs (**min/avg/max** when **`TRIALS>1`**). **Local dev only.** See **[benchmarks/day94-end-to-end-completion.md](benchmarks/day94-end-to-end-completion.md)**.
 
 **Go worker pool:** **`cmd/consumer`** uses a **worker pool** (default **4** workers) with a **bounded work queue** (default **100** slots). When full: log **`event=worker_queue_full`**, increment **`work_queue_full_errors`**, then **Day 82 local backoff** (**50ms**, **one retry**) to **reduce enqueue pressure during bursts**—poll loop continues. **`smoke_queue_saturation.sh`** validates saturation (no Kafka).
 

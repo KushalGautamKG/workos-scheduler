@@ -251,7 +251,7 @@ COUNT=25 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughp
 TRIALS=3 COUNT=25 ./worker/scripts/benchmark_worker_throughput.sh
 ```
 
-**Day 94 end-to-end:** **`control_plane/scripts/benchmark_end_to_end_completion.sh`** measures **`queued` → `succeeded`** through scheduler, Kafka, worker, and result consumer. **Complements** segment benchmarks above. **Local dev only — not production capacity.** Report: **[day94-end-to-end-completion.md](../docs/benchmarks/day94-end-to-end-completion.md)**.
+**Day 94+ end-to-end:** **`control_plane/scripts/benchmark_end_to_end_completion.sh`** — **`queued` → `succeeded`**; **`TRIALS`** for **min/avg/max** completion throughput when **`TRIALS>1`**. **Local dev only.** Report: **[day94-end-to-end-completion.md](../docs/benchmarks/day94-end-to-end-completion.md)**.
 
 ## Kafka Pause/Resume Backpressure
 

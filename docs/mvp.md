@@ -47,7 +47,7 @@ What works today (local / dev):
 - **Load job generator** — **`generate_load_jobs.py`** creates **`queued`** benchmark workloads (unique **`--prefix`** for cleanup); dispatch via **`run_scheduler_tick_once.py`**
 - **Scheduler throughput benchmark** — **`benchmark_scheduler_throughput.py`** measures **`queued` → `dispatched`** dispatch rate; **`--trials`** for min/avg/max throughput (local baseline, not production claims)
 - **Worker throughput benchmark** — **`benchmark_worker_throughput.sh`**: prefix-isolated dispatch → worker → result; **`TRIALS`** for repeated runs (**min/avg/max** when **`TRIALS>1`**); **local dev only**, not production capacity
-- **End-to-end completion benchmark** — **`benchmark_end_to_end_completion.sh`** (Day 94): **`queued` → `dispatched` → worker result → `succeeded`**; complements scheduler/worker benchmarks; **local dev only**
+- **End-to-end completion benchmark** — **`benchmark_end_to_end_completion.sh`**: **`queued` → `succeeded`**; **`TRIALS`** for repeated runs (**min/avg/max** when **`TRIALS>1`**); **local dev only**
 - **Benchmark baseline docs** — **[benchmarks/day75-baseline.md](benchmarks/day75-baseline.md)**, **[benchmarks/day77-scheduler-1000.md](benchmarks/day77-scheduler-1000.md)**, **[benchmarks/day91-worker-throughput.md](benchmarks/day91-worker-throughput.md)**, **[benchmarks/day94-end-to-end-completion.md](benchmarks/day94-end-to-end-completion.md)**—local baselines, not production claims
 - **Prometheus-style metrics endpoint** — **`GET /metrics/prometheus`** (job state counts + queue wait quantile gauges)
 - **Prometheus scrape configuration example** — `infra/prometheus/prometheus.yml` (15s scrape of `/metrics/prometheus`; see `docs/deploy.md`)

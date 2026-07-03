@@ -557,10 +557,11 @@ COUNT=25 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughp
 TRIALS=3 COUNT=25 ./worker/scripts/benchmark_worker_throughput.sh
 ```
 
-**Day 94:** **`./control_plane/scripts/benchmark_end_to_end_completion.sh`** — **`queued` → `dispatched` → worker result → `succeeded`** (scheduler + Kafka + worker + Postgres). **Complements** scheduler and worker benchmarks. **Local dev only — not production capacity.** Report: **[day94-end-to-end-completion.md](benchmarks/day94-end-to-end-completion.md)**.
+**Day 94+:** **`./control_plane/scripts/benchmark_end_to_end_completion.sh`** — **`queued` → `succeeded`** (scheduler + Kafka + worker + Postgres). **`TRIALS`** (default **`1`**) with **min/avg/max** when **`TRIALS>1`**. **Complements** segment benchmarks. **Local dev only — not production capacity.** Report: **[day94-end-to-end-completion.md](benchmarks/day94-end-to-end-completion.md)**.
 
 ```bash
 ./control_plane/scripts/benchmark_end_to_end_completion.sh
+TRIALS=2 COUNT=5 ./control_plane/scripts/benchmark_end_to_end_completion.sh
 ```
 
 ## Worker Pool Concurrency

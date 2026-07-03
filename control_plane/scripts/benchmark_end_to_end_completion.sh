@@ -10,6 +10,7 @@
 #   COUNT=10
 #   WORKERS=4
 #   QUEUE_CAPACITY=100
+#   TRIALS=1
 #   TIMEOUT_SECONDS=180
 #
 # Requires: Docker, Go, Python 3, Postgres and Kafka on localhost.
@@ -24,6 +25,7 @@ fi
 COUNT="${COUNT:-10}"
 WORKERS="${WORKERS:-4}"
 QUEUE_CAPACITY="${QUEUE_CAPACITY:-100}"
+TRIALS="${TRIALS:-1}"
 TIMEOUT_SECONDS="${TIMEOUT_SECONDS:-180}"
 
 _validate_positive_int() {
@@ -38,14 +40,14 @@ _validate_positive_int() {
 _validate_positive_int "COUNT" "${COUNT}"
 _validate_positive_int "WORKERS" "${WORKERS}"
 _validate_positive_int "QUEUE_CAPACITY" "${QUEUE_CAPACITY}"
+_validate_positive_int "TRIALS" "${TRIALS}"
 _validate_positive_int "TIMEOUT_SECONDS" "${TIMEOUT_SECONDS}"
 
-RUN_ID="$(date +%s)"
-JOB_PREFIX="e2e-bench-${RUN_ID}"
-export JOB_PREFIX
+BASE_RUN_ID="$(date +%s)"
+JOB_PREFIX=""
+RESULT_GROUP=""
 CONSUMER_BIN="${TMPDIR:-/tmp}/kernelq-consumer-e2e-bench"
 WORKER_LOG="${TMPDIR:-/tmp}/kernelq-worker-e2e-bench.log"
-RESULT_GROUP="kernelq-e2e-bench-${RUN_ID}"
 WORKER_PID=""
 
 cleanup() {
@@ -94,51 +96,21 @@ fail_benchmark() {
   exit 1
 }
 
-echo "==> Starting Postgres, Zookeeper, and Kafka..."
-docker compose up -d postgres zookeeper kafka
+run_single_trial() {
+  local trial_number="$1"
+  local generated_jobs dispatched_jobs succeeded_jobs elapsed_seconds jobs_completed_per_second
 
-echo "==> Waiting for Postgres..."
-sleep 3
-docker exec kernelq-postgres pg_isready -U kernelq -d kernelq
+  JOB_PREFIX="e2e-bench-${BASE_RUN_ID}-trial-${trial_number}"
+  export JOB_PREFIX
+  RESULT_GROUP="kernelq-e2e-bench-${BASE_RUN_ID}-trial-${trial_number}"
 
-echo "==> Ensuring jobs table exists..."
-docker exec -i kernelq-postgres psql -U kernelq -d kernelq \
-  < control_plane/migrations/001_create_jobs.sql >/dev/null
-
-echo "==> Creating Kafka topics..."
-./infra/kafka/create-topics.sh
-
-echo "==> Building worker..."
-(
-  cd worker
-  go build -o "${CONSUMER_BIN}" ./cmd/consumer
-)
-
-echo "==> Starting worker (workers=${WORKERS}, queue_capacity=${QUEUE_CAPACITY})..."
-: >"${WORKER_LOG}"
-KERNELQ_WORKER_COUNT="${WORKERS}" \
-  KERNELQ_WORKER_QUEUE_CAPACITY="${QUEUE_CAPACITY}" \
-  "${CONSUMER_BIN}" >"${WORKER_LOG}" 2>&1 &
-WORKER_PID=$!
-
-echo "==> Waiting for worker startup..."
-_startup_deadline=$((SECONDS + 15))
-while ! grep -Fq "KernelQ worker consumer started" "${WORKER_LOG}"; do
-  if ! kill -0 "${WORKER_PID}" 2>/dev/null; then
-    echo "FAIL: worker exited before startup" >&2
-    cat "${WORKER_LOG}" >&2
-    exit 1
+  if (( TRIALS > 1 )); then
+    echo "==> Trial ${trial_number}/${TRIALS}: creating ${COUNT} queued jobs (prefix=${JOB_PREFIX})..."
+  else
+    echo "==> Creating ${COUNT} queued jobs (prefix=${JOB_PREFIX})..."
   fi
-  if (( SECONDS >= _startup_deadline )); then
-    echo "FAIL: worker did not log startup within 15s" >&2
-    cat "${WORKER_LOG}" >&2
-    exit 1
-  fi
-  sleep 0.25
-done
 
-echo "==> Creating ${COUNT} queued jobs (prefix=${JOB_PREFIX})..."
-PYTHONPATH=. JOB_PREFIX="${JOB_PREFIX}" COUNT="${COUNT}" python3 <<'PY'
+  PYTHONPATH=. COUNT="${COUNT}" python3 <<'PY'
 import os
 
 from control_plane.kernelq.db import connect
@@ -162,12 +134,11 @@ with connect() as conn:
 print(f"created_jobs={count}")
 PY
 
-generated_jobs="${COUNT}"
-bench_start_time="$(python3 -c 'import time; print(time.time())')"
+  generated_jobs="${COUNT}"
+  bench_start_time="$(python3 -c 'import time; print(time.time())')"
 
-echo "==> Running scheduler ticks until all jobs are dispatched..."
-export JOB_PREFIX
-PYTHONPATH=. COUNT="${COUNT}" python3 <<'PY'
+  echo "==> Running scheduler ticks until all jobs are dispatched..."
+  PYTHONPATH=. COUNT="${COUNT}" python3 <<'PY'
 import os
 import sys
 
@@ -214,17 +185,17 @@ with connect() as conn:
         producer.close()
 PY
 
-dispatched_jobs="$(count_jobs_for_prefix dispatched)"
-succeeded_after_dispatch="$(count_jobs_for_prefix succeeded)"
-dispatched_jobs=$((dispatched_jobs + succeeded_after_dispatch))
+  dispatched_jobs="$(count_jobs_for_prefix dispatched)"
+  succeeded_after_dispatch="$(count_jobs_for_prefix succeeded)"
+  dispatched_jobs=$((dispatched_jobs + succeeded_after_dispatch))
 
-if [[ "${dispatched_jobs}" -ne "${generated_jobs}" ]]; then
-  fail_benchmark "dispatched_jobs=${dispatched_jobs} expected=${generated_jobs}"
-fi
+  if [[ "${dispatched_jobs}" -ne "${generated_jobs}" ]]; then
+    fail_benchmark "dispatched_jobs=${dispatched_jobs} expected=${generated_jobs}"
+  fi
 
-echo "==> Consuming results until all jobs reach succeeded (timeout ${TIMEOUT_SECONDS}s)..."
-export JOB_PREFIX RESULT_GROUP
-PYTHONPATH=. COUNT="${COUNT}" TIMEOUT_SECONDS="${TIMEOUT_SECONDS}" python3 <<'PY'
+  echo "==> Consuming results until all jobs reach succeeded (timeout ${TIMEOUT_SECONDS}s)..."
+  export RESULT_GROUP
+  PYTHONPATH=. COUNT="${COUNT}" TIMEOUT_SECONDS="${TIMEOUT_SECONDS}" python3 <<'PY'
 import os
 import sys
 import time
@@ -278,34 +249,151 @@ with connect() as conn:
         kafka_consumer.close()
 PY
 
-elapsed_seconds="$(python3 -c "import time; print(time.time() - ${bench_start_time})")"
-succeeded_jobs="$(count_jobs_for_prefix succeeded)"
-dispatched_jobs="$(count_jobs_for_prefix dispatched)"
-dispatched_jobs=$((dispatched_jobs + succeeded_jobs))
+  elapsed_seconds="$(python3 -c "import time; print(time.time() - ${bench_start_time})")"
+  succeeded_jobs="$(count_jobs_for_prefix succeeded)"
+  dispatched_jobs="$(count_jobs_for_prefix dispatched)"
+  dispatched_jobs=$((dispatched_jobs + succeeded_jobs))
 
-if [[ "${succeeded_jobs}" -ne "${generated_jobs}" ]]; then
-  fail_benchmark "succeeded_jobs=${succeeded_jobs} expected=${generated_jobs}"
-fi
+  if [[ "${succeeded_jobs}" -ne "${generated_jobs}" ]]; then
+    fail_benchmark "succeeded_jobs=${succeeded_jobs} expected=${generated_jobs}"
+  fi
 
-if [[ "${dispatched_jobs}" -ne "${generated_jobs}" ]]; then
-  fail_benchmark "dispatched_jobs=${dispatched_jobs} expected=${generated_jobs}"
-fi
+  if [[ "${dispatched_jobs}" -ne "${generated_jobs}" ]]; then
+    fail_benchmark "dispatched_jobs=${dispatched_jobs} expected=${generated_jobs}"
+  fi
 
-jobs_completed_per_second="$(python3 -c "
+  jobs_completed_per_second="$(python3 -c "
 completed = ${succeeded_jobs}
 elapsed = ${elapsed_seconds}
 print(completed / elapsed if elapsed > 0 else 0.0)
 ")"
 
-echo
-echo "End-to-end completion benchmark finished."
-echo "  generated_jobs:           ${generated_jobs}"
-echo "  dispatched_jobs:          ${dispatched_jobs}"
-echo "  succeeded_jobs:           ${succeeded_jobs}"
-echo "  elapsed_seconds:          ${elapsed_seconds}"
-echo "  jobs_completed_per_second:  ${jobs_completed_per_second}"
-echo "  worker_count:             ${WORKERS}"
-echo "  queue_capacity:           ${QUEUE_CAPACITY}"
-echo "  job_prefix:               ${JOB_PREFIX}"
-echo
-echo "event=benchmark_end_to_end_completion generated_jobs=${generated_jobs} dispatched_jobs=${dispatched_jobs} succeeded_jobs=${succeeded_jobs} elapsed_seconds=${elapsed_seconds} jobs_completed_per_second=${jobs_completed_per_second} worker_count=${WORKERS} queue_capacity=${QUEUE_CAPACITY} job_prefix=${JOB_PREFIX}"
+  if (( TRIALS > 1 )); then
+    echo "Trial ${trial_number} (${JOB_PREFIX})"
+    echo "  generated_jobs:           ${generated_jobs}"
+    echo "  dispatched_jobs:          ${dispatched_jobs}"
+    echo "  succeeded_jobs:           ${succeeded_jobs}"
+    echo "  elapsed_seconds:          ${elapsed_seconds}"
+    echo "  jobs_completed_per_second:  ${jobs_completed_per_second}"
+    echo
+  fi
+
+  TRIAL_GENERATED_JOBS+=("${generated_jobs}")
+  TRIAL_DISPATCHED_JOBS+=("${dispatched_jobs}")
+  TRIAL_SUCCEEDED_JOBS+=("${succeeded_jobs}")
+  TRIAL_ELAPSED_SECONDS+=("${elapsed_seconds}")
+  TRIAL_JOBS_PER_SECOND+=("${jobs_completed_per_second}")
+  TRIAL_PREFIXES+=("${JOB_PREFIX}")
+
+  if (( TRIALS == 1 )); then
+    SINGLE_TRIAL_GENERATED_JOBS="${generated_jobs}"
+    SINGLE_TRIAL_DISPATCHED_JOBS="${dispatched_jobs}"
+    SINGLE_TRIAL_SUCCEEDED_JOBS="${succeeded_jobs}"
+    SINGLE_TRIAL_ELAPSED_SECONDS="${elapsed_seconds}"
+    SINGLE_TRIAL_JOBS_PER_SECOND="${jobs_completed_per_second}"
+    SINGLE_TRIAL_PREFIX="${JOB_PREFIX}"
+  fi
+}
+
+echo "==> Starting Postgres, Zookeeper, and Kafka..."
+docker compose up -d postgres zookeeper kafka
+
+echo "==> Waiting for Postgres..."
+sleep 3
+docker exec kernelq-postgres pg_isready -U kernelq -d kernelq
+
+echo "==> Ensuring jobs table exists..."
+docker exec -i kernelq-postgres psql -U kernelq -d kernelq \
+  < control_plane/migrations/001_create_jobs.sql >/dev/null
+
+echo "==> Creating Kafka topics..."
+./infra/kafka/create-topics.sh
+
+echo "==> Building worker..."
+(
+  cd worker
+  go build -o "${CONSUMER_BIN}" ./cmd/consumer
+)
+
+echo "==> Starting worker (workers=${WORKERS}, queue_capacity=${QUEUE_CAPACITY})..."
+: >"${WORKER_LOG}"
+KERNELQ_WORKER_COUNT="${WORKERS}" \
+  KERNELQ_WORKER_QUEUE_CAPACITY="${QUEUE_CAPACITY}" \
+  "${CONSUMER_BIN}" >"${WORKER_LOG}" 2>&1 &
+WORKER_PID=$!
+
+echo "==> Waiting for worker startup..."
+_startup_deadline=$((SECONDS + 15))
+while ! grep -Fq "KernelQ worker consumer started" "${WORKER_LOG}"; do
+  if ! kill -0 "${WORKER_PID}" 2>/dev/null; then
+    echo "FAIL: worker exited before startup" >&2
+    cat "${WORKER_LOG}" >&2
+    exit 1
+  fi
+  if (( SECONDS >= _startup_deadline )); then
+    echo "FAIL: worker did not log startup within 15s" >&2
+    cat "${WORKER_LOG}" >&2
+    exit 1
+  fi
+  sleep 0.25
+done
+
+TRIAL_GENERATED_JOBS=()
+TRIAL_DISPATCHED_JOBS=()
+TRIAL_SUCCEEDED_JOBS=()
+TRIAL_ELAPSED_SECONDS=()
+TRIAL_JOBS_PER_SECOND=()
+TRIAL_PREFIXES=()
+
+for trial_number in $(seq 1 "${TRIALS}"); do
+  run_single_trial "${trial_number}"
+done
+
+if (( TRIALS == 1 )); then
+  echo
+  echo "End-to-end completion benchmark finished."
+  echo "  generated_jobs:           ${SINGLE_TRIAL_GENERATED_JOBS}"
+  echo "  dispatched_jobs:          ${SINGLE_TRIAL_DISPATCHED_JOBS}"
+  echo "  succeeded_jobs:           ${SINGLE_TRIAL_SUCCEEDED_JOBS}"
+  echo "  elapsed_seconds:          ${SINGLE_TRIAL_ELAPSED_SECONDS}"
+  echo "  jobs_completed_per_second:  ${SINGLE_TRIAL_JOBS_PER_SECOND}"
+  echo "  worker_count:             ${WORKERS}"
+  echo "  queue_capacity:           ${QUEUE_CAPACITY}"
+  echo "  job_prefix:               ${SINGLE_TRIAL_PREFIX}"
+  echo
+  echo "event=benchmark_end_to_end_completion generated_jobs=${SINGLE_TRIAL_GENERATED_JOBS} dispatched_jobs=${SINGLE_TRIAL_DISPATCHED_JOBS} succeeded_jobs=${SINGLE_TRIAL_SUCCEEDED_JOBS} elapsed_seconds=${SINGLE_TRIAL_ELAPSED_SECONDS} jobs_completed_per_second=${SINGLE_TRIAL_JOBS_PER_SECOND} worker_count=${WORKERS} queue_capacity=${QUEUE_CAPACITY} job_prefix=${SINGLE_TRIAL_PREFIX}"
+else
+  _rates_csv="$(IFS=,; echo "${TRIAL_JOBS_PER_SECOND[*]}")"
+  _elapsed_csv="$(IFS=,; echo "${TRIAL_ELAPSED_SECONDS[*]}")"
+  _succeeded_csv="$(IFS=,; echo "${TRIAL_SUCCEEDED_JOBS[*]}")"
+  read -r total_succeeded_jobs min_jobs_completed_per_second avg_jobs_completed_per_second max_jobs_completed_per_second min_elapsed_seconds avg_elapsed_seconds max_elapsed_seconds <<<"$(python3 -c "
+succeeded = [int(x) for x in '${_succeeded_csv}'.split(',')]
+rates = [float(x) for x in '${_rates_csv}'.split(',')]
+elapsed = [float(x) for x in '${_elapsed_csv}'.split(',')]
+total = sum(succeeded)
+print(
+    total,
+    min(rates),
+    sum(rates) / len(rates),
+    max(rates),
+    min(elapsed),
+    sum(elapsed) / len(elapsed),
+    max(elapsed),
+)
+")"
+
+  echo "End-to-end completion benchmark finished."
+  echo "  trials:                           ${TRIALS}"
+  echo "  generated_jobs_per_trial:         ${COUNT}"
+  echo "  total_succeeded_jobs:             ${total_succeeded_jobs}"
+  echo "  min_jobs_completed_per_second:    ${min_jobs_completed_per_second}"
+  echo "  avg_jobs_completed_per_second:    ${avg_jobs_completed_per_second}"
+  echo "  max_jobs_completed_per_second:    ${max_jobs_completed_per_second}"
+  echo "  min_elapsed_seconds:              ${min_elapsed_seconds}"
+  echo "  avg_elapsed_seconds:              ${avg_elapsed_seconds}"
+  echo "  max_elapsed_seconds:              ${max_elapsed_seconds}"
+  echo "  worker_count:                     ${WORKERS}"
+  echo "  queue_capacity:                   ${QUEUE_CAPACITY}"
+  echo
+  echo "event=benchmark_end_to_end_completion trials=${TRIALS} generated_jobs_per_trial=${COUNT} total_succeeded_jobs=${total_succeeded_jobs} min_jobs_completed_per_second=${min_jobs_completed_per_second} avg_jobs_completed_per_second=${avg_jobs_completed_per_second} max_jobs_completed_per_second=${max_jobs_completed_per_second} worker_count=${WORKERS} queue_capacity=${QUEUE_CAPACITY}"
+fi

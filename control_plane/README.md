@@ -267,10 +267,11 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 
 ## End-to-End Completion Benchmark
 
-**Day 94:** **`scripts/benchmark_end_to_end_completion.sh`** — first **full-system** benchmark: **`queued` → `dispatched` → worker result → `succeeded`** (scheduler, Kafka, worker, result consumer, Postgres). **Complements** scheduler and worker segment benchmarks. **No HTTP API enqueue**; **local dev only — not production capacity.** Report: **[day94-end-to-end-completion.md](../docs/benchmarks/day94-end-to-end-completion.md)**.
+**Day 94+:** **`scripts/benchmark_end_to_end_completion.sh`** — full-system benchmark: **`queued` → `dispatched` → worker result → `succeeded`**. **`TRIALS`** (default **`1`**) with **min/avg/max** when **`TRIALS>1`**. **Complements** scheduler and worker benchmarks. **Local dev only — not production capacity.** Report: **[day94-end-to-end-completion.md](../docs/benchmarks/day94-end-to-end-completion.md)**.
 
 ```bash
 ./control_plane/scripts/benchmark_end_to_end_completion.sh
+TRIALS=2 COUNT=5 ./control_plane/scripts/benchmark_end_to_end_completion.sh
 ```
 
 ## Structured Script Logs
