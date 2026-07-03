@@ -265,6 +265,14 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 
 **Benchmark reports:** **[day75-baseline.md](../docs/benchmarks/day75-baseline.md)** (first local baseline) and **[day77-scheduler-1000.md](../docs/benchmarks/day77-scheduler-1000.md)** (1000 jobs/trial, 3 trials, min/avg/max throughput). **Local development baselines only**—not production capacity claims.
 
+## End-to-End Completion Benchmark
+
+**Day 94:** **`scripts/benchmark_end_to_end_completion.sh`** — first **full-system** benchmark: **`queued` → `dispatched` → worker result → `succeeded`** (scheduler, Kafka, worker, result consumer, Postgres). **Complements** scheduler and worker segment benchmarks. **No HTTP API enqueue**; **local dev only — not production capacity.** Report: **[day94-end-to-end-completion.md](../docs/benchmarks/day94-end-to-end-completion.md)**.
+
+```bash
+./control_plane/scripts/benchmark_end_to_end_completion.sh
+```
+
 ## Structured Script Logs
 
 One-shot scripts print an extra **key=value summary line** at the end (via `kernelq/logging_utils.py` for Python scripts; bash helpers in smoke tests). Examples:
@@ -276,6 +284,7 @@ event=result_consumer processed_message=true errors_count=0
 event=job_state_snapshot total_jobs=5010 states_count=4
 event=generate_load_jobs created_jobs=1000 elapsed_seconds=1.2 jobs_per_second=833.3 tenants=10
 event=benchmark_scheduler_throughput dispatched_jobs=1000 generated_jobs=1000 jobs_dispatched_per_second=4200.0 tick_count=20
+event=benchmark_end_to_end_completion generated_jobs=10 dispatched_jobs=10 succeeded_jobs=10 jobs_completed_per_second=0.5 worker_count=4 queue_capacity=100 job_prefix=e2e-bench-123
 event=smoke_full_completion job_id=day52-full-123 final_state=succeeded success=true
 ```
 

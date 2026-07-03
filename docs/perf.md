@@ -1,6 +1,6 @@
 # Performance
 
-**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91** adds the first **worker throughput** benchmark; **end-to-end completion** throughput is still pending.
+**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91–93** worker throughput; **Day 94** adds the first **end-to-end completion** benchmark.
 
 ## Baseline Metrics Plan
 
@@ -557,13 +557,19 @@ COUNT=25 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughp
 TRIALS=3 COUNT=25 ./worker/scripts/benchmark_worker_throughput.sh
 ```
 
+**Day 94:** **`./control_plane/scripts/benchmark_end_to_end_completion.sh`** — **`queued` → `dispatched` → worker result → `succeeded`** (scheduler + Kafka + worker + Postgres). **Complements** scheduler and worker benchmarks. **Local dev only — not production capacity.** Report: **[day94-end-to-end-completion.md](benchmarks/day94-end-to-end-completion.md)**.
+
+```bash
+./control_plane/scripts/benchmark_end_to_end_completion.sh
+```
+
 ## Worker Pool Concurrency
 
-**Day 78–91** — worker pool through env-configurable watermark policy; **Day 91** worker throughput benchmark. **Real Kafka pause/resume adapter** future work. Benchmark reports: [Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md) (scheduler); [Day 91](benchmarks/day91-worker-throughput.md) (worker). **End-to-end completion** throughput still future work.
+**Day 78–94** — worker pool through env-configurable watermark policy; segment benchmarks through **Day 94** end-to-end completion. **Real Kafka pause/resume adapter** future work. Benchmark reports: [Day 75](benchmarks/day75-baseline.md), [Day 77](benchmarks/day77-scheduler-1000.md) (scheduler); [Day 91](benchmarks/day91-worker-throughput.md) (worker); [Day 94](benchmarks/day94-end-to-end-completion.md) (full system).
 
 ## Benchmark Reports
 
-Archived benchmark runs live under **`docs/benchmarks/`**. **[Day 75 baseline](benchmarks/day75-baseline.md)** (load insertion, scheduler dispatch, queue-wait percentiles). **[Day 77 scheduler — 1000 jobs](benchmarks/day77-scheduler-1000.md)** (3-trial scheduler throughput). **[Day 91 worker throughput](benchmarks/day91-worker-throughput.md)** (first dispatch → worker → result benchmark; complements scheduler reports). All are **local development baselines**, not production capacity. **End-to-end completion** throughput remains **future work**.
+Archived benchmark runs live under **`docs/benchmarks/`**. **[Day 75 baseline](benchmarks/day75-baseline.md)** (load insertion, scheduler dispatch, queue-wait percentiles). **[Day 77 scheduler — 1000 jobs](benchmarks/day77-scheduler-1000.md)** (3-trial scheduler throughput). **[Day 91 worker throughput](benchmarks/day91-worker-throughput.md)** (dispatch → worker → result). **[Day 94 end-to-end completion](benchmarks/day94-end-to-end-completion.md)** (**`queued` → `succeeded`**). All are **local development baselines**, not production capacity.
 
 ## Prometheus Scraping
 

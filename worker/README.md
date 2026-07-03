@@ -251,6 +251,8 @@ COUNT=25 WORKERS=4 QUEUE_CAPACITY=100 ./worker/scripts/benchmark_worker_throughp
 TRIALS=3 COUNT=25 ./worker/scripts/benchmark_worker_throughput.sh
 ```
 
+**Day 94 end-to-end:** **`control_plane/scripts/benchmark_end_to_end_completion.sh`** measures **`queued` → `succeeded`** through scheduler, Kafka, worker, and result consumer. **Complements** segment benchmarks above. **Local dev only — not production capacity.** Report: **[day94-end-to-end-completion.md](../docs/benchmarks/day94-end-to-end-completion.md)**.
+
 ## Kafka Pause/Resume Backpressure
 
 When enabled (see **Backpressure Configuration**), **`KafkaConsumer.Run`** wires **`BackpressurePolicy`** decisions to **`PauseResumeController`** via **`maybeApplyBackpressure`** (before poll, after enqueue, after worker success)—logs **`event=worker_backpressure_pause`** / **`event=worker_backpressure_resume`**; shutdown stats include **`backpressure_pause_events`** and **`backpressure_resume_events`**.
