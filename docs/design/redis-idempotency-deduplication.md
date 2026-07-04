@@ -1,6 +1,6 @@
 # Redis Idempotency and Deduplication Design
 
-Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96:** Redis in `docker-compose.yml`. **Day 97:** **`IdempotencyStore`** + test-only **`InMemoryIdempotencyStore`**. **Day 98:** **`RedisIdempotencyStore`** — duck-typed client, **`SET NX EX`** semantics; unit tests use a fake client; optional **`smoke_redis_idempotency.py`** (redis-cli). **Application integration** (worker/result consumer) still **future work**.
+Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96:** Redis in `docker-compose.yml`. **Day 97:** **`IdempotencyStore`** + test-only **`InMemoryIdempotencyStore`**. **Day 98:** **`RedisIdempotencyStore`** — duck-typed client, **`SET NX EX`** semantics; unit tests use a fake client; optional **`smoke_redis_idempotency.py`** (redis-cli). **Day 99:** canonical key builders in **`idempotency_keys.py`** — **`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`** — so control plane and workers share one key format and avoid drift. **Application integration** (Redis + result consumer) is **next**.
 
 **Interview sound bite:** *“Postgres owns job state; Redis owns short-lived ‘have we seen this event?’ keys with TTLs; Kafka stays at-least-once.”*
 
@@ -20,6 +20,8 @@ Redis is **not** a second database for jobs—it is a **TTL-backed dedupe cache*
 **Day 97:** **`IdempotencyStore.try_claim(key, ttl_seconds) -> bool`** — `True` = first claimant, `False` = duplicate. **`InMemoryIdempotencyStore`** for unit tests; handlers depend on the interface, not Redis directly.
 
 **Day 98:** **`RedisIdempotencyStore`** — same contract via duck-typed ``client.set(..., nx=True, ex=ttl)``; no ``redis`` import in the store module.
+
+**Day 99:** **`kernelq/idempotency_keys.py`** — stdlib helpers that build the logical key segment passed to **`try_claim`**. **`RedisIdempotencyStore`** prepends its namespace (default **`kernelq:idempotency`**). Handlers must call the helpers instead of ad-hoc string formatting so dispatch, execution, result, and event paths stay aligned across components.
 
 ---
 
@@ -46,14 +48,16 @@ Without dedupe:
 
 ## 3. Proposed Keys
 
-Keys are **namespaced**, include stable **idempotency dimensions** (`job_id`, `attempt`, or `event_id`), and use a consistent prefix:
+Keys include stable **idempotency dimensions** (`job_id`, `attempt`, or `event_id`) and a **stage-specific prefix**. **Day 99** centralizes the logical segment in **`idempotency_keys.py`** — callers pass the return value to **`IdempotencyStore.try_claim`**; **`RedisIdempotencyStore`** stores it as **`kernelq:idempotency:<logical_key>`** (default namespace).
 
-| Key pattern | Purpose | Example |
-|-------------|---------|---------|
-| `kernelq:dispatch:<job_id>:<attempt>` | Scheduler or producer already published this dispatch handoff | `kernelq:dispatch:job-abc:0` |
-| `kernelq:execution:<job_id>:<attempt>` | Worker already accepted / started this execution unit | `kernelq:execution:job-abc:0` |
-| `kernelq:worker-result:<job_id>:<attempt>` | Result consumer already applied this worker outcome | `kernelq:worker-result:job-abc:0` |
-| `kernelq:dedupe:<event_id>` | Generic idempotency for opaque event ids (audit, future outbox) | `kernelq:dedupe:evt-7f3a…` |
+| Helper | Logical key (→ `try_claim`) | Purpose | Example |
+|--------|----------------------------|---------|---------|
+| **`dispatch_key(job_id, attempt)`** | `dispatch:<job_id>:<attempt>` | Scheduler or producer already published this dispatch handoff | `dispatch:job-abc:0` |
+| **`execution_key(job_id, attempt)`** | `execution:<job_id>:<attempt>` | Worker already accepted / started this execution unit | `execution:job-abc:0` |
+| **`worker_result_key(job_id, attempt)`** | `worker-result:<job_id>:<attempt>` | Result consumer already applied this worker outcome | `worker-result:job-abc:0` |
+| **`event_key(event_id)`** | `event:<event_id>` | Generic idempotency for opaque event ids (audit, future outbox) | `event:evt-7f3a…` |
+
+**Do not** hand-roll these strings in handlers — use the helpers so Python control plane, Go worker, and tests cannot drift apart.
 
 **`<attempt>`** aligns with `retry_count` / retry generation in Postgres when retries are in play. For first-run jobs, **`0`** is the default attempt dimension.
 
@@ -75,7 +79,7 @@ Redis keys **must expire** to avoid unbounded memory growth.
 **Starting point (local dev, subject to change):**
 
 - Dispatch / execution / result keys: **24h** default TTL, documented in config.
-- Generic `kernelq:dedupe:<event_id>`: match **Kafka topic retention** or job max lifetime, whichever is larger.
+- Generic **`event_key(event_id)`** keys: match **Kafka topic retention** or job max lifetime, whichever is larger.
 
 When TTL expires, a **duplicate is possible again**—Postgres state checks remain the backstop (e.g. ignore `succeeded` → `succeeded`).
 
@@ -88,8 +92,10 @@ When TTL expires, a **duplicate is possible again**—Postgres state checks rema
 Python contract (Day 97): **`IdempotencyStore.try_claim`** — same semantics as:
 
 ```
-SET kernelq:execution:job-abc:0 1 NX EX <ttl>
+SET kernelq:idempotency:execution:job-abc:0 1 NX EX <ttl>
 ```
+
+(Logical key from **`execution_key("job-abc", 0)`**; **`RedisIdempotencyStore`** adds the **`kernelq:idempotency:`** namespace.)
 
 | Result | Meaning | Action |
 |--------|---------|--------|
@@ -110,8 +116,8 @@ A successful path **writes Postgres** for durable outcome and **sets Redis** to 
 
 | Boundary | What duplicate means | Idempotency key |
 |----------|----------------------|-----------------|
-| **Dispatch dedupe** | Same job dispatch consumed twice on `kernelq.jobs.dispatch` | `kernelq:dispatch:` / `kernelq:execution:` |
-| **Result dedupe** | Same `WorkerResultEvent` applied twice in control plane | `kernelq:worker-result:` |
+| **Dispatch dedupe** | Same job dispatch consumed twice on `kernelq.jobs.dispatch` | **`dispatch_key`** / **`execution_key`** |
+| **Result dedupe** | Same `WorkerResultEvent` applied twice in control plane | **`worker_result_key`** |
 
 Both are required; either alone leaves a gap in the pipeline.
 
@@ -139,9 +145,10 @@ Both are required; either alone leaves a gap in the pipeline.
 | **96** | Redis in `docker-compose.yml`; this design doc; docs/runbooks mention Redis |
 | **97** | **`IdempotencyStore`** + **`InMemoryIdempotencyStore`**; unit tests |
 | **98** | **`RedisIdempotencyStore`** (duck-typed client); fake-client tests; optional redis-cli smoke |
-| **100+** | Wire into worker intake, result consumer, metrics — **application integration** |
+| **99** | **`idempotency_keys.py`** — **`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`**; unit tests; prevents key drift between components |
+| **100+** | Wire **`RedisIdempotencyStore`** + key helpers into worker intake, **result consumer**, metrics — **application integration** |
 
-Integration order: **interface → in-memory tests → Redis adapter → handlers** — same pattern as Kafka pause/resume (policy before adapter).
+Integration order: **interface → in-memory tests → Redis adapter → canonical keys → handlers** — same pattern as Kafka pause/resume (policy before adapter).
 
 ---
 
@@ -149,9 +156,9 @@ Integration order: **interface → in-memory tests → Redis adapter → handler
 
 - **Not replacing Postgres** — job lifecycle and audit stay in `jobs` table.
 - **Not replacing Kafka offsets** — consumer groups still commit offsets; Redis is additive replay protection.
-- **Not implementing handler dedupe yet** — Day 98 is the Redis store + tests; worker/result paths unchanged.
+- **Not implementing handler dedupe yet** — Day 99 adds canonical key builders; **Redis + result consumer wiring** is next; worker/result paths unchanged until then.
 - **Not exactly-once Kafka** — goal is **effective-once** behavior for job side effects.
-- **Not API idempotency keys for HTTP enqueue yet** — future `Idempotency-Key` header can reuse `kernelq:dedupe:<event_id>` pattern.
+- **Not API idempotency keys for HTTP enqueue yet** — future `Idempotency-Key` header can reuse **`event_key(event_id)`**.
 
 ---
 

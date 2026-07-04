@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–98):** **`docker compose up -d redis`** — `kernelq-redis` on **`localhost:6379`**. **`RedisIdempotencyStore`** in `idempotency_store.py` (duck-typed client, `SET NX EX`); unit tests use a **fake client**. Optional smoke: **`PYTHONPATH=. python3 control_plane/scripts/smoke_redis_idempotency.py`**. **Not integrated into worker/result pipeline yet** — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Redis / idempotency (Day 96–99):** **`docker compose up -d redis`** — `kernelq-redis` on **`localhost:6379`**. **`RedisIdempotencyStore`** in `idempotency_store.py` (duck-typed client, `SET NX EX`); unit tests use a **fake client**. **Day 99:** canonical key builders in **`idempotency_keys.py`** — **`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`** — one shared format for worker result, dispatch, execution, and generic event IDs (prevents key drift). Optional smoke: **`PYTHONPATH=. python3 control_plane/scripts/smoke_redis_idempotency.py`**. **Redis + result consumer integration next** — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 | Path | Command |
 |------|---------|

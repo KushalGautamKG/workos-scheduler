@@ -1,6 +1,6 @@
 # Performance
 
-**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91–95** segment and E2E benchmarks. **Day 96–98:** Redis infra + **`RedisIdempotencyStore`** (fake client tests; optional redis-cli smoke); **handler integration future work** — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91–95** segment and E2E benchmarks. **Day 96–98:** Redis infra + **`RedisIdempotencyStore`** (fake client tests; optional redis-cli smoke). **Day 99:** canonical idempotency key builders (**`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`**) — prevents key drift between components; **Redis + result consumer integration next** — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 ## Baseline Metrics Plan
 

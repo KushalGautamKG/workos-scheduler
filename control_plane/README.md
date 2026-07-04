@@ -276,10 +276,12 @@ TRIALS=2 COUNT=5 ./control_plane/scripts/benchmark_end_to_end_completion.sh
 
 ## Idempotency Store
 
-**Day 98:** **`kernelq/idempotency_store.py`** — **`IdempotencyStore`**, test-only **`InMemoryIdempotencyStore`**, and **`RedisIdempotencyStore`** (duck-typed Redis client, **`SET NX EX`**). Unit tests use a **fake client**; optional live check: **`scripts/smoke_redis_idempotency.py`** (redis-cli via Docker). **Not wired into worker/result pipeline yet.** Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
+**Day 98:** **`kernelq/idempotency_store.py`** — **`IdempotencyStore`**, test-only **`InMemoryIdempotencyStore`**, and **`RedisIdempotencyStore`** (duck-typed Redis client, **`SET NX EX`**). Unit tests use a **fake client**; optional live check: **`scripts/smoke_redis_idempotency.py`** (redis-cli via Docker).
+
+**Day 99:** **`kernelq/idempotency_keys.py`** — canonical key builders: **`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`**. Covers worker result, dispatch, execution, and generic event IDs; pass the returned string to **`try_claim`**. Prevents key drift between control plane, workers, and tests. **Redis + result consumer integration next.** Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
 
 ```bash
-python3 -m pytest control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py
+python3 -m pytest control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py control_plane/tests/test_idempotency_keys.py
 PYTHONPATH=. python3 control_plane/scripts/smoke_redis_idempotency.py
 ```
 
