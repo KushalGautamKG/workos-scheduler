@@ -1,6 +1,6 @@
 # Redis Idempotency and Deduplication Design
 
-Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96:** Redis in `docker-compose.yml`. **Day 97:** **`IdempotencyStore`** interface + **`InMemoryIdempotencyStore`** (`control_plane/kernelq/idempotency_store.py`) — mirrors **`SET NX` + TTL** for tests. **Redis-backed store next** (Day 99). **Application integration** (worker/result consumer) still **future work**.
+Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96:** Redis in `docker-compose.yml`. **Day 97:** **`IdempotencyStore`** + test-only **`InMemoryIdempotencyStore`**. **Day 98:** **`RedisIdempotencyStore`** — duck-typed client, **`SET NX EX`** semantics; unit tests use a fake client; optional **`smoke_redis_idempotency.py`** (redis-cli). **Application integration** (worker/result consumer) still **future work**.
 
 **Interview sound bite:** *“Postgres owns job state; Redis owns short-lived ‘have we seen this event?’ keys with TTLs; Kafka stays at-least-once.”*
 
@@ -17,7 +17,9 @@ Redis answers **“have we already processed this logical event?”** in sub-mil
 
 Redis is **not** a second database for jobs—it is a **TTL-backed dedupe cache** ahead of expensive or irreversible work.
 
-**Day 97:** **`IdempotencyStore.try_claim(key, ttl_seconds) -> bool`** — `True` = first claimant, `False` = duplicate. **`InMemoryIdempotencyStore`** implements the same semantics in-process for unit tests; handlers depend on the interface, not Redis directly.
+**Day 97:** **`IdempotencyStore.try_claim(key, ttl_seconds) -> bool`** — `True` = first claimant, `False` = duplicate. **`InMemoryIdempotencyStore`** for unit tests; handlers depend on the interface, not Redis directly.
+
+**Day 98:** **`RedisIdempotencyStore`** — same contract via duck-typed ``client.set(..., nx=True, ex=ttl)``; no ``redis`` import in the store module.
 
 ---
 
@@ -126,7 +128,7 @@ Both are required; either alone leaves a gap in the pipeline.
 | **Mismatch with Postgres** | Redis says “seen” but row missing or still `queued` | Prefer Postgres on conflict; delete stale Redis key; reconciliation job (future) |
 | **Clock / TTL skew** | Early expiry across nodes | Use relative `EX` from set time; single Redis primary in dev |
 
-**Today:** **`InMemoryIdempotencyStore`** + tests only — no Redis client in app code, **no handler wiring** yet. Local Redis: **`docker compose up -d redis`**.
+**Today:** **`RedisIdempotencyStore`** + fake-client unit tests; optional redis-cli smoke — **no handler wiring** yet. Local Redis: **`docker compose up -d redis`**.
 
 ---
 
@@ -135,8 +137,8 @@ Both are required; either alone leaves a gap in the pipeline.
 | Day | Scope |
 |-----|--------|
 | **96** | Redis in `docker-compose.yml`; this design doc; docs/runbooks mention Redis |
-| **97** | **`IdempotencyStore`** + **`InMemoryIdempotencyStore`**; unit tests (`idempotency_store.py`) |
-| **98–99** | Redis client wrapper + **`RedisIdempotencyStore`** implementing same interface |
+| **97** | **`IdempotencyStore`** + **`InMemoryIdempotencyStore`**; unit tests |
+| **98** | **`RedisIdempotencyStore`** (duck-typed client); fake-client tests; optional redis-cli smoke |
 | **100+** | Wire into worker intake, result consumer, metrics — **application integration** |
 
 Integration order: **interface → in-memory tests → Redis adapter → handlers** — same pattern as Kafka pause/resume (policy before adapter).
@@ -147,7 +149,7 @@ Integration order: **interface → in-memory tests → Redis adapter → handler
 
 - **Not replacing Postgres** — job lifecycle and audit stay in `jobs` table.
 - **Not replacing Kafka offsets** — consumer groups still commit offsets; Redis is additive replay protection.
-- **Not implementing handler dedupe yet** — Day 97 is the store boundary only; worker/result paths unchanged.
+- **Not implementing handler dedupe yet** — Day 98 is the Redis store + tests; worker/result paths unchanged.
 - **Not exactly-once Kafka** — goal is **effective-once** behavior for job side effects.
 - **Not API idempotency keys for HTTP enqueue yet** — future `Idempotency-Key` header can reuse `kernelq:dedupe:<event_id>` pattern.
 

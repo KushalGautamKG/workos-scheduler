@@ -10,8 +10,8 @@ stays in Postgres).
 - ``True``  → first claimant; proceed with side effects
 - ``False`` → duplicate while the key is still live; skip or no-op
 
-This module uses only the Python standard library. A Redis-backed
-implementation comes in a later milestone (Day 99).
+This module uses only the Python standard library. ``RedisIdempotencyStore`` accepts
+any duck-typed client with ``set(key, value, nx=..., ex=...)`` — no ``redis`` import here.
 """
 
 from __future__ import annotations
@@ -32,6 +32,12 @@ def _validate_claim_inputs(key: str, ttl_seconds: int) -> None:
         raise ValueError("key must be non-empty")
     if ttl_seconds <= 0:
         raise ValueError("ttl_seconds must be a positive integer")
+
+
+def _validate_namespace(namespace: str) -> None:
+    """Reject blank Redis key namespaces."""
+    if not namespace or not namespace.strip():
+        raise ValueError("namespace must be non-empty")
 
 
 class IdempotencyStore(ABC):
@@ -105,3 +111,27 @@ class InMemoryIdempotencyStore(IdempotencyStore):
         for stored_key in expired_keys:
             del self._expiry_by_key[stored_key]
         return len(expired_keys)
+
+
+class RedisIdempotencyStore(IdempotencyStore):
+    """
+    Redis-backed idempotency store using ``SET key value NX EX ttl``.
+
+    ``client`` is duck-typed: any object with ``set(redis_key, value, nx=..., ex=...)``
+    that returns a truthy value when the key was set (redis-py returns ``True``) and
+    falsy when ``NX`` prevented the write (redis-py returns ``None``).
+
+    Does not import the ``redis`` package — inject a client from application wiring
+    or tests.
+    """
+
+    def __init__(self, client: object, namespace: str = "kernelq:idempotency") -> None:
+        _validate_namespace(namespace)
+        self._client = client
+        self._namespace = namespace
+
+    def try_claim(self, key: str, ttl_seconds: int) -> bool:
+        _validate_claim_inputs(key, ttl_seconds)
+        redis_key = f"{self._namespace}:{key}"
+        result = self._client.set(redis_key, "1", nx=True, ex=ttl_seconds)
+        return bool(result)

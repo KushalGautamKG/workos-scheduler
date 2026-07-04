@@ -274,6 +274,15 @@ PYTHONPATH=. python3 control_plane/scripts/benchmark_scheduler_throughput.py --c
 TRIALS=2 COUNT=5 ./control_plane/scripts/benchmark_end_to_end_completion.sh
 ```
 
+## Idempotency Store
+
+**Day 98:** **`kernelq/idempotency_store.py`** — **`IdempotencyStore`**, test-only **`InMemoryIdempotencyStore`**, and **`RedisIdempotencyStore`** (duck-typed Redis client, **`SET NX EX`**). Unit tests use a **fake client**; optional live check: **`scripts/smoke_redis_idempotency.py`** (redis-cli via Docker). **Not wired into worker/result pipeline yet.** Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
+
+```bash
+python3 -m pytest control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py
+PYTHONPATH=. python3 control_plane/scripts/smoke_redis_idempotency.py
+```
+
 ## Structured Script Logs
 
 One-shot scripts print an extra **key=value summary line** at the end (via `kernelq/logging_utils.py` for Python scripts; bash helpers in smoke tests). Examples:
@@ -287,6 +296,7 @@ event=generate_load_jobs created_jobs=1000 elapsed_seconds=1.2 jobs_per_second=8
 event=benchmark_scheduler_throughput dispatched_jobs=1000 generated_jobs=1000 jobs_dispatched_per_second=4200.0 tick_count=20
 event=benchmark_end_to_end_completion generated_jobs=10 dispatched_jobs=10 succeeded_jobs=10 jobs_completed_per_second=0.5 worker_count=4 queue_capacity=100 job_prefix=e2e-bench-123
 event=smoke_full_completion job_id=day52-full-123 final_state=succeeded success=true
+event=smoke_redis_idempotency success=true
 ```
 
 **MVP smoke tests** emit `event=smoke_*` summary lines (`smoke_full_completion`, `smoke_retry_requeue`, `smoke_retry_exhaustion`, `smoke_queue_wait_metrics`) with `success=true|false` and state fields. Collect demo evidence after a run:

@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–97):** **`docker compose up -d redis`** — `kernelq-redis` on **`localhost:6379`** (`redis-cli ping` → `PONG`). **`IdempotencyStore`** boundary in `control_plane/kernelq/idempotency_store.py`; **`InMemoryIdempotencyStore`** is **test-only**. **Redis-backed store** and worker/result integration **future work** — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Redis / idempotency (Day 96–98):** **`docker compose up -d redis`** — `kernelq-redis` on **`localhost:6379`**. **`RedisIdempotencyStore`** in `idempotency_store.py` (duck-typed client, `SET NX EX`); unit tests use a **fake client**. Optional smoke: **`PYTHONPATH=. python3 control_plane/scripts/smoke_redis_idempotency.py`**. **Not integrated into worker/result pipeline yet** — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 | Path | Command |
 |------|---------|
