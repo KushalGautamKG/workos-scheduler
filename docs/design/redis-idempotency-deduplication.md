@@ -1,6 +1,6 @@
 # Redis Idempotency and Deduplication Design
 
-Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96** adds local Redis infrastructure (`docker-compose.yml`); **dedupe logic is not implemented in this milestone.**
+Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96:** Redis in `docker-compose.yml`. **Day 97:** **`IdempotencyStore`** interface + **`InMemoryIdempotencyStore`** (`control_plane/kernelq/idempotency_store.py`) — mirrors **`SET NX` + TTL** for tests. **Redis-backed store next** (Day 99). **Application integration** (worker/result consumer) still **future work**.
 
 **Interview sound bite:** *“Postgres owns job state; Redis owns short-lived ‘have we seen this event?’ keys with TTLs; Kafka stays at-least-once.”*
 
@@ -16,6 +16,8 @@ KernelQ will use **Redis** as a **fast idempotency and duplicate-suppression bou
 Redis answers **“have we already processed this logical event?”** in sub-millisecond time. **Postgres remains the system of record** for durable job lifecycle (`queued`, `dispatched`, `succeeded`, `retry_scheduled`, `dead_lettered`, …).
 
 Redis is **not** a second database for jobs—it is a **TTL-backed dedupe cache** ahead of expensive or irreversible work.
+
+**Day 97:** **`IdempotencyStore.try_claim(key, ttl_seconds) -> bool`** — `True` = first claimant, `False` = duplicate. **`InMemoryIdempotencyStore`** implements the same semantics in-process for unit tests; handlers depend on the interface, not Redis directly.
 
 ---
 
@@ -81,14 +83,16 @@ When TTL expires, a **duplicate is possible again**—Postgres state checks rema
 
 ### First-seen wins (`SET NX`)
 
+Python contract (Day 97): **`IdempotencyStore.try_claim`** — same semantics as:
+
 ```
 SET kernelq:execution:job-abc:0 1 NX EX <ttl>
 ```
 
 | Result | Meaning | Action |
 |--------|---------|--------|
-| **OK** (key set) | First time seeing this logical event | Proceed: execute, publish, or update Postgres |
-| **nil** (key exists) | Duplicate / replay | **Skip** side effect; increment `dedupe_hits` metric; optionally return prior outcome |
+| **OK** / `try_claim` → **`True`** | First time seeing this logical event | Proceed: execute, publish, or update Postgres |
+| **nil** / `try_claim` → **`False`** | Duplicate / replay | **Skip** side effect; increment `dedupe_hits` metric; optionally return prior outcome |
 | **Error** | Redis down | See **Failure modes** — policy TBD (fail closed vs degrade) |
 
 ### Postgres vs Redis roles
@@ -122,7 +126,7 @@ Both are required; either alone leaves a gap in the pipeline.
 | **Mismatch with Postgres** | Redis says “seen” but row missing or still `queued` | Prefer Postgres on conflict; delete stale Redis key; reconciliation job (future) |
 | **Clock / TTL skew** | Early expiry across nodes | Use relative `EX` from set time; single Redis primary in dev |
 
-**Today:** no Redis client in app code—local **`docker compose up -d redis`** only.
+**Today:** **`InMemoryIdempotencyStore`** + tests only — no Redis client in app code, **no handler wiring** yet. Local Redis: **`docker compose up -d redis`**.
 
 ---
 
@@ -131,12 +135,11 @@ Both are required; either alone leaves a gap in the pipeline.
 | Day | Scope |
 |-----|--------|
 | **96** | Redis in `docker-compose.yml`; this design doc; docs/runbooks mention Redis |
-| **97** | Redis client wrapper + config (`REDIS_URL`, connection health) |
-| **98** | In-memory fake idempotency store + unit tests (no broker) |
-| **99** | Redis-backed store implementing same interface |
-| **100+** | Integrate dispatch dedupe (worker intake), result dedupe (Python consumer), metrics |
+| **97** | **`IdempotencyStore`** + **`InMemoryIdempotencyStore`**; unit tests (`idempotency_store.py`) |
+| **98–99** | Redis client wrapper + **`RedisIdempotencyStore`** implementing same interface |
+| **100+** | Wire into worker intake, result consumer, metrics — **application integration** |
 
-Integration order: **interface → fake → Redis → worker → result consumer**—same pattern as Kafka pause/resume (policy before adapter).
+Integration order: **interface → in-memory tests → Redis adapter → handlers** — same pattern as Kafka pause/resume (policy before adapter).
 
 ---
 
@@ -144,7 +147,7 @@ Integration order: **interface → fake → Redis → worker → result consumer
 
 - **Not replacing Postgres** — job lifecycle and audit stay in `jobs` table.
 - **Not replacing Kafka offsets** — consumer groups still commit offsets; Redis is additive replay protection.
-- **Not implementing dedupe logic on Day 96** — infrastructure and design only.
+- **Not implementing handler dedupe yet** — Day 97 is the store boundary only; worker/result paths unchanged.
 - **Not exactly-once Kafka** — goal is **effective-once** behavior for job side effects.
 - **Not API idempotency keys for HTTP enqueue yet** — future `Idempotency-Key` header can reuse `kernelq:dedupe:<event_id>` pattern.
 

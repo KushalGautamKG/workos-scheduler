@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Redis** (`docker compose up -d redis`, `localhost:6379`) is in the local stack for future **idempotency/deduplication** — see **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)** (no app logic wired yet).
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 96–97:** Redis in Docker Compose + **`IdempotencyStore`** boundary (`InMemoryIdempotencyStore` for tests only); **Redis-backed store** and worker/result integration **future work** — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
 
 ## MVP Status
 
@@ -42,7 +42,7 @@ Provisioned dashboard **KernelQ MVP** — first metric **`kernelq_jobs_by_state`
 | [docs/checkpoints/day90.md](docs/checkpoints/day90.md) | Day 90 checkpoint — platform status, benchmarks, limitations, roadmap |
 | [docs/mvp.md](docs/mvp.md) | MVP checkpoint — demo, tests, talking points |
 | [docs/architecture.md](docs/architecture.md) | System design |
-| [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe design (infra only; no app logic yet) |
+| [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe design; **`IdempotencyStore`** boundary (Day 97) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |
 | [docs/benchmarks/day75-baseline.md](docs/benchmarks/day75-baseline.md) | Local benchmark baseline (not production claims) |
