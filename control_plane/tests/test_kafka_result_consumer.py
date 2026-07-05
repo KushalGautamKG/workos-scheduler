@@ -187,6 +187,23 @@ def test_injected_fake_consumer_does_not_subscribe():
     assert fake_kafka.subscribed_topics is None
 
 
+def test_kafka_consumer_stats_delegates_to_runner():
+    consumer, _, handler, runner = _consumer_with_handler()
+    message = FakeKafkaMessage(value=_valid_payload_bytes())
+
+    consumer.process_kafka_message(message)
+    consumer.process_kafka_message(message)
+
+    assert len(handler.events) == 1
+    assert consumer.stats().duplicate_messages == 1
+    assert runner.stats().duplicate_messages == 1
+
+
+def test_kafka_consumer_stats_zero_without_runner():
+    consumer = KafkaResultConsumer(consumer=FakeKafkaConsumer(), runner=None)
+    assert consumer.stats().duplicate_messages == 0
+
+
 def test_real_consumer_init_subscribes_to_result_topic_only(monkeypatch):
     """When building a real client, subscribe only to kernelq.jobs.results."""
     captured: dict = {}

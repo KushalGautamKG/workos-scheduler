@@ -13,7 +13,11 @@ from __future__ import annotations
 
 from confluent_kafka import Consumer
 
-from control_plane.kernelq.result_consumer import ResultConsumerRunner, ResultMessage
+from control_plane.kernelq.result_consumer import (
+    ResultConsumerRunner,
+    ResultConsumerStats,
+    ResultMessage,
+)
 from control_plane.kernelq.result_event import RESULT_TOPIC
 
 # Host clients connect here (matches docker-compose.yml PLAINTEXT_HOST listener).
@@ -67,6 +71,12 @@ class KafkaResultConsumer:
 
         result_message = ResultMessage(key=key, value=value)
         self._runner.process_message(result_message)
+
+    def stats(self) -> ResultConsumerStats:
+        """Delegate to the runner's stats, or zeros when no runner is configured."""
+        if self._runner is None:
+            return ResultConsumerStats()
+        return self._runner.stats()
 
     def poll_once(self, timeout_seconds: float = 5.0) -> bool:
         """

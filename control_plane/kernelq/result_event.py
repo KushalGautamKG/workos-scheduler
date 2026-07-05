@@ -40,6 +40,7 @@ class WorkerResultEvent:
     status: str
     message: str
     worker: str
+    attempt: int = 0
 
     def validate(self) -> None:
         """
@@ -62,6 +63,11 @@ class WorkerResultEvent:
         if not self.worker.strip():
             raise ValueError("worker must not be blank")
 
+        if not isinstance(self.attempt, int):
+            raise ValueError("attempt must be a non-negative integer")
+        if self.attempt < 0:
+            raise ValueError("attempt must be a non-negative integer")
+
     def to_dict(self) -> dict:
         """Convert to a plain dict with JSON field names."""
         return {
@@ -70,6 +76,7 @@ class WorkerResultEvent:
             "status": self.status,
             "message": self.message,
             "worker": self.worker,
+            "attempt": self.attempt,
         }
 
     def to_json(self) -> str:
@@ -107,12 +114,17 @@ def parse_worker_result_event(data: bytes | str) -> WorkerResultEvent:
     if not isinstance(payload, dict):
         raise ValueError("worker result event must be a JSON object")
 
+    raw_attempt = payload.get("attempt", 0)
+    if not isinstance(raw_attempt, int):
+        raise ValueError("attempt must be a non-negative integer")
+
     event = WorkerResultEvent(
         event_type=str(payload.get("event_type", "")),
         job_id=str(payload.get("job_id", "")),
         status=str(payload.get("status", "")),
         message=str(payload.get("message", "")),
         worker=str(payload.get("worker", "")),
+        attempt=raw_attempt,
     )
     event.validate()
     return event

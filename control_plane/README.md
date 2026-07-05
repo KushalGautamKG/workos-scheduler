@@ -147,6 +147,8 @@ The Python control plane includes a **`WorkerResultEvent`** model (`kernelq/resu
 
 KernelQ’s control plane includes **`ResultConsumerRunner`** (`kernelq/result_consumer.py`). It takes a raw **`ResultMessage`** (Kafka key + JSON bytes), **parses and validates** it into a **`WorkerResultEvent`**, then **delegates** to a **`ResultHandler`**.
 
+**Day 100:** before Postgres updates, **`try_claim(worker_result_key(job_id, attempt))`** — duplicate worker results are **skipped** (not errors). Counter **`duplicate_messages`**; log **`event=duplicate_worker_result job_id=… attempt=…`**. Default **`InMemoryIdempotencyStore`**; inject **`RedisIdempotencyStore`** for production. Dispatch/execution dedupe still future.
+
 Tests use a **fake handler** so parsing can be checked without a broker. **`KafkaResultConsumer`** polls **`kernelq.jobs.results`** for one-shot manual runs; a **long-running consumer loop** is still future work.
 
 ## Result-to-State Handler
@@ -278,10 +280,12 @@ TRIALS=2 COUNT=5 ./control_plane/scripts/benchmark_end_to_end_completion.sh
 
 **Day 98:** **`kernelq/idempotency_store.py`** — **`IdempotencyStore`**, test-only **`InMemoryIdempotencyStore`**, and **`RedisIdempotencyStore`** (duck-typed Redis client, **`SET NX EX`**). Unit tests use a **fake client**; optional live check: **`scripts/smoke_redis_idempotency.py`** (redis-cli via Docker).
 
-**Day 99:** **`kernelq/idempotency_keys.py`** — canonical key builders: **`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`**. Covers worker result, dispatch, execution, and generic event IDs; pass the returned string to **`try_claim`**. Prevents key drift between control plane, workers, and tests. **Redis + result consumer integration next.** Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
+**Day 99:** **`kernelq/idempotency_keys.py`** — canonical key builders: **`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`**.
+
+**Day 100:** **`ResultConsumerRunner`** wires **`worker_result_key`** + **`try_claim`** — duplicate results skipped; **`duplicate_messages`** / **`event=duplicate_worker_result`**. Default in-memory store; **`RedisIdempotencyStore`** injectable. Dispatch/execution dedupe still future. Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
 
 ```bash
-python3 -m pytest control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py control_plane/tests/test_idempotency_keys.py
+python3 -m pytest control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py control_plane/tests/test_idempotency_keys.py control_plane/tests/test_result_consumer.py
 PYTHONPATH=. python3 control_plane/scripts/smoke_redis_idempotency.py
 ```
 
@@ -293,6 +297,7 @@ One-shot scripts print an extra **key=value summary line** at the end (via `kern
 event=scheduler_tick selected_count=1 dispatched_count=1 published_count=1 errors_count=0 publish_errors_count=0
 event=retry_scanner requeued_count=2 errors_count=0 requeued_job_ids=["job-a","job-b"]
 event=result_consumer processed_message=true errors_count=0
+event=duplicate_worker_result job_id=job-abc attempt=0
 event=job_state_snapshot total_jobs=5010 states_count=4
 event=generate_load_jobs created_jobs=1000 elapsed_seconds=1.2 jobs_per_second=833.3 tenants=10
 event=benchmark_scheduler_throughput dispatched_jobs=1000 generated_jobs=1000 jobs_dispatched_per_second=4200.0 tick_count=20

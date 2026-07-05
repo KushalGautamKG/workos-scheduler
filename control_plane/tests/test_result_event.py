@@ -92,6 +92,7 @@ def test_to_json_returns_expected_fields():
         "status": "retryable_failure",
         "message": "timeout",
         "worker": "worker-2",
+        "attempt": 0,
     }
 
 

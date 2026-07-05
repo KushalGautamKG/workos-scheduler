@@ -34,7 +34,7 @@ What works today (local / dev):
 - **Go worker pool** — configurable concurrent executors (**default 4**); consumer reads Kafka, workers run jobs in parallel (`worker/internal/worker/worker_pool.go`)
 - **Bounded worker work queue** — **Day 88** runtime backpressure config (**`KERNELQ_WORKER_BACKPRESSURE_*`**, disabled by default); **Day 87** evaluates depth vs high/low watermarks when enabled; pause/resume events/stats—in-memory controller; real Kafka pause/resume future; **Day 82** backoff default ([design doc](design/kafka-pause-resume-backpressure.md))
 - **Worker result publishing** — `WorkerResultEvent` on `kernelq.jobs.results`
-- **Python result consumer skeleton** — `KafkaResultConsumer` + `ResultStateHandler` (one-shot poll)
+- **Python result consumer** — `KafkaResultConsumer` + `ResultStateHandler`; **Day 100** worker-result dedupe (duplicates skipped; **`duplicate_messages`**, **`event=duplicate_worker_result`**); default in-memory store
 - **Postgres state updates from worker results** — `succeeded`, `retryable_failure`, `terminal_failure` mapping
 - **Retry scheduling** — `retryable_failure` → `RETRY_SCHEDULED` when budget remains
 - **Retry requeue scanner** — due `retry_scheduled` rows → `queued`
@@ -53,7 +53,7 @@ What works today (local / dev):
 - **Prometheus scrape configuration example** — `infra/prometheus/prometheus.yml` (15s scrape of `/metrics/prometheus`; see `docs/deploy.md`)
 - **Local Prometheus service** — `docker compose up -d prometheus` (UI on `:9090`)
 - **Local Grafana service and starter dashboard** — `docker compose up -d grafana` (UI on `:3000`; **KernelQ MVP** charts `kernelq_jobs_by_state`)
-- **Local Redis service** — `docker compose up -d redis`; **Day 98** **`RedisIdempotencyStore`** (duck-typed client, `SET NX EX`); **`InMemoryIdempotencyStore`** test-only; **Day 99** canonical key builders (**`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`**) in **`idempotency_keys.py`**
+- **Local Redis service** — `docker compose up -d redis`; **`RedisIdempotencyStore`** + key builders; **Day 100** result consumer dedupe (in-memory default, Redis injectable)
 - **Structured script logs** — one-shot scripts print `event=<name>` summary lines for operator/debug visibility (complements Prometheus)
 - **Smoke tests** — success, retry requeue, exhaustion, queue-wait latency (`smoke_queue_wait_metrics.sh`), worker queue saturation (`smoke_queue_saturation.sh`), and backpressure config startup (`smoke_backpressure_config.sh`)
 
@@ -184,7 +184,7 @@ Honest gaps — not production-ready yet:
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
 - **Worker Kafka backpressure** — **Day 88** env-configurable watermarks (**disabled by default**; EKS ConfigMaps later); **Day 87** in-memory pause/resume wiring; **Day 82** backoff default; real Kafka partition pause/resume still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
-- **Redis dedupe** — **`RedisIdempotencyStore`** + **Day 99** key builders (`worker result`, `dispatch`, `execution`, generic `event` IDs); fake client in unit tests; optional **`smoke_redis_idempotency.py`** (redis-cli); **Redis + result consumer wiring next** — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**
+- **Redis dedupe** — **Day 100** worker-result dedupe in **`ResultConsumerRunner`**; dispatch/execution still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
 ---
