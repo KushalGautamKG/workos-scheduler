@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–102):** **`docker compose up -d redis`**. **Day 102:** **`KERNELQ_IDEMPOTENCY_BACKEND=memory|redis`** (default `memory`); Redis uses redis-cli wrapper (no Python Redis package). **`consume_result_once.py`** prints **`idempotency_backend=…`**. Redis smoke: **`smoke_result_idempotency_redis.py`**. Redis down with `redis` backend → clear error. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Redis / idempotency (Day 96–103):** **`docker compose up -d redis`**. **Day 103 smoke:** **`PYTHONPATH=. python3 control_plane/scripts/smoke_result_consumer_redis_idempotency.py`** — configured Redis backend + **`ResultConsumerRunner`**; duplicate results skipped; no Kafka/Postgres. Store smoke: **`smoke_result_idempotency_redis.py`**. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 | Path | Command |
 |------|---------|

@@ -286,12 +286,15 @@ TRIALS=2 COUNT=5 ./control_plane/scripts/benchmark_end_to_end_completion.sh
 
 **Day 101:** **`scripts/smoke_result_idempotency_redis.py`** — live **`worker_result_key`** + Redis **`SET NX EX`** smoke (redis-cli via Docker).
 
-**Day 102:** **`kernelq/idempotency_config.py`** — **`build_idempotency_store_from_env()`**. Env: **`KERNELQ_IDEMPOTENCY_BACKEND`** (`memory` default, `redis`); **`KERNELQ_REDIS_HOST`**, **`KERNELQ_REDIS_PORT`**, **`KERNELQ_REDIS_NAMESPACE`**. Redis backend uses **redis-cli subprocess** (no Python Redis package). Redis down → **`RuntimeError`** (fail clear). Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
+**Day 102:** **`kernelq/idempotency_config.py`** — **`build_idempotency_store_from_env()`**. Env: **`KERNELQ_IDEMPOTENCY_BACKEND`** (`memory` default, `redis`); **`KERNELQ_REDIS_HOST`**, **`KERNELQ_REDIS_PORT`**, **`KERNELQ_REDIS_NAMESPACE`**. Redis backend uses **redis-cli subprocess** (no Python Redis package). Redis down → **`RuntimeError`** (fail clear).
+
+**Day 103:** **`scripts/smoke_result_consumer_redis_idempotency.py`** — consumer-level Redis smoke via configured backend + **`ResultConsumerRunner`**; proves duplicate worker results skipped (`handled_count=1`, `duplicate_messages=1`); no Kafka/Postgres. Dispatch/execution dedupe still future. Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
 
 ```bash
 python3 -m pytest control_plane/tests/test_idempotency_config.py control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py control_plane/tests/test_idempotency_keys.py control_plane/tests/test_result_consumer.py
 PYTHONPATH=. python3 control_plane/scripts/consume_result_once.py
-KERNELQ_IDEMPOTENCY_BACKEND=redis PYTHONPATH=. python3 control_plane/scripts/smoke_result_idempotency_redis.py
+PYTHONPATH=. python3 control_plane/scripts/smoke_result_idempotency_redis.py
+PYTHONPATH=. python3 control_plane/scripts/smoke_result_consumer_redis_idempotency.py
 ```
 
 ## Structured Script Logs
@@ -310,6 +313,7 @@ event=benchmark_end_to_end_completion generated_jobs=10 dispatched_jobs=10 succe
 event=smoke_full_completion job_id=day52-full-123 final_state=succeeded success=true
 event=smoke_redis_idempotency success=true
 event=smoke_result_idempotency_redis success=true
+event=smoke_result_consumer_redis_idempotency success=true
 ```
 
 **MVP smoke tests** emit `event=smoke_*` summary lines (`smoke_full_completion`, `smoke_retry_requeue`, `smoke_retry_exhaustion`, `smoke_queue_wait_metrics`) with `success=true|false` and state fields. Collect demo evidence after a run:

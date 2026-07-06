@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 96–101:** idempotency store, keys, consumer dedupe, Redis smoke. **Day 102:** **`KERNELQ_IDEMPOTENCY_BACKEND=memory|redis`** via **`idempotency_config.py`** — memory default; Redis uses redis-cli (no Python Redis package); **`consume_result_once.py`** uses configured store. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 96–102:** idempotency store, keys, consumer dedupe, env backend config. **Day 103:** consumer-level Redis idempotency smoke (`smoke_result_consumer_redis_idempotency.py`) — configured backend + **`ResultConsumerRunner`** skips duplicate results; no Kafka/Postgres. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
 
 ## MVP Status
 
@@ -42,7 +42,7 @@ Provisioned dashboard **KernelQ MVP** — first metric **`kernelq_jobs_by_state`
 | [docs/checkpoints/day90.md](docs/checkpoints/day90.md) | Day 90 checkpoint — platform status, benchmarks, limitations, roadmap |
 | [docs/mvp.md](docs/mvp.md) | MVP checkpoint — demo, tests, talking points |
 | [docs/architecture.md](docs/architecture.md) | System design |
-| [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe; env backend config (Day 102) |
+| [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe; consumer Redis smoke (Day 103) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |
 | [docs/benchmarks/day75-baseline.md](docs/benchmarks/day75-baseline.md) | Local benchmark baseline (not production claims) |
