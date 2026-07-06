@@ -1,11 +1,15 @@
 """Tests for the in-memory result consumer runner."""
 
+from __future__ import annotations
+
 import json
+
+from dataclasses import dataclass, field
 
 import pytest
 
 from control_plane.kernelq.idempotency_keys import worker_result_key
-from control_plane.kernelq.idempotency_store import IdempotencyStore
+from control_plane.kernelq.idempotency_store import IdempotencyStore, RedisIdempotencyStore
 from control_plane.kernelq.result_consumer import (
     DEFAULT_DEDUPE_TTL_SECONDS,
     ResultConsumerRunner,
@@ -66,6 +70,33 @@ class FailingIdempotencyStore(IdempotencyStore):
 
     def try_claim(self, key: str, ttl_seconds: int) -> bool:
         raise RuntimeError("idempotency store unavailable")
+
+
+@dataclass
+class FakeRedisClient:
+    """Minimal duck-typed Redis client for RedisIdempotencyStore (no broker)."""
+
+    set_results: list[bool | None] = field(default_factory=list)
+
+    def set(self, redis_key: str, value: str, *, nx: bool = False, ex: int | None = None) -> bool | None:
+        if not self.set_results:
+            return True
+        return self.set_results.pop(0)
+
+
+def test_redis_backed_store_first_handled_duplicate_skipped():
+    """Consumer path through RedisIdempotencyStore + fake Redis client."""
+    handler = FakeResultHandler()
+    store = RedisIdempotencyStore(FakeRedisClient(set_results=[True, None]))
+    runner = ResultConsumerRunner(handler, idempotency_store=store)
+    message = ResultMessage(key="job-123", value=_valid_payload_bytes())
+
+    runner.process_message(message)
+    runner.process_message(message)
+
+    assert len(handler.events) == 1
+    assert runner.duplicate_messages == 1
+    assert runner.stats().duplicate_messages == 1
 
 
 def test_first_result_calls_handler():

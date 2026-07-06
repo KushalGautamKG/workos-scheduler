@@ -1,6 +1,6 @@
 # Performance
 
-**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91–95** segment and E2E benchmarks. **Day 96–99:** Redis infra, idempotency store, key builders. **Day 100:** result consumer dedupe — duplicate worker results skipped; **`duplicate_messages`**, **`event=duplicate_worker_result`**; in-memory default, Redis injectable; dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91–95** segment and E2E benchmarks. **Day 96–100:** idempotency store, keys, result consumer dedupe. **Day 101:** Redis result-idempotency smoke (`worker_result_key` + **`SET NX EX`**; redis-cli, no Python Redis package); full Kafka replay smoke still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 ## Baseline Metrics Plan
 

@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 96–99:** Redis + **`IdempotencyStore`** / key builders. **Day 100:** **`ResultConsumerRunner`** dedupes worker results via **`worker_result_key`** — duplicates skipped (`duplicate_messages`, `event=duplicate_worker_result`); default **`InMemoryIdempotencyStore`**, inject **`RedisIdempotencyStore`** when ready. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 96–100:** idempotency store, key builders, result consumer dedupe. **Day 101:** Redis-backed result idempotency smoke (`smoke_result_idempotency_redis.py`) — validates **`worker_result_key`** + **`SET NX EX`** via redis-cli; no Python Redis package. Full Kafka replay smoke still future. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
 
 ## MVP Status
 
@@ -42,7 +42,7 @@ Provisioned dashboard **KernelQ MVP** — first metric **`kernelq_jobs_by_state`
 | [docs/checkpoints/day90.md](docs/checkpoints/day90.md) | Day 90 checkpoint — platform status, benchmarks, limitations, roadmap |
 | [docs/mvp.md](docs/mvp.md) | MVP checkpoint — demo, tests, talking points |
 | [docs/architecture.md](docs/architecture.md) | System design |
-| [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe; result consumer dedupe (Day 100) |
+| [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe; result consumer (Day 100); Redis smoke (Day 101) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |
 | [docs/benchmarks/day75-baseline.md](docs/benchmarks/day75-baseline.md) | Local benchmark baseline (not production claims) |

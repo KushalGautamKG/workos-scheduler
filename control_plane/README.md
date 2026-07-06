@@ -282,11 +282,14 @@ TRIALS=2 COUNT=5 ./control_plane/scripts/benchmark_end_to_end_completion.sh
 
 **Day 99:** **`kernelq/idempotency_keys.py`** — canonical key builders: **`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`**.
 
-**Day 100:** **`ResultConsumerRunner`** wires **`worker_result_key`** + **`try_claim`** — duplicate results skipped; **`duplicate_messages`** / **`event=duplicate_worker_result`**. Default in-memory store; **`RedisIdempotencyStore`** injectable. Dispatch/execution dedupe still future. Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
+**Day 100:** **`ResultConsumerRunner`** wires **`worker_result_key`** + **`try_claim`** — duplicate results skipped; **`duplicate_messages`** / **`event=duplicate_worker_result`**. Default in-memory store; **`RedisIdempotencyStore`** injectable. Dispatch/execution dedupe still future.
+
+**Day 101:** **`scripts/smoke_result_idempotency_redis.py`** — live smoke for **`worker_result_key`** + **`RedisIdempotencyStore`** **`SET NX EX`** (redis-cli via Docker; no Python Redis package). Full Kafka replay smoke still future. Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
 
 ```bash
 python3 -m pytest control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py control_plane/tests/test_idempotency_keys.py control_plane/tests/test_result_consumer.py
 PYTHONPATH=. python3 control_plane/scripts/smoke_redis_idempotency.py
+PYTHONPATH=. python3 control_plane/scripts/smoke_result_idempotency_redis.py
 ```
 
 ## Structured Script Logs
@@ -304,6 +307,7 @@ event=benchmark_scheduler_throughput dispatched_jobs=1000 generated_jobs=1000 jo
 event=benchmark_end_to_end_completion generated_jobs=10 dispatched_jobs=10 succeeded_jobs=10 jobs_completed_per_second=0.5 worker_count=4 queue_capacity=100 job_prefix=e2e-bench-123
 event=smoke_full_completion job_id=day52-full-123 final_state=succeeded success=true
 event=smoke_redis_idempotency success=true
+event=smoke_result_idempotency_redis success=true
 ```
 
 **MVP smoke tests** emit `event=smoke_*` summary lines (`smoke_full_completion`, `smoke_retry_requeue`, `smoke_retry_exhaustion`, `smoke_queue_wait_metrics`) with `success=true|false` and state fields. Collect demo evidence after a run:
