@@ -1,6 +1,6 @@
 # Redis Idempotency and Deduplication Design
 
-Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96–100:** Redis infra, store, key builders, result consumer dedupe. **Day 101:** Redis-backed result idempotency smoke — validates **`worker_result_key`** + **`SET NX EX`** for duplicate suppression (redis-cli; no Python Redis package). Full Kafka replay smoke still future. **Dispatch/execution dedupe still future.**
+Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96–101:** store, keys, consumer dedupe, Redis smoke. **Day 102:** env-driven backend — **`KERNELQ_IDEMPOTENCY_BACKEND=memory|redis`** (memory default); Redis via redis-cli wrapper (no Python Redis package); **`consume_result_once.py`** wired. Redis unavailable → fail clear. Dispatch/execution dedupe still future.
 
 **Interview sound bite:** *“Postgres owns job state; Redis owns short-lived ‘have we seen this event?’ keys with TTLs; Kafka stays at-least-once.”*
 
@@ -26,6 +26,8 @@ Redis is **not** a second database for jobs—it is a **TTL-backed dedupe cache*
 **Day 100:** **`ResultConsumerRunner`** (`result_consumer.py`) claims **`worker_result_key(job_id, attempt)`** before **`ResultStateHandler`**. Duplicate worker results are **skipped** (handler not called). Observability: **`duplicate_messages`** counter and **`event=duplicate_worker_result job_id=… attempt=…`** log line. Default store is **`InMemoryIdempotencyStore`**; production wiring can inject **`RedisIdempotencyStore`**. Store errors propagate (fail fast).
 
 **Day 101:** **`scripts/smoke_result_idempotency_redis.py`** — two simulated **`try_claim`** calls for the same **`(job_id, attempt)`** against live Redis; confirms **`first_claim=true`**, **`second_claim=false`**. Store/key path only — not a full Kafka replay or Postgres handler smoke.
+
+**Day 102:** **`idempotency_config.py`** — **`build_idempotency_store_from_env()`**. **`KERNELQ_IDEMPOTENCY_BACKEND`**: missing/`memory` → **`InMemoryIdempotencyStore`**; `redis` → **`RedisIdempotencyStore`** + **`RedisCliClient`** (`redis-cli -h … -p … SET … NX EX …`). **`KERNELQ_REDIS_HOST`** (default `localhost`), **`KERNELQ_REDIS_PORT`** (`6379`), **`KERNELQ_REDIS_NAMESPACE`** (`kernelq:idempotency`). **`consume_result_once.py`** uses the configured store and logs **`idempotency_backend=memory|redis`**. Redis errors propagate (fail fast).
 
 ---
 
@@ -138,7 +140,7 @@ Both are required; either alone leaves a gap in the pipeline.
 | **Mismatch with Postgres** | Redis says “seen” but row missing or still `queued` | Prefer Postgres on conflict; delete stale Redis key; reconciliation job (future) |
 | **Clock / TTL skew** | Early expiry across nodes | Use relative `EX` from set time; single Redis primary in dev |
 
-**Today:** **Day 100** result consumer dedupe wired; **Day 101** Redis result-idempotency smoke. Dispatch/execution dedupe and full Kafka replay smoke not yet. Local Redis: **`docker compose up -d redis`**.
+**Today:** **Day 102** env-driven idempotency backend; **Day 101** Redis smoke. Dispatch/execution dedupe not yet. Local Redis: **`docker compose up -d redis`**.
 
 ---
 
@@ -152,7 +154,8 @@ Both are required; either alone leaves a gap in the pipeline.
 | **99** | **`idempotency_keys.py`** — **`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`**; unit tests; prevents key drift between components |
 | **100** | **`ResultConsumerRunner`** — **`worker_result_key`** + **`try_claim`**; skip duplicates; **`duplicate_messages`** / **`event=duplicate_worker_result`**; default in-memory store |
 | **101** | **`smoke_result_idempotency_redis.py`** — live **`worker_result_key`** + Redis **`SET NX EX`** smoke (redis-cli; no Python Redis package) |
-| **102+** | Worker **execution** + scheduler **dispatch** dedupe; full Kafka replay smoke; Redis injection in consumer scripts |
+| **102** | **`idempotency_config.py`** — **`KERNELQ_IDEMPOTENCY_BACKEND`**; **`consume_result_once.py`** uses configured store |
+| **103+** | Worker **execution** + scheduler **dispatch** dedupe; full Kafka replay smoke |
 
 Integration order: **interface → in-memory tests → Redis adapter → canonical keys → result consumer → worker/dispatch handlers**.
 

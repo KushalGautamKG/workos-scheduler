@@ -147,7 +147,7 @@ The Python control plane includes a **`WorkerResultEvent`** model (`kernelq/resu
 
 KernelQ’s control plane includes **`ResultConsumerRunner`** (`kernelq/result_consumer.py`). It takes a raw **`ResultMessage`** (Kafka key + JSON bytes), **parses and validates** it into a **`WorkerResultEvent`**, then **delegates** to a **`ResultHandler`**.
 
-**Day 100:** before Postgres updates, **`try_claim(worker_result_key(job_id, attempt))`** — duplicate worker results are **skipped** (not errors). Counter **`duplicate_messages`**; log **`event=duplicate_worker_result job_id=… attempt=…`**. Default **`InMemoryIdempotencyStore`**; inject **`RedisIdempotencyStore`** for production. Dispatch/execution dedupe still future.
+**Day 100:** before Postgres updates, **`try_claim(worker_result_key(job_id, attempt))`** — duplicate worker results are **skipped** (not errors). Counter **`duplicate_messages`**; log **`event=duplicate_worker_result job_id=… attempt=…`**. **Day 102:** **`build_idempotency_store_from_env()`** — **`KERNELQ_IDEMPOTENCY_BACKEND=memory|redis`** (memory default); **`consume_result_once.py`** prints **`idempotency_backend=…`**. Dispatch/execution dedupe still future.
 
 Tests use a **fake handler** so parsing can be checked without a broker. **`KafkaResultConsumer`** polls **`kernelq.jobs.results`** for one-shot manual runs; a **long-running consumer loop** is still future work.
 
@@ -284,12 +284,14 @@ TRIALS=2 COUNT=5 ./control_plane/scripts/benchmark_end_to_end_completion.sh
 
 **Day 100:** **`ResultConsumerRunner`** wires **`worker_result_key`** + **`try_claim`** — duplicate results skipped; **`duplicate_messages`** / **`event=duplicate_worker_result`**. Default in-memory store; **`RedisIdempotencyStore`** injectable. Dispatch/execution dedupe still future.
 
-**Day 101:** **`scripts/smoke_result_idempotency_redis.py`** — live smoke for **`worker_result_key`** + **`RedisIdempotencyStore`** **`SET NX EX`** (redis-cli via Docker; no Python Redis package). Full Kafka replay smoke still future. Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
+**Day 101:** **`scripts/smoke_result_idempotency_redis.py`** — live **`worker_result_key`** + Redis **`SET NX EX`** smoke (redis-cli via Docker).
+
+**Day 102:** **`kernelq/idempotency_config.py`** — **`build_idempotency_store_from_env()`**. Env: **`KERNELQ_IDEMPOTENCY_BACKEND`** (`memory` default, `redis`); **`KERNELQ_REDIS_HOST`**, **`KERNELQ_REDIS_PORT`**, **`KERNELQ_REDIS_NAMESPACE`**. Redis backend uses **redis-cli subprocess** (no Python Redis package). Redis down → **`RuntimeError`** (fail clear). Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
 
 ```bash
-python3 -m pytest control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py control_plane/tests/test_idempotency_keys.py control_plane/tests/test_result_consumer.py
-PYTHONPATH=. python3 control_plane/scripts/smoke_redis_idempotency.py
-PYTHONPATH=. python3 control_plane/scripts/smoke_result_idempotency_redis.py
+python3 -m pytest control_plane/tests/test_idempotency_config.py control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py control_plane/tests/test_idempotency_keys.py control_plane/tests/test_result_consumer.py
+PYTHONPATH=. python3 control_plane/scripts/consume_result_once.py
+KERNELQ_IDEMPOTENCY_BACKEND=redis PYTHONPATH=. python3 control_plane/scripts/smoke_result_idempotency_redis.py
 ```
 
 ## Structured Script Logs

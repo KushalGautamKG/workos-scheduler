@@ -36,6 +36,10 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from control_plane.kernelq.db import connect
+from control_plane.kernelq.idempotency_config import (
+    build_idempotency_store_from_env,
+    resolve_idempotency_backend,
+)
 from control_plane.kernelq.job_repository import JobRepository
 from control_plane.kernelq.kafka_result_consumer import KafkaResultConsumer
 from control_plane.kernelq.logging_utils import format_log_event
@@ -67,13 +71,17 @@ def main() -> None:
     kafka_consumer: KafkaResultConsumer | None = None
 
     try:
+        backend = resolve_idempotency_backend()
+        print(f"idempotency_backend={backend}")
+
         # --- Step 1: Postgres connection and repository ---
         with connect() as conn:
             repository = JobRepository(conn)
 
             # --- Step 2: Result pipeline (parse → map status → update jobs.state) ---
             handler = ResultStateHandler(repository)
-            runner = ResultConsumerRunner(handler)
+            idempotency_store = build_idempotency_store_from_env()
+            runner = ResultConsumerRunner(handler, idempotency_store=idempotency_store)
 
             # --- Step 3: Real Kafka consumer on kernelq.jobs.results ---
             kafka_consumer = KafkaResultConsumer(runner=runner)
