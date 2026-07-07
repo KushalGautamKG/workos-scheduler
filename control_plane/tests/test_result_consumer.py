@@ -13,6 +13,7 @@ from control_plane.kernelq.idempotency_store import IdempotencyStore, RedisIdemp
 from control_plane.kernelq.result_consumer import (
     DEFAULT_DEDUPE_TTL_SECONDS,
     ResultConsumerRunner,
+    ResultConsumerStats,
     ResultHandler,
     ResultMessage,
 )
@@ -95,8 +96,26 @@ def test_redis_backed_store_first_handled_duplicate_skipped():
     runner.process_message(message)
 
     assert len(handler.events) == 1
+    assert runner.processed_messages == 1
     assert runner.duplicate_messages == 1
-    assert runner.stats().duplicate_messages == 1
+    assert runner.stats() == ResultConsumerStats(processed_messages=1, duplicate_messages=1)
+
+
+def test_stats_processed_once_duplicate_once_duplicate_does_not_increment_processed():
+    """Runner counters and stats snapshot after first handle + one duplicate."""
+    handler = FakeResultHandler()
+    runner = ResultConsumerRunner(handler)
+    message = ResultMessage(key="job-123", value=_valid_payload_bytes())
+
+    runner.process_message(message)
+    runner.process_message(message)
+
+    assert runner.processed_messages == 1
+    assert runner.duplicate_messages == 1
+    assert runner.stats() == ResultConsumerStats(
+        processed_messages=runner.processed_messages,
+        duplicate_messages=runner.duplicate_messages,
+    )
 
 
 def test_first_result_calls_handler():
@@ -107,6 +126,8 @@ def test_first_result_calls_handler():
 
     assert len(handler.events) == 1
     assert handler.events[0].job_id == "job-123"
+    assert runner.processed_messages == 1
+    assert runner.stats().processed_messages == 1
 
 
 def test_duplicate_result_skips_handler():
@@ -130,7 +151,9 @@ def test_duplicate_messages_increments():
     runner.process_message(message)
 
     assert runner.duplicate_messages == 2
+    assert runner.processed_messages == 1
     assert runner.stats().duplicate_messages == 2
+    assert runner.stats().processed_messages == 1
 
 
 def test_duplicate_log_emitted(capsys):
@@ -213,6 +236,7 @@ def test_idempotency_store_failure_propagates():
 
     assert handler.events == []
     assert runner.duplicate_messages == 0
+    assert runner.processed_messages == 0
 
 
 def test_handler_receives_correct_job_id_and_status():
@@ -268,6 +292,9 @@ def test_handler_error_propagates():
     with pytest.raises(RuntimeError, match="postgres down"):
         runner.process_message(ResultMessage(key="job-123", value=_valid_payload_bytes()))
 
+    assert runner.processed_messages == 0
+    assert runner.stats().processed_messages == 0
+
 
 def test_missing_handler_raises_value_error():
     runner = ResultConsumerRunner(None)
@@ -278,4 +305,6 @@ def test_missing_handler_raises_value_error():
 
 def test_stats_starts_at_zero():
     runner = ResultConsumerRunner(FakeResultHandler())
-    assert runner.stats().duplicate_messages == 0
+    assert runner.stats() == ResultConsumerStats(processed_messages=0, duplicate_messages=0)
+    assert runner.processed_messages == 0
+    assert runner.duplicate_messages == 0

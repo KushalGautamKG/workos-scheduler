@@ -1,6 +1,6 @@
 # Performance
 
-**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91–95** segment and E2E benchmarks. **Day 96–103:** idempotency store, keys, consumer dedupe, env config, consumer Redis smoke — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91–95** segment and E2E benchmarks. **Day 96–104:** idempotency + consumer dedupe; **`processed_messages`** / **`duplicate_messages`** stats (Day 104). Prometheus / OpenTelemetry / CloudWatch export still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 ## Baseline Metrics Plan
 
@@ -439,12 +439,15 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 ## Result Consumer Metrics Planned
 
-**`KafkaResultConsumer.poll_once`** and **`consume_result_once.py`** exist today; a **long-running loop** and dashboards are not wired yet. When the result consumer path is instrumented, we plan to track:
+**Day 104:** **`ResultConsumerRunner.stats()`** exposes **`processed_messages`** and **`duplicate_messages`**; **`consume_result_once.py`** logs **`event=result_consumer_summary`**. Duplicate suppression is observable in scripts/tests. **Prometheus / OpenTelemetry / CloudWatch** export still future.
+
+**`KafkaResultConsumer.poll_once`** and **`consume_result_once.py`** exist today; a **long-running loop** and dashboards are not wired yet. When the result consumer path is fully instrumented, we plan to track:
 
 | Metric | What it means |
 |--------|---------------|
 | `result_messages_seen` | Raw records read from **`kernelq.jobs.results`** |
-| `result_messages_processed` | Valid events that reached **`ResultHandler.handle`** |
+| `result_messages_processed` | Valid events that reached **`ResultHandler.handle`** (maps to **`processed_messages`** today) |
+| `duplicate_result_messages` | Skipped replays after idempotency claim (maps to **`duplicate_messages`** today) |
 | `poll_result_processed_count` | **`poll_once`** returned **`True`** (message received and handled) |
 | `poll_result_empty_count` | **`poll_once`** returned **`False`** (timeout, no message) |
 | `result_consumer_poll_errors` | Kafka poll/consumer errors (**`message.error()`**, broker failures) |

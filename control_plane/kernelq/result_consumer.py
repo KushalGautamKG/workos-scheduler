@@ -28,6 +28,7 @@ class ResultConsumerStats:
     """Counters from ``ResultConsumerRunner`` message processing."""
 
     duplicate_messages: int = 0
+    processed_messages: int = 0
 
 
 @dataclass(frozen=True)
@@ -81,10 +82,14 @@ class ResultConsumerRunner:
         )
         self.dedupe_ttl_seconds = dedupe_ttl_seconds
         self.duplicate_messages = 0
+        self.processed_messages = 0
 
     def stats(self) -> ResultConsumerStats:
         """Return a snapshot of runner counters (for scripts, tests, metrics)."""
-        return ResultConsumerStats(duplicate_messages=self.duplicate_messages)
+        return ResultConsumerStats(
+            duplicate_messages=self.duplicate_messages,
+            processed_messages=self.processed_messages,
+        )
 
     def process_message(self, message: ResultMessage) -> None:
         """
@@ -117,3 +122,4 @@ class ResultConsumerRunner:
             return
 
         self.handler.handle(event)
+        self.processed_messages += 1

@@ -1,6 +1,6 @@
 # Redis Idempotency and Deduplication Design
 
-Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96–102:** store, keys, consumer dedupe, env backend. **Day 103:** consumer-level Redis smoke — configured backend + **`ResultConsumerRunner`** skips duplicate results; no Kafka/Postgres. Dispatch/execution dedupe still future.
+Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96–103:** store, keys, consumer dedupe, Redis smokes, env backend. **Day 104:** **`processed_messages`** / **`duplicate_messages`** stats — duplicate suppression observable. Future: Prometheus, OpenTelemetry, CloudWatch. Dispatch/execution dedupe still future.
 
 **Interview sound bite:** *“Postgres owns job state; Redis owns short-lived ‘have we seen this event?’ keys with TTLs; Kafka stays at-least-once.”*
 
@@ -29,7 +29,9 @@ Redis is **not** a second database for jobs—it is a **TTL-backed dedupe cache*
 
 **Day 102:** **`idempotency_config.py`** — **`build_idempotency_store_from_env()`**. **`KERNELQ_IDEMPOTENCY_BACKEND`**: missing/`memory` → **`InMemoryIdempotencyStore`**; `redis` → **`RedisIdempotencyStore`** + **`RedisCliClient`**. **`consume_result_once.py`** uses the configured store and logs **`idempotency_backend=memory|redis`**.
 
-**Day 103:** **`scripts/smoke_result_consumer_redis_idempotency.py`** — **`build_idempotency_store_from_env({KERNELQ_IDEMPOTENCY_BACKEND: redis})`** + **`ResultConsumerRunner.process_message`** twice; first handled, second skipped (`duplicate_messages=1`). Stronger than Day 101 store-only smoke; no Kafka or Postgres.
+**Day 103:** **`scripts/smoke_result_consumer_redis_idempotency.py`** — consumer-level Redis dedupe smoke (no Kafka/Postgres).
+
+**Day 104:** **`ResultConsumerStats`** — **`processed_messages`**, **`duplicate_messages`**; duplicates do not increment **`processed_messages`**. **`consume_result_once.py`** prints **`event=result_consumer_summary`**. Duplicate suppression is now observable in scripts/tests; **Prometheus / OpenTelemetry / CloudWatch** export still future.
 
 ---
 
@@ -108,7 +110,7 @@ SET kernelq:idempotency:execution:job-abc:0 1 NX EX <ttl>
 | Result | Meaning | Action |
 |--------|---------|--------|
 | **OK** / `try_claim` → **`True`** | First time seeing this logical event | Proceed: execute, publish, or update Postgres |
-| **nil** / `try_claim` → **`False`** | Duplicate / replay | **Skip** side effect; increment `dedupe_hits` metric; optionally return prior outcome |
+| **nil** / `try_claim` → **`False`** | Duplicate / replay | **Skip** side effect; increment **`duplicate_messages`**; log **`event=duplicate_worker_result`**; do **not** increment **`processed_messages`** |
 | **Error** | Redis down | See **Failure modes** — policy TBD (fail closed vs degrade) |
 
 ### Postgres vs Redis roles
@@ -142,7 +144,7 @@ Both are required; either alone leaves a gap in the pipeline.
 | **Mismatch with Postgres** | Redis says “seen” but row missing or still `queued` | Prefer Postgres on conflict; delete stale Redis key; reconciliation job (future) |
 | **Clock / TTL skew** | Early expiry across nodes | Use relative `EX` from set time; single Redis primary in dev |
 
-**Today:** **Day 103** consumer-level Redis smoke; **Day 102** env backend. Dispatch/execution dedupe not yet. Local Redis: **`docker compose up -d redis`**.
+**Today:** **Day 104** consumer stats (`processed_messages`, `duplicate_messages`); **Day 103** Redis smoke. Dispatch/execution dedupe not yet. Local Redis: **`docker compose up -d redis`**.
 
 ---
 
@@ -158,7 +160,8 @@ Both are required; either alone leaves a gap in the pipeline.
 | **101** | **`smoke_result_idempotency_redis.py`** — live **`worker_result_key`** + Redis **`SET NX EX`** smoke (redis-cli; no Python Redis package) |
 | **102** | **`idempotency_config.py`** — **`KERNELQ_IDEMPOTENCY_BACKEND`**; **`consume_result_once.py`** uses configured store |
 | **103** | **`smoke_result_consumer_redis_idempotency.py`** — consumer-level Redis dedupe smoke (no Kafka/Postgres) |
-| **104+** | Worker **execution** + scheduler **dispatch** dedupe; full Kafka replay smoke |
+| **104** | **`processed_messages`** / **`duplicate_messages`** stats; **`event=result_consumer_summary`** |
+| **105+** | Worker **execution** + scheduler **dispatch** dedupe; Prometheus / OpenTelemetry / CloudWatch |
 
 Integration order: **interface → in-memory tests → Redis adapter → canonical keys → result consumer → worker/dispatch handlers**.
 

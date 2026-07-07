@@ -147,7 +147,7 @@ The Python control plane includes a **`WorkerResultEvent`** model (`kernelq/resu
 
 KernelQ’s control plane includes **`ResultConsumerRunner`** (`kernelq/result_consumer.py`). It takes a raw **`ResultMessage`** (Kafka key + JSON bytes), **parses and validates** it into a **`WorkerResultEvent`**, then **delegates** to a **`ResultHandler`**.
 
-**Day 100:** before Postgres updates, **`try_claim(worker_result_key(job_id, attempt))`** — duplicate worker results are **skipped** (not errors). Counter **`duplicate_messages`**; log **`event=duplicate_worker_result job_id=… attempt=…`**. **Day 102:** **`build_idempotency_store_from_env()`** — **`KERNELQ_IDEMPOTENCY_BACKEND=memory|redis`** (memory default); **`consume_result_once.py`** prints **`idempotency_backend=…`**. Dispatch/execution dedupe still future.
+**Day 100–104:** **`try_claim(worker_result_key(...))`** — duplicates skipped. Stats: **`processed_messages`**, **`duplicate_messages`** via **`runner.stats()`**; **`consume_result_once.py`** prints **`event=result_consumer_summary`**. **Day 102:** **`KERNELQ_IDEMPOTENCY_BACKEND=memory|redis`**. Future: Prometheus / OpenTelemetry / CloudWatch export. Dispatch/execution dedupe still future.
 
 Tests use a **fake handler** so parsing can be checked without a broker. **`KafkaResultConsumer`** polls **`kernelq.jobs.results`** for one-shot manual runs; a **long-running consumer loop** is still future work.
 
@@ -282,13 +282,13 @@ TRIALS=2 COUNT=5 ./control_plane/scripts/benchmark_end_to_end_completion.sh
 
 **Day 99:** **`kernelq/idempotency_keys.py`** — canonical key builders: **`worker_result_key`**, **`dispatch_key`**, **`execution_key`**, **`event_key`**.
 
-**Day 100:** **`ResultConsumerRunner`** wires **`worker_result_key`** + **`try_claim`** — duplicate results skipped; **`duplicate_messages`** / **`event=duplicate_worker_result`**. Default in-memory store; **`RedisIdempotencyStore`** injectable. Dispatch/execution dedupe still future.
+**Day 100–104:** **`ResultConsumerRunner`** — **`worker_result_key`** dedupe; **`processed_messages`**, **`duplicate_messages`**; **`event=duplicate_worker_result`**. **Day 102:** env backend. **Day 103:** Redis consumer smoke. Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
 
 **Day 101:** **`scripts/smoke_result_idempotency_redis.py`** — live **`worker_result_key`** + Redis **`SET NX EX`** smoke (redis-cli via Docker).
 
 **Day 102:** **`kernelq/idempotency_config.py`** — **`build_idempotency_store_from_env()`**. Env: **`KERNELQ_IDEMPOTENCY_BACKEND`** (`memory` default, `redis`); **`KERNELQ_REDIS_HOST`**, **`KERNELQ_REDIS_PORT`**, **`KERNELQ_REDIS_NAMESPACE`**. Redis backend uses **redis-cli subprocess** (no Python Redis package). Redis down → **`RuntimeError`** (fail clear).
 
-**Day 103:** **`scripts/smoke_result_consumer_redis_idempotency.py`** — consumer-level Redis smoke via configured backend + **`ResultConsumerRunner`**; proves duplicate worker results skipped (`handled_count=1`, `duplicate_messages=1`); no Kafka/Postgres. Dispatch/execution dedupe still future. Design: **[redis-idempotency-deduplication.md](../docs/design/redis-idempotency-deduplication.md)**.
+**Day 104:** **`ResultConsumerStats`** — **`processed_messages`** (first-seen handled), **`duplicate_messages`** (skipped replays). **`consume_result_once.py`** shutdown: **`event=result_consumer_summary`**. Future: Prometheus gauges/counters, OpenTelemetry, CloudWatch dashboards.
 
 ```bash
 python3 -m pytest control_plane/tests/test_idempotency_config.py control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py control_plane/tests/test_idempotency_keys.py control_plane/tests/test_result_consumer.py
@@ -305,6 +305,7 @@ One-shot scripts print an extra **key=value summary line** at the end (via `kern
 event=scheduler_tick selected_count=1 dispatched_count=1 published_count=1 errors_count=0 publish_errors_count=0
 event=retry_scanner requeued_count=2 errors_count=0 requeued_job_ids=["job-a","job-b"]
 event=result_consumer processed_message=true errors_count=0
+event=result_consumer_summary duplicate_messages=0 idempotency_backend=memory processed_messages=1
 event=duplicate_worker_result job_id=job-abc attempt=0
 event=job_state_snapshot total_jobs=5010 states_count=4
 event=generate_load_jobs created_jobs=1000 elapsed_seconds=1.2 jobs_per_second=833.3 tenants=10

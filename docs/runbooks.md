@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–103):** **`docker compose up -d redis`**. **Day 103 smoke:** **`PYTHONPATH=. python3 control_plane/scripts/smoke_result_consumer_redis_idempotency.py`** — configured Redis backend + **`ResultConsumerRunner`**; duplicate results skipped; no Kafka/Postgres. Store smoke: **`smoke_result_idempotency_redis.py`**. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Redis / idempotency (Day 96–104):** **`docker compose up -d redis`**. **Day 103 smoke:** **`smoke_result_consumer_redis_idempotency.py`**. **Day 104:** **`ResultConsumerRunner`** stats **`processed_messages`**, **`duplicate_messages`**; **`consume_result_once.py`** prints **`event=result_consumer_summary`** — duplicate suppression observable. Future: Prometheus / OpenTelemetry / CloudWatch. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 | Path | Command |
 |------|---------|
@@ -42,6 +42,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `scheduler_tick` | `published_count`, `errors_count`, `publish_errors_count` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |
 | `result_consumer` | `processed_message`, `errors_count`, optional `error` |
+| `result_consumer_summary` | `processed_messages`, `duplicate_messages`, `idempotency_backend` |
 | `job_state_snapshot` | `total_jobs`, `states_count` |
 | `job_duration_snapshot` | `completed_jobs_count`, averages, **`p50_queue_wait_seconds`**, **`p95_queue_wait_seconds`**, **`p99_queue_wait_seconds`** |
 | `seed_latency_metrics` | `created_jobs` |

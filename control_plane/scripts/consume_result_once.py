@@ -67,11 +67,32 @@ def _print_structured_summary(
     print(format_log_event("result_consumer", **fields))
 
 
+def _print_shutdown_summary(
+    *,
+    backend: str,
+    processed_messages: int,
+    duplicate_messages: int,
+) -> None:
+    """Print runner counters at script completion (for metrics and debugging)."""
+    print(f"processed_messages={processed_messages}")
+    print(f"duplicate_messages={duplicate_messages}")
+    print(f"idempotency_backend={backend}")
+    print(
+        format_log_event(
+            "result_consumer_summary",
+            duplicate_messages=duplicate_messages,
+            idempotency_backend=backend,
+            processed_messages=processed_messages,
+        )
+    )
+
+
 def main() -> None:
     kafka_consumer: KafkaResultConsumer | None = None
+    runner: ResultConsumerRunner | None = None
+    backend = resolve_idempotency_backend()
 
     try:
-        backend = resolve_idempotency_backend()
         print(f"idempotency_backend={backend}")
 
         # --- Step 1: Postgres connection and repository ---
@@ -104,6 +125,13 @@ def main() -> None:
         )
         raise
     finally:
+        if runner is not None:
+            stats = runner.stats()
+            _print_shutdown_summary(
+                backend=backend,
+                processed_messages=stats.processed_messages,
+                duplicate_messages=stats.duplicate_messages,
+            )
         if kafka_consumer is not None:
             kafka_consumer.close()
 
