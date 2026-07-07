@@ -8,6 +8,7 @@ from control_plane.kernelq.job_metrics import JobDurationMetrics
 from control_plane.kernelq.prometheus_metrics import (
     format_job_duration_metrics_for_prometheus,
     format_job_state_counts_for_prometheus,
+    format_result_consumer_metrics,
 )
 
 
@@ -135,3 +136,46 @@ def test_duration_formatter_negative_value_raises_value_error() -> None:
 
     with pytest.raises(ValueError, match=">= 0"):
         format_job_duration_metrics_for_prometheus(metrics)
+
+
+def test_result_consumer_metrics_include_processed_counter() -> None:
+    output = format_result_consumer_metrics(processed_messages=3, duplicate_messages=1)
+
+    assert "kernelq_result_consumer_processed_messages 3" in output
+    assert "# TYPE kernelq_result_consumer_processed_messages counter" in output
+
+
+def test_result_consumer_metrics_include_duplicate_counter() -> None:
+    output = format_result_consumer_metrics(processed_messages=3, duplicate_messages=1)
+
+    assert "kernelq_result_consumer_duplicate_messages 1" in output
+    assert "# TYPE kernelq_result_consumer_duplicate_messages counter" in output
+
+
+def test_result_consumer_metrics_zero_values_allowed() -> None:
+    output = format_result_consumer_metrics(processed_messages=0, duplicate_messages=0)
+
+    assert "kernelq_result_consumer_processed_messages 0" in output
+    assert "kernelq_result_consumer_duplicate_messages 0" in output
+
+
+def test_result_consumer_metrics_negative_processed_raises_value_error() -> None:
+    with pytest.raises(ValueError, match="processed_messages must be >= 0"):
+        format_result_consumer_metrics(processed_messages=-1, duplicate_messages=0)
+
+
+def test_result_consumer_metrics_negative_duplicate_raises_value_error() -> None:
+    with pytest.raises(ValueError, match="duplicate_messages must be >= 0"):
+        format_result_consumer_metrics(processed_messages=0, duplicate_messages=-1)
+
+
+def test_result_consumer_metrics_deterministic_output_order() -> None:
+    output = format_result_consumer_metrics(processed_messages=2, duplicate_messages=5)
+
+    assert output.splitlines() == [
+        "# TYPE kernelq_result_consumer_processed_messages counter",
+        "kernelq_result_consumer_processed_messages 2",
+        "",
+        "# TYPE kernelq_result_consumer_duplicate_messages counter",
+        "kernelq_result_consumer_duplicate_messages 5",
+    ]

@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–104):** **`docker compose up -d redis`**. **Day 103 smoke:** **`smoke_result_consumer_redis_idempotency.py`**. **Day 104:** **`ResultConsumerRunner`** stats **`processed_messages`**, **`duplicate_messages`**; **`consume_result_once.py`** prints **`event=result_consumer_summary`** — duplicate suppression observable. Future: Prometheus / OpenTelemetry / CloudWatch. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Redis / idempotency (Day 96–105):** **Day 105:** **`format_result_consumer_metrics`** — **`kernelq_result_consumer_processed_messages`**, **`kernelq_result_consumer_duplicate_messages`**. Optional: **`KERNELQ_PRINT_RESULT_CONSUMER_PROMETHEUS=true`** on **`consume_result_once.py`**. Future: **`/metrics/prometheus`**, Grafana, CloudWatch. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 | Path | Command |
 |------|---------|

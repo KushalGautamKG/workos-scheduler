@@ -27,6 +27,7 @@ Or:
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -43,6 +44,7 @@ from control_plane.kernelq.idempotency_config import (
 from control_plane.kernelq.job_repository import JobRepository
 from control_plane.kernelq.kafka_result_consumer import KafkaResultConsumer
 from control_plane.kernelq.logging_utils import format_log_event
+from control_plane.kernelq.prometheus_metrics import format_result_consumer_metrics
 from control_plane.kernelq.result_consumer import ResultConsumerRunner
 from control_plane.kernelq.result_handler import ResultStateHandler
 
@@ -85,6 +87,18 @@ def _print_shutdown_summary(
             processed_messages=processed_messages,
         )
     )
+    if os.environ.get("KERNELQ_PRINT_RESULT_CONSUMER_PROMETHEUS", "").lower() in (
+        "1",
+        "true",
+        "yes",
+    ):
+        print(
+            format_result_consumer_metrics(
+                processed_messages=processed_messages,
+                duplicate_messages=duplicate_messages,
+            ),
+            end="",
+        )
 
 
 def main() -> None:

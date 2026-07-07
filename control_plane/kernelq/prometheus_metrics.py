@@ -82,3 +82,38 @@ def format_job_duration_metrics_for_prometheus(metrics: Any) -> str:
         )
 
     return "\n".join(lines) + "\n"
+
+
+def _validate_non_negative_int(name: str, value: Any) -> int:
+    """Ensure a counter sample is a non-negative int."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an int, got {value!r}")
+
+    if value < 0:
+        raise ValueError(f"{name} must be >= 0, got {value}")
+
+    return value
+
+
+def format_result_consumer_metrics(processed_messages: int, duplicate_messages: int) -> str:
+    """
+    Format result-consumer dedupe counters as Prometheus text exposition.
+
+    Emits ``kernelq_result_consumer_processed_messages`` and
+    ``kernelq_result_consumer_duplicate_messages`` counters in deterministic order.
+
+    Raises:
+        ValueError: if either count is not a non-negative int.
+    """
+    processed = _validate_non_negative_int("processed_messages", processed_messages)
+    duplicates = _validate_non_negative_int("duplicate_messages", duplicate_messages)
+
+    lines = [
+        "# TYPE kernelq_result_consumer_processed_messages counter",
+        f"kernelq_result_consumer_processed_messages {processed}",
+        "",
+        "# TYPE kernelq_result_consumer_duplicate_messages counter",
+        f"kernelq_result_consumer_duplicate_messages {duplicates}",
+    ]
+
+    return "\n".join(lines) + "\n"

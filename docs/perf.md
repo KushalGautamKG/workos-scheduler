@@ -1,6 +1,6 @@
 # Performance
 
-**Day 90 checkpoint:** **[checkpoints/day90.md](checkpoints/day90.md)** summarizes current production-readiness state—benchmark evidence, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**. **Day 91–95** segment and E2E benchmarks. **Day 96–104:** idempotency + consumer dedupe; **`processed_messages`** / **`duplicate_messages`** stats (Day 104). Prometheus / OpenTelemetry / CloudWatch export still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Day 96–105:** idempotency + consumer dedupe; **Day 105** Prometheus text formatter for result-consumer counters. API scrape / Grafana / CloudWatch still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 ## Baseline Metrics Plan
 
@@ -439,7 +439,7 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 ## Result Consumer Metrics Planned
 
-**Day 104:** **`ResultConsumerRunner.stats()`** exposes **`processed_messages`** and **`duplicate_messages`**; **`consume_result_once.py`** logs **`event=result_consumer_summary`**. Duplicate suppression is observable in scripts/tests. **Prometheus / OpenTelemetry / CloudWatch** export still future.
+**Day 104:** **`ResultConsumerRunner.stats()`** — **`processed_messages`**, **`duplicate_messages`**. **Day 105:** **`format_result_consumer_metrics()`** emits **`kernelq_result_consumer_processed_messages`** and **`kernelq_result_consumer_duplicate_messages`**. API **`/metrics/prometheus`**, Grafana, CloudWatch wiring still future.
 
 **`KafkaResultConsumer.poll_once`** and **`consume_result_once.py`** exist today; a **long-running loop** and dashboards are not wired yet. When the result consumer path is fully instrumented, we plan to track:
 

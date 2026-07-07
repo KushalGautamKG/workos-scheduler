@@ -34,7 +34,7 @@ What works today (local / dev):
 - **Go worker pool** — configurable concurrent executors (**default 4**); consumer reads Kafka, workers run jobs in parallel (`worker/internal/worker/worker_pool.go`)
 - **Bounded worker work queue** — **Day 88** runtime backpressure config (**`KERNELQ_WORKER_BACKPRESSURE_*`**, disabled by default); **Day 87** evaluates depth vs high/low watermarks when enabled; pause/resume events/stats—in-memory controller; real Kafka pause/resume future; **Day 82** backoff default ([design doc](design/kafka-pause-resume-backpressure.md))
 - **Worker result publishing** — `WorkerResultEvent` on `kernelq.jobs.results`
-- **Python result consumer** — dedupe via **`worker_result_key`**; stats **`processed_messages`**, **`duplicate_messages`**; **`event=result_consumer_summary`** on shutdown (Day 104)
+- **Python result consumer** — dedupe stats; **Day 105** Prometheus formatter (`kernelq_result_consumer_processed_messages`, `kernelq_result_consumer_duplicate_messages`)
 - **Postgres state updates from worker results** — `succeeded`, `retryable_failure`, `terminal_failure` mapping
 - **Retry scheduling** — `retryable_failure` → `RETRY_SCHEDULED` when budget remains
 - **Retry requeue scanner** — due `retry_scheduled` rows → `queued`
@@ -184,7 +184,7 @@ Honest gaps — not production-ready yet:
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
 - **Worker Kafka backpressure** — **Day 88** env-configurable watermarks (**disabled by default**; EKS ConfigMaps later); **Day 87** in-memory pause/resume wiring; **Day 82** backoff default; real Kafka partition pause/resume still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
-- **Redis dedupe** — Day 103 consumer Redis smoke; Day 104 **`processed_messages`** / **`duplicate_messages`**; dispatch/execution still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**
+- **Redis dedupe** — Day 104 stats; **Day 105** Prometheus text formatter; API/Grafana/CloudWatch wiring still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**
 - **Observability gaps** — dedupe stats in-process/scripts only; **Prometheus / OpenTelemetry / CloudWatch** export still future
 - **Config / secrets** — no production-grade secret management or env-based config layering
 

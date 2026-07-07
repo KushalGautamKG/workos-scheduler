@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 96–103:** idempotency store, consumer dedupe, Redis smokes. **Day 104:** **`ResultConsumerRunner`** exposes **`processed_messages`** / **`duplicate_messages`** — duplicate suppression observable; **`consume_result_once.py`** prints **`event=result_consumer_summary`**. Future: Prometheus, OpenTelemetry, CloudWatch. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 104:** result consumer **`processed_messages`** / **`duplicate_messages`** stats. **Day 105:** Prometheus text formatter — **`kernelq_result_consumer_processed_messages`**, **`kernelq_result_consumer_duplicate_messages`**. Future: wire into **`/metrics/prometheus`**, Grafana, CloudWatch. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
 
 ## MVP Status
 
@@ -42,7 +42,7 @@ Provisioned dashboard **KernelQ MVP** — first metric **`kernelq_jobs_by_state`
 | [docs/checkpoints/day90.md](docs/checkpoints/day90.md) | Day 90 checkpoint — platform status, benchmarks, limitations, roadmap |
 | [docs/mvp.md](docs/mvp.md) | MVP checkpoint — demo, tests, talking points |
 | [docs/architecture.md](docs/architecture.md) | System design |
-| [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe; consumer stats (Day 104) |
+| [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe; Prometheus counters (Day 105) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |
 | [docs/benchmarks/day75-baseline.md](docs/benchmarks/day75-baseline.md) | Local benchmark baseline (not production claims) |

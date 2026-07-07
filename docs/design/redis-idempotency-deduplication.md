@@ -1,6 +1,6 @@
 # Redis Idempotency and Deduplication Design
 
-Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 96–103:** store, keys, consumer dedupe, Redis smokes, env backend. **Day 104:** **`processed_messages`** / **`duplicate_messages`** stats — duplicate suppression observable. Future: Prometheus, OpenTelemetry, CloudWatch. Dispatch/execution dedupe still future.
+Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 104:** in-process stats. **Day 105:** Prometheus text formatter — **`kernelq_result_consumer_processed_messages`**, **`kernelq_result_consumer_duplicate_messages`**. Future: **`/metrics/prometheus`**, Grafana, CloudWatch. Dispatch/execution dedupe still future.
 
 **Interview sound bite:** *“Postgres owns job state; Redis owns short-lived ‘have we seen this event?’ keys with TTLs; Kafka stays at-least-once.”*
 
@@ -31,7 +31,7 @@ Redis is **not** a second database for jobs—it is a **TTL-backed dedupe cache*
 
 **Day 103:** **`scripts/smoke_result_consumer_redis_idempotency.py`** — consumer-level Redis dedupe smoke (no Kafka/Postgres).
 
-**Day 104:** **`ResultConsumerStats`** — **`processed_messages`**, **`duplicate_messages`**; duplicates do not increment **`processed_messages`**. **`consume_result_once.py`** prints **`event=result_consumer_summary`**. Duplicate suppression is now observable in scripts/tests; **Prometheus / OpenTelemetry / CloudWatch** export still future.
+**Day 104:** **`ResultConsumerStats`** — **`processed_messages`**, **`duplicate_messages`**. **Day 105:** **`format_result_consumer_metrics()`** in **`prometheus_metrics.py`** — Prometheus text for **`kernelq_result_consumer_processed_messages`** and **`kernelq_result_consumer_duplicate_messages`**. API scrape, Grafana, CloudWatch still future.
 
 ---
 
@@ -144,7 +144,7 @@ Both are required; either alone leaves a gap in the pipeline.
 | **Mismatch with Postgres** | Redis says “seen” but row missing or still `queued` | Prefer Postgres on conflict; delete stale Redis key; reconciliation job (future) |
 | **Clock / TTL skew** | Early expiry across nodes | Use relative `EX` from set time; single Redis primary in dev |
 
-**Today:** **Day 104** consumer stats (`processed_messages`, `duplicate_messages`); **Day 103** Redis smoke. Dispatch/execution dedupe not yet. Local Redis: **`docker compose up -d redis`**.
+**Today:** **Day 105** Prometheus text formatter for result-consumer dedupe counters; **Day 104** in-process stats. Dispatch/execution dedupe not yet.
 
 ---
 
@@ -161,7 +161,8 @@ Both are required; either alone leaves a gap in the pipeline.
 | **102** | **`idempotency_config.py`** — **`KERNELQ_IDEMPOTENCY_BACKEND`**; **`consume_result_once.py`** uses configured store |
 | **103** | **`smoke_result_consumer_redis_idempotency.py`** — consumer-level Redis dedupe smoke (no Kafka/Postgres) |
 | **104** | **`processed_messages`** / **`duplicate_messages`** stats; **`event=result_consumer_summary`** |
-| **105+** | Worker **execution** + scheduler **dispatch** dedupe; Prometheus / OpenTelemetry / CloudWatch |
+| **105** | **`format_result_consumer_metrics`** — Prometheus text for dedupe counters |
+| **106+** | Worker **execution** + scheduler **dispatch** dedupe; wire counters into **`/metrics/prometheus`** |
 
 Integration order: **interface → in-memory tests → Redis adapter → canonical keys → result consumer → worker/dispatch handlers**.
 
