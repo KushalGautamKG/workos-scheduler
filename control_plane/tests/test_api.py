@@ -154,6 +154,23 @@ def test_get_prometheus_metrics_returns_text_exposition(client: TestClient) -> N
     assert 'kernelq_queue_wait_seconds{quantile="0.50"}' in text
     assert 'kernelq_queue_wait_seconds{quantile="0.95"}' in text
     assert 'kernelq_queue_wait_seconds{quantile="0.99"}' in text
+    assert "# TYPE kernelq_result_consumer_processed_messages counter" in text
+    assert "kernelq_result_consumer_processed_messages 0" in text
+    assert "# TYPE kernelq_result_consumer_duplicate_messages counter" in text
+    assert "kernelq_result_consumer_duplicate_messages 0" in text
+
+
+def test_get_prometheus_metrics_includes_result_consumer_counters(
+    client: TestClient,
+) -> None:
+    response = client.get("/metrics/prometheus")
+
+    assert response.status_code == 200
+    text = response.text
+    assert "kernelq_result_consumer_processed_messages" in text
+    assert "kernelq_result_consumer_duplicate_messages" in text
+    assert "kernelq_result_consumer_processed_messages 0" in text
+    assert "kernelq_result_consumer_duplicate_messages 0" in text
 
 
 def test_get_prometheus_metrics_includes_state_counts_and_queue_wait_quantiles(
@@ -206,6 +223,8 @@ def test_get_prometheus_metrics_includes_state_counts_and_queue_wait_quantiles(
     text = response.text
     assert 'kernelq_jobs_by_state{state="queued"} 10' in text
     assert 'kernelq_queue_wait_seconds{quantile="0.95"} 24.0' in text
+    assert "kernelq_result_consumer_processed_messages 0" in text
+    assert "kernelq_result_consumer_duplicate_messages 0" in text
 
 
 # 1d) GET /metrics/durations returns job duration averages from Postgres

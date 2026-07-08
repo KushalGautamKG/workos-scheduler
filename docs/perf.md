@@ -1,6 +1,6 @@
 # Performance
 
-**Day 96–105:** idempotency + consumer dedupe; **Day 105** Prometheus text formatter for result-consumer counters. API scrape / Grafana / CloudWatch still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Day 96–106:** idempotency + consumer dedupe; **Day 106** result-consumer counters on **`GET /metrics/prometheus`** (zeros until shared stats). Future: persistent counters, Grafana, CloudWatch — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 ## Baseline Metrics Plan
 
@@ -439,7 +439,7 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 ## Result Consumer Metrics Planned
 
-**Day 104:** **`ResultConsumerRunner.stats()`** — **`processed_messages`**, **`duplicate_messages`**. **Day 105:** **`format_result_consumer_metrics()`** emits **`kernelq_result_consumer_processed_messages`** and **`kernelq_result_consumer_duplicate_messages`**. API **`/metrics/prometheus`**, Grafana, CloudWatch wiring still future.
+**Day 106:** **`GET /metrics/prometheus`** includes **`kernelq_result_consumer_processed_messages`** and **`kernelq_result_consumer_duplicate_messages`** (default **0**). Future: persistent counters, Grafana dashboard, CloudWatch alerts.
 
 **`KafkaResultConsumer.poll_once`** and **`consume_result_once.py`** exist today; a **long-running loop** and dashboards are not wired yet. When the result consumer path is fully instrumented, we plan to track:
 
@@ -577,7 +577,7 @@ Archived benchmark runs live under **`docs/benchmarks/`**. **[Day 75 baseline](b
 
 ## Prometheus Scraping
 
-**`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges and **`kernelq_queue_wait_seconds{quantile=...}`** percentile gauges (same Postgres snapshot as `/metrics/durations`).
+**`GET /metrics/prometheus`** returns **`kernelq_jobs_by_state`** gauges, **`kernelq_queue_wait_seconds{quantile=...}`** percentile gauges, and **`kernelq_result_consumer_*`** dedupe counters (zeros until shared stats are wired).
 
 Example scrape config: **`infra/prometheus/prometheus.yml`** — **`scrape_interval: 15s`**, target **`/metrics/prometheus`** on the control-plane API. **`docker-compose.yml`** now includes a **`prometheus`** service (`docker compose up -d prometheus`); UI at **http://127.0.0.1:9090**. Query **`kernelq_jobs_by_state`** there to inspect job state gauges. See **`docs/deploy.md`** for full steps.
 

@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–105):** **Day 105:** **`format_result_consumer_metrics`** — **`kernelq_result_consumer_processed_messages`**, **`kernelq_result_consumer_duplicate_messages`**. Optional: **`KERNELQ_PRINT_RESULT_CONSUMER_PROMETHEUS=true`** on **`consume_result_once.py`**. Future: **`/metrics/prometheus`**, Grafana, CloudWatch. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Redis / idempotency (Day 96–106):** **`GET /metrics/prometheus`** includes **`kernelq_result_consumer_processed_messages`** and **`kernelq_result_consumer_duplicate_messages`** (zeros until shared/persisted stats). Future: persistent counters, Grafana dashboard, CloudWatch alerts. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 | Path | Command |
 |------|---------|
@@ -51,7 +51,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `benchmark_worker_throughput` | Single trial: `generated_jobs`, `processed_jobs`, `elapsed_seconds`, `jobs_processed_per_second`, `worker_count`, `queue_capacity`. Multi-trial: `trials`, `generated_jobs_per_trial`, `total_processed_jobs`, `min_jobs_processed_per_second`, `avg_jobs_processed_per_second`, `max_jobs_processed_per_second` |
 | `benchmark_end_to_end_completion` | Single trial: `generated_jobs`, `dispatched_jobs`, `succeeded_jobs`, `elapsed_seconds`, `jobs_completed_per_second`, `worker_count`, `queue_capacity`, `job_prefix`. Multi-trial: `trials`, `generated_jobs_per_trial`, `total_succeeded_jobs`, `min_jobs_completed_per_second`, `avg_jobs_completed_per_second`, `max_jobs_completed_per_second` |
 
-**Duration metrics:** Queue wait **p50/p95/p99** from **`dispatched_at - created_at`**. JSON: **`GET /metrics/durations`**; Prometheus gauges: **`GET /metrics/prometheus`**. Snapshot quantiles — **not histogram `_bucket` metrics yet**. **`seed_latency_metrics.py`** seeds realistic queue waits for local testing; **`smoke_queue_wait_metrics.sh`** verifies non-zero queue latency end-to-end.
+**Duration metrics:** Queue wait **p50/p95/p99** from **`dispatched_at - created_at`**. JSON: **`GET /metrics/durations`**; Prometheus: **`GET /metrics/prometheus`** (also **`kernelq_result_consumer_*`** dedupe counters). Snapshot quantiles — **not histogram `_bucket` metrics yet**. **`seed_latency_metrics.py`** / **`smoke_queue_wait_metrics.sh`** for local queue-wait testing.
 
 **Load generator:** **`generate_load_jobs.py`** creates **`queued`** benchmark rows in Postgres (use a unique **`--prefix`** for cleanup and reproducibility). Dispatch with **`run_scheduler_tick_once.py`** when ready.
 

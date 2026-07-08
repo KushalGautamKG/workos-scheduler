@@ -49,7 +49,7 @@ What works today (local / dev):
 - **Worker throughput benchmark** — **`benchmark_worker_throughput.sh`**: prefix-isolated dispatch → worker → result; **`TRIALS`** for repeated runs (**min/avg/max** when **`TRIALS>1`**); **local dev only**, not production capacity
 - **End-to-end completion benchmark** — **`benchmark_end_to_end_completion.sh`**: **`queued` → `succeeded`**; **`TRIALS`** for repeated runs (**min/avg/max** when **`TRIALS>1`**); **local dev only**
 - **Benchmark baseline docs** — **[benchmarks/day75-baseline.md](benchmarks/day75-baseline.md)**, **[benchmarks/day77-scheduler-1000.md](benchmarks/day77-scheduler-1000.md)**, **[benchmarks/day91-worker-throughput.md](benchmarks/day91-worker-throughput.md)**, **[benchmarks/day94-end-to-end-completion.md](benchmarks/day94-end-to-end-completion.md)**—local baselines, not production claims
-- **Prometheus-style metrics endpoint** — **`GET /metrics/prometheus`** (job state counts + queue wait quantile gauges)
+- **Prometheus-style metrics endpoint** — **`GET /metrics/prometheus`** (job state, queue wait quantiles, result-consumer dedupe counters — counters default **0** until shared stats wired)
 - **Prometheus scrape configuration example** — `infra/prometheus/prometheus.yml` (15s scrape of `/metrics/prometheus`; see `docs/deploy.md`)
 - **Local Prometheus service** — `docker compose up -d prometheus` (UI on `:9090`)
 - **Local Grafana service and starter dashboard** — `docker compose up -d grafana` (UI on `:3000`; **KernelQ MVP** charts `kernelq_jobs_by_state`)
@@ -184,7 +184,7 @@ Honest gaps — not production-ready yet:
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
 - **Worker Kafka backpressure** — **Day 88** env-configurable watermarks (**disabled by default**; EKS ConfigMaps later); **Day 87** in-memory pause/resume wiring; **Day 82** backoff default; real Kafka partition pause/resume still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
-- **Redis dedupe** — Day 104 stats; **Day 105** Prometheus text formatter; API/Grafana/CloudWatch wiring still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**
+- **Redis dedupe** — Day 106 counters on **`/metrics/prometheus`**; persistent stats / Grafana / CloudWatch still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**
 - **Observability gaps** — dedupe stats in-process/scripts only; **Prometheus / OpenTelemetry / CloudWatch** export still future
 - **Config / secrets** — no production-grade secret management or env-based config layering
 

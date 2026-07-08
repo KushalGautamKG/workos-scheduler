@@ -23,6 +23,7 @@ from control_plane.kernelq.job_metrics import compute_job_duration_metrics
 from control_plane.kernelq.prometheus_metrics import (
     format_job_duration_metrics_for_prometheus,
     format_job_state_counts_for_prometheus,
+    format_result_consumer_metrics,
 )
 from control_plane.kernelq.scheduler_metrics import SchedulerMetrics
 
@@ -445,12 +446,12 @@ def get_job_duration_metrics() -> JobDurationMetricsResponse:
     "/metrics/prometheus",
     summary="Prometheus job metrics",
     description=(
-        "Return job counts by Postgres state and queue-wait percentile gauges "
-        "in Prometheus text exposition format."
+        "Return job counts by Postgres state, queue-wait percentile gauges, and "
+        "result-consumer dedupe counters in Prometheus text exposition format."
     ),
 )
 def get_prometheus_job_metrics() -> Response:
-    """Expose durable job state counts and queue-wait quantiles for Prometheus scraping."""
+    """Expose durable job state counts, queue-wait quantiles, and result-consumer counters."""
     repo = get_repository()
     try:
         try:
@@ -465,6 +466,10 @@ def get_prometheus_job_metrics() -> Response:
 
         body = format_job_state_counts_for_prometheus(counts)
         body += format_job_duration_metrics_for_prometheus(duration_metrics)
+        body += format_result_consumer_metrics(
+            processed_messages=0,
+            duplicate_messages=0,
+        )
         return Response(content=body, media_type="text/plain; version=0.0.4")
     finally:
         _close_repository(repo)

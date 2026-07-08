@@ -147,7 +147,7 @@ The Python control plane includes a **`WorkerResultEvent`** model (`kernelq/resu
 
 KernelQ’s control plane includes **`ResultConsumerRunner`** (`kernelq/result_consumer.py`). It takes a raw **`ResultMessage`** (Kafka key + JSON bytes), **parses and validates** it into a **`WorkerResultEvent`**, then **delegates** to a **`ResultHandler`**.
 
-**Day 100–105:** **`try_claim(worker_result_key(...))`** — duplicates skipped. Stats: **`processed_messages`**, **`duplicate_messages`**. **Day 105:** **`format_result_consumer_metrics()`** → **`kernelq_result_consumer_processed_messages`**, **`kernelq_result_consumer_duplicate_messages`**; optional **`KERNELQ_PRINT_RESULT_CONSUMER_PROMETHEUS=true`** on **`consume_result_once.py`**. Future: **`/metrics/prometheus`**, Grafana, CloudWatch. Dispatch/execution dedupe still future.
+**Day 100–106:** dedupe stats **`processed_messages`**, **`duplicate_messages`**. **Day 106:** **`GET /metrics/prometheus`** exposes result-consumer counters (default **0** until shared/persisted stats). Future: persistent counters, Grafana, CloudWatch. Dispatch/execution dedupe still future.
 
 Tests use a **fake handler** so parsing can be checked without a broker. **`KafkaResultConsumer`** polls **`kernelq.jobs.results`** for one-shot manual runs; a **long-running consumer loop** is still future work.
 
@@ -288,7 +288,7 @@ TRIALS=2 COUNT=5 ./control_plane/scripts/benchmark_end_to_end_completion.sh
 
 **Day 102:** **`kernelq/idempotency_config.py`** — **`build_idempotency_store_from_env()`**. Env: **`KERNELQ_IDEMPOTENCY_BACKEND`** (`memory` default, `redis`); **`KERNELQ_REDIS_HOST`**, **`KERNELQ_REDIS_PORT`**, **`KERNELQ_REDIS_NAMESPACE`**. Redis backend uses **redis-cli subprocess** (no Python Redis package). Redis down → **`RuntimeError`** (fail clear).
 
-**Day 105:** **`prometheus_metrics.format_result_consumer_metrics`** — Prometheus text for dedupe counters. Future: expose on **`GET /metrics/prometheus`**, Grafana, CloudWatch.
+**Day 105–106:** **`format_result_consumer_metrics`**; **`GET /metrics/prometheus`** includes dedupe counters (zeros until shared stats). Future: persistent counters, Grafana, CloudWatch.
 
 ```bash
 python3 -m pytest control_plane/tests/test_idempotency_config.py control_plane/tests/test_idempotency_store.py control_plane/tests/test_redis_idempotency_store.py control_plane/tests/test_idempotency_keys.py control_plane/tests/test_result_consumer.py
@@ -327,7 +327,7 @@ These lines are **grep-friendly** for local debugging and demos. This is **not a
 
 ## Prometheus-Style Metrics
 
-**`GET /metrics/prometheus`** exposes **durable Postgres job state counts** and **queue-wait percentile gauges** in Prometheus text exposition format (`kernelq_jobs_by_state`, `kernelq_queue_wait_seconds{quantile="0.50"|"0.95"|"0.99"}`). **Gauge quantiles from DB snapshots — not native Prometheus histograms yet.**
+**`GET /metrics/prometheus`** exposes **Postgres job state counts**, **queue-wait percentile gauges**, and **result-consumer dedupe counters** (`kernelq_jobs_by_state`, `kernelq_queue_wait_seconds{quantile=...}`, `kernelq_result_consumer_processed_messages`, `kernelq_result_consumer_duplicate_messages`). Counters default to **0** until shared/persisted result-consumer stats are wired. **Gauge quantiles from DB snapshots — not native Prometheus histograms yet.**
 
 ```bash
 curl http://127.0.0.1:8000/metrics/prometheus

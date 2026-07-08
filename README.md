@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 104:** result consumer **`processed_messages`** / **`duplicate_messages`** stats. **Day 105:** Prometheus text formatter — **`kernelq_result_consumer_processed_messages`**, **`kernelq_result_consumer_duplicate_messages`**. Future: wire into **`/metrics/prometheus`**, Grafana, CloudWatch. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 105–106:** **`GET /metrics/prometheus`** includes **`kernelq_result_consumer_processed_messages`** and **`kernelq_result_consumer_duplicate_messages`** (zeros until shared/persisted stats are wired). Future: persistent counters, Grafana dashboard, CloudWatch alerts. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
 
 ## MVP Status
 
