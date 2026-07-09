@@ -147,7 +147,7 @@ The Python control plane includes a **`WorkerResultEvent`** model (`kernelq/resu
 
 KernelQ’s control plane includes **`ResultConsumerRunner`** (`kernelq/result_consumer.py`). It takes a raw **`ResultMessage`** (Kafka key + JSON bytes), **parses and validates** it into a **`WorkerResultEvent`**, then **delegates** to a **`ResultHandler`**.
 
-**Day 100–106:** dedupe stats **`processed_messages`**, **`duplicate_messages`**. **Day 106:** **`GET /metrics/prometheus`** exposes result-consumer counters (default **0** until shared/persisted stats). Future: persistent counters, Grafana, CloudWatch. Dispatch/execution dedupe still future.
+**Day 107:** Grafana **KernelQ MVP** panel **Result Consumer Messages** + runbooks for duplicate worker results. Completes basic observability for Redis-backed result idempotency (counters may be **0** until shared stats wired). Future: persistent counters, CloudWatch alerts.
 
 Tests use a **fake handler** so parsing can be checked without a broker. **`KafkaResultConsumer`** polls **`kernelq.jobs.results`** for one-shot manual runs; a **long-running consumer loop** is still future work.
 

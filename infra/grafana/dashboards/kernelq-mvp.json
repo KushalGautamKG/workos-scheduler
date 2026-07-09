@@ -51,6 +51,56 @@
       ],
       "title": "Jobs by State",
       "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "showPoints": "auto"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "targets": [
+        {
+          "datasource": "Prometheus",
+          "expr": "kernelq_result_consumer_processed_messages",
+          "legendFormat": "processed",
+          "refId": "A"
+        },
+        {
+          "datasource": "Prometheus",
+          "expr": "kernelq_result_consumer_duplicate_messages",
+          "legendFormat": "duplicate",
+          "refId": "B"
+        }
+      ],
+      "title": "Result Consumer Messages",
+      "type": "timeseries"
     }
   ],
   "refresh": "15s",

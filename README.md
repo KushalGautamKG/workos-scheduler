@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 105–106:** **`GET /metrics/prometheus`** includes **`kernelq_result_consumer_processed_messages`** and **`kernelq_result_consumer_duplicate_messages`** (zeros until shared/persisted stats are wired). Future: persistent counters, Grafana dashboard, CloudWatch alerts. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 107:** Grafana **KernelQ MVP** dashboard + docs track result-consumer **`processed`** / **`duplicate`** metrics — basic visibility for Redis-backed result idempotency. Counters on **`/metrics/prometheus`** may read **0** until shared/persisted stats are wired. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
 
 ## MVP Status
 
@@ -33,7 +33,7 @@ docker compose up -d postgres zookeeper kafka redis
 | Prometheus | [http://127.0.0.1:9090](http://127.0.0.1:9090) | Scrapes `GET /metrics/prometheus` |
 | Grafana | [http://127.0.0.1:3000](http://127.0.0.1:3000) | Login `admin` / `admin` |
 
-Provisioned dashboard **KernelQ MVP** — first metric **`kernelq_jobs_by_state`** (job counts by Postgres state). Config: [infra/prometheus/prometheus.yml](infra/prometheus/prometheus.yml). Local dev only.
+Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Result Consumer Messages** (`kernelq_result_consumer_processed_messages`, `kernelq_result_consumer_duplicate_messages`). Config: [infra/prometheus/prometheus.yml](infra/prometheus/prometheus.yml). Local dev only.
 
 ## Docs
 

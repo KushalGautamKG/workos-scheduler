@@ -34,7 +34,7 @@ What works today (local / dev):
 - **Go worker pool** — configurable concurrent executors (**default 4**); consumer reads Kafka, workers run jobs in parallel (`worker/internal/worker/worker_pool.go`)
 - **Bounded worker work queue** — **Day 88** runtime backpressure config (**`KERNELQ_WORKER_BACKPRESSURE_*`**, disabled by default); **Day 87** evaluates depth vs high/low watermarks when enabled; pause/resume events/stats—in-memory controller; real Kafka pause/resume future; **Day 82** backoff default ([design doc](design/kafka-pause-resume-backpressure.md))
 - **Worker result publishing** — `WorkerResultEvent` on `kernelq.jobs.results`
-- **Python result consumer** — dedupe stats; **Day 105** Prometheus formatter (`kernelq_result_consumer_processed_messages`, `kernelq_result_consumer_duplicate_messages`)
+- **Python result consumer** — dedupe + **Day 107** Grafana/docs for **`kernelq_result_consumer_processed_messages`** / **`kernelq_result_consumer_duplicate_messages`**
 - **Postgres state updates from worker results** — `succeeded`, `retryable_failure`, `terminal_failure` mapping
 - **Retry scheduling** — `retryable_failure` → `RETRY_SCHEDULED` when budget remains
 - **Retry requeue scanner** — due `retry_scheduled` rows → `queued`
@@ -177,15 +177,14 @@ Honest gaps — not production-ready yet:
 - **Result consumer** — one-shot poll (`consume_result_once.py`), not a long-running daemon
 - **Scheduler** — one-shot tick (`run_scheduler_tick_once.py`), not a continuous loop
 - **Prometheus** — local Docker Compose service only; no production TSDB or HA deployment
-- **Grafana dashboard** — minimal **KernelQ MVP** panel; only **`kernelq_jobs_by_state`** gauges for now
+- **Grafana dashboard** — **KernelQ MVP**: **`kernelq_jobs_by_state`** + **Result Consumer Messages** (processed/duplicate counters)
 - **Duration metrics** — Postgres snapshot **p50/p95/p99** queue wait on **`/metrics/durations`** and **`/metrics/prometheus`**; not native Prometheus histograms yet
 - **Structured logs** — one-shot scripts only; no centralized log aggregation yet
 - **Security** — no auth, no multi-user tenancy enforcement beyond `tenant_id` on rows
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
 - **Worker Kafka backpressure** — **Day 88** env-configurable watermarks (**disabled by default**; EKS ConfigMaps later); **Day 87** in-memory pause/resume wiring; **Day 82** backoff default; real Kafka partition pause/resume still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
-- **Redis dedupe** — Day 106 counters on **`/metrics/prometheus`**; persistent stats / Grafana / CloudWatch still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**
-- **Observability gaps** — dedupe stats in-process/scripts only; **Prometheus / OpenTelemetry / CloudWatch** export still future
+- **Redis dedupe** — **Day 107** completes basic visibility (Prometheus + Grafana + runbooks); persistent shared stats / CloudWatch alerts still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
 ---

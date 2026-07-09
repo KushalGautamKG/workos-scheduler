@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–106):** **`GET /metrics/prometheus`** includes **`kernelq_result_consumer_processed_messages`** and **`kernelq_result_consumer_duplicate_messages`** (zeros until shared/persisted stats). Future: persistent counters, Grafana dashboard, CloudWatch alerts. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Redis / idempotency (Day 96–107):** **`GET /metrics/prometheus`** exposes result-consumer counters; Grafana **KernelQ MVP** panel **Result Consumer Messages**. See **Duplicate Worker Results** below. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 | Path | Command |
 |------|---------|
@@ -54,6 +54,40 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 **Duration metrics:** Queue wait **p50/p95/p99** from **`dispatched_at - created_at`**. JSON: **`GET /metrics/durations`**; Prometheus: **`GET /metrics/prometheus`** (also **`kernelq_result_consumer_*`** dedupe counters). Snapshot quantiles — **not histogram `_bucket` metrics yet**. **`seed_latency_metrics.py`** / **`smoke_queue_wait_metrics.sh`** for local queue-wait testing.
 
 **Load generator:** **`generate_load_jobs.py`** creates **`queued`** benchmark rows in Postgres (use a unique **`--prefix`** for cleanup and reproducibility). Dispatch with **`run_scheduler_tick_once.py`** when ready.
+
+## Duplicate Worker Results
+
+When worker results replay on **`kernelq.jobs.results`**, idempotency should skip duplicates safely — but rising duplicate counts warrant investigation.
+
+**Inspect metrics**
+
+```bash
+curl -s http://127.0.0.1:8000/metrics/prometheus | grep kernelq_result_consumer
+```
+
+Check **`kernelq_result_consumer_duplicate_messages`** against **`kernelq_result_consumer_processed_messages`**. In Grafana (**KernelQ MVP** → **Result Consumer Messages**), compare processed vs duplicate over time. Counters may read **0** until shared/persistent result-consumer stats are wired into the API process.
+
+**Inspect logs**
+
+```bash
+grep 'event=duplicate_worker_result' <logfile>
+```
+
+Also check **`event=result_consumer_summary`** from **`consume_result_once.py`** (`processed_messages`, `duplicate_messages`, `idempotency_backend`).
+
+**Possible causes**
+
+- Kafka consumer replay (restart, rebalance, offset reset)
+- Worker or producer retry sending the same **`job_id`** + **`attempt`**
+- Duplicate producer publish before idempotency claim
+
+**Current mitigation**
+
+- **`ResultConsumerRunner`** claims **`worker_result_key(job_id, attempt)`** — duplicates are **skipped**, not errors; Postgres state is not updated twice.
+
+**Future**
+
+- CloudWatch / Grafana alerting on duplicate rate vs processed rate (see **[perf.md](perf.md)**).
 
 ## Performance / Benchmarking
 
