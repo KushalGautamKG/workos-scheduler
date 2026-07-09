@@ -1,6 +1,6 @@
 # Performance
 
-**Day 96–108:** idempotency + dedupe boundaries. **Day 108:** scheduler **`duplicate_dispatches`** on dispatch publish. Result dedupe + Grafana exist; worker execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Day 96–109:** idempotency boundaries. **Day 109:** worker execution idempotency **design** — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)** (`execution:<job_id>:<attempt>`; Kafka replay at worker boundary; not implemented). — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 ## Baseline Metrics Plan
 
@@ -439,7 +439,7 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 ## Result Consumer Metrics Planned
 
-**Day 108:** **`SchedulerTickRunner`** — **`duplicate_dispatches`** skipped republish counter; compare with **`published_count`** when investigating replay.
+**Day 109:** planned **`duplicate_executions`** / execution skip metrics when Go integrates — see **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
 
 **`KafkaResultConsumer.poll_once`** and **`consume_result_once.py`** exist today; a **long-running loop** and dashboards are not wired yet. When the result consumer path is fully instrumented, we plan to track:
 

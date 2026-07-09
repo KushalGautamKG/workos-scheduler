@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–108):** result dedupe + **Day 108** dispatch dedupe (`duplicate_dispatches`, `event=duplicate_dispatch`). Worker execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Redis / idempotency (Day 96–109):** dispatch + result dedupe integrated. **Day 109:** worker execution idempotency **design** — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)** (not implemented).
 
 | Path | Command |
 |------|---------|
@@ -115,7 +115,14 @@ Check **`duplicate_dispatches`** vs **`published_count`** on **`event=scheduler_
 
 **Future**
 
-- Worker **execution** dedupe on Go intake; CloudWatch/Grafana alerts on **`duplicate_dispatches`** spikes.
+- Worker **execution** dedupe on Go intake — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**
+- CloudWatch / Grafana alerting on **`duplicate_dispatches`** spikes.
+
+## Duplicate Execution (planned)
+
+**Not implemented yet.** Design: **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
+
+When integrated, the Go worker will claim **`execution:<job_id>:<attempt>`** before **`Execute`**. Duplicate dispatch replays (Kafka offset rewind, consumer restart) should **skip execution** — not error. Compare with dispatch dedupe (`event=duplicate_dispatch`) and result dedupe (`event=duplicate_worker_result`).
 
 ## Performance / Benchmarking
 

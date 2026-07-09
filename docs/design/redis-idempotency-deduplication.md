@@ -1,6 +1,6 @@
 # Redis Idempotency and Deduplication Design
 
-Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 100–107:** result consumer dedupe + observability. **Day 108:** scheduler **dispatch dedupe** — **`duplicate_dispatches`**, **`event=duplicate_dispatch`**. Worker execution dedupe still future.
+Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 100–108:** result + dispatch dedupe integrated. **Day 109:** worker **execution idempotency design** — **[worker-execution-idempotency.md](worker-execution-idempotency.md)**. Go integration still future.
 
 **Interview sound bite:** *“Postgres owns job state; Redis owns short-lived ‘have we seen this event?’ keys with TTLs; Kafka stays at-least-once.”*
 
@@ -31,7 +31,9 @@ Redis is **not** a second database for jobs—it is a **TTL-backed dedupe cache*
 
 **Day 103:** **`scripts/smoke_result_consumer_redis_idempotency.py`** — consumer-level Redis dedupe smoke (no Kafka/Postgres).
 
-**Day 108:** **`SchedulerTickRunner`** claims **`dispatch_key(job_id, retry_count)`** before Kafka publish. Duplicate dispatches are **skipped**; **`duplicate_dispatches`** counter; **`event=duplicate_dispatch job_id=… attempt=…`**. Postgres claim behavior unchanged. Worker execution dedupe still future.
+**Day 108:** **`SchedulerTickRunner`** claims **`dispatch_key(job_id, retry_count)`** before Kafka publish. Duplicate dispatches are **skipped**; **`duplicate_dispatches`** counter; **`event=duplicate_dispatch job_id=… attempt=…`**. Postgres claim behavior unchanged.
+
+**Day 109:** **[worker-execution-idempotency.md](worker-execution-idempotency.md)** — planned Go worker claim on **`execution_key(job_id, attempt)`** → **`execution:<job_id>:<attempt>`**. Dispatch and result dedupe already integrated; worker execution integration is future Go work.
 
 ---
 
@@ -144,7 +146,7 @@ Both are required; either alone leaves a gap in the pipeline.
 | **Mismatch with Postgres** | Redis says “seen” but row missing or still `queued` | Prefer Postgres on conflict; delete stale Redis key; reconciliation job (future) |
 | **Clock / TTL skew** | Early expiry across nodes | Use relative `EX` from set time; single Redis primary in dev |
 
-**Today:** **Day 108** scheduler dispatch dedupe; **Day 107** result-consumer Grafana/docs. Worker execution dedupe not yet.
+**Today:** **Day 109** worker execution idempotency **design**; **Day 108** dispatch dedupe; **Day 107** result-consumer observability. Go **`execution_key`** integration not yet.
 
 ---
 
@@ -165,7 +167,8 @@ Both are required; either alone leaves a gap in the pipeline.
 | **106** | Wire result-consumer counters into **`GET /metrics/prometheus`**; Grafana panel |
 | **107** | Grafana/docs for result-consumer dedupe metrics |
 | **108** | **`SchedulerTickRunner`** — **`dispatch_key`** + **`try_claim`**; **`duplicate_dispatches`** / **`event=duplicate_dispatch`** |
-| **109+** | Worker **execution** dedupe; persistent shared stats; CloudWatch alerts |
+| **109** | **[worker-execution-idempotency.md](worker-execution-idempotency.md)** — Go execution dedupe design; **`execution_key`** |
+| **110+** | Go idempotency store + handler integration; smoke replay; CloudWatch alerts |
 
 Integration order: **interface → in-memory tests → Redis adapter → canonical keys → result consumer → worker/dispatch handlers**.
 
@@ -176,7 +179,7 @@ Integration order: **interface → in-memory tests → Redis adapter → canonic
 - **Not replacing Postgres** — job lifecycle and audit stay in `jobs` table.
 - **Not replacing Kafka offsets** — consumer groups still commit offsets; Redis is additive replay protection.
 - **Not full Kafka replay smoke yet** — Day 103 validates consumer + Redis path only; end-to-end duplicate on **`kernelq.jobs.results`** remains future work.
-- **Not worker execution dedupe yet** — Go worker intake on **`kernelq.jobs.dispatch`** unchanged.
+- **Not worker execution dedupe yet** — design in **[worker-execution-idempotency.md](worker-execution-idempotency.md)**; Go handler unchanged.
 - **Not exactly-once Kafka** — goal is **effective-once** behavior for job side effects.
 - **Not API idempotency keys for HTTP enqueue yet** — future `Idempotency-Key` header can reuse **`event_key(event_id)`**.
 
@@ -187,4 +190,5 @@ Integration order: **interface → in-memory tests → Redis adapter → canonic
 - [ADR-0002 Kafka choice](../decisions/ADR-0002-kafka-choice.md) — at-least-once handoff
 - [kafka-pause-resume-backpressure.md](kafka-pause-resume-backpressure.md) — worker intake backpressure (orthogonal)
 - [day90 checkpoint](../checkpoints/day90.md) — Redis on production-readiness roadmap
+- [worker-execution-idempotency.md](worker-execution-idempotency.md) — Go worker execution dedupe (Day 109 design)
 - [architecture.md](../architecture.md) — control plane vs worker split

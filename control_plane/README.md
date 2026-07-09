@@ -147,7 +147,7 @@ The Python control plane includes a **`WorkerResultEvent`** model (`kernelq/resu
 
 KernelQ’s control plane includes **`ResultConsumerRunner`** (`kernelq/result_consumer.py`). It takes a raw **`ResultMessage`** (Kafka key + JSON bytes), **parses and validates** it into a **`WorkerResultEvent`**, then **delegates** to a **`ResultHandler`**.
 
-**Day 107:** Grafana **KernelQ MVP** panel **Result Consumer Messages** + runbooks for duplicate worker results. Completes basic observability for Redis-backed result idempotency (counters may be **0** until shared stats wired). Future: persistent counters, CloudWatch alerts.
+**Day 109:** worker execution idempotency **design** — **[worker-execution-idempotency.md](../docs/design/worker-execution-idempotency.md)** (`execution:<job_id>:<attempt>`; Kafka replay protection at worker boundary; not implemented). Dispatch + result dedupe integrated.
 
 Tests use a **fake handler** so parsing can be checked without a broker. **`KafkaResultConsumer`** polls **`kernelq.jobs.results`** for one-shot manual runs; a **long-running consumer loop** is still future work.
 

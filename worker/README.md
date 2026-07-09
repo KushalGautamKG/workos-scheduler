@@ -14,6 +14,8 @@ Today the control plane **schedules** work: jobs live in Postgres, scheduler tic
 
 Kafka carries the handoff; Postgres stays the system of record. See `docs/architecture.md` and `docs/decisions/ADR-0001-foundations-and-language-split.md`.
 
+**Day 109 — execution idempotency (design only):** **[worker-execution-idempotency.md](../docs/design/worker-execution-idempotency.md)** — planned **`execution:<job_id>:<attempt>`** claim before **`Execute`** to skip duplicate runs on Kafka replay/offset rewind. Not implemented in Go yet; dispatch and result dedupe exist in Python.
+
 ## What exists today
 
 This is **foundation only**—not a running worker yet:
