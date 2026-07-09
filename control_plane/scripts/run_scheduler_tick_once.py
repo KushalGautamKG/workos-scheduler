@@ -49,6 +49,7 @@ def _print_summary(result) -> None:
     print(f"  selected_count:    {result.selected_count}")
     print(f"  dispatched_count:  {result.dispatched_count}")
     print(f"  published_count:   {result.published_count}")
+    print(f"  duplicate_dispatches: {result.duplicate_dispatches}")
     print()
     print("  dispatched_job_ids:")
     if result.dispatched_job_ids:
@@ -80,6 +81,7 @@ def _print_structured_summary(result) -> None:
             selected_count=result.selected_count,
             dispatched_count=result.dispatched_count,
             published_count=result.published_count,
+            duplicate_dispatches=result.duplicate_dispatches,
             errors_count=len(result.errors),
             publish_errors_count=len(result.publish_errors),
         )

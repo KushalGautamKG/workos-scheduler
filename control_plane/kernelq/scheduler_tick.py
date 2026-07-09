@@ -15,8 +15,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from control_plane.kernelq.idempotency_keys import dispatch_key
+from control_plane.kernelq.idempotency_store import IdempotencyStore, InMemoryIdempotencyStore
 from control_plane.kernelq.job_repository import JobRepository
 from control_plane.kernelq.kafka_producer import DispatchEvent
+from control_plane.kernelq.logging_utils import format_log_event
+
+# Default TTL for dispatch dedupe keys (24 hours).
+DEFAULT_DISPATCH_DEDUPE_TTL_SECONDS = 86400
 
 
 @dataclass
@@ -32,6 +38,7 @@ class SchedulerTickResult:
     - errors: human-readable problem descriptions when the repository call fails
     - published_count: how many dispatch events were published to Kafka
     - publish_errors: per-job Kafka publish failures (claim may still succeed)
+    - duplicate_dispatches: dispatch publishes skipped by idempotency dedupe
     """
 
     selected_count: int
@@ -41,6 +48,7 @@ class SchedulerTickResult:
     errors: list[str] = field(default_factory=list)
     published_count: int = 0
     publish_errors: list[str] = field(default_factory=list)
+    duplicate_dispatches: int = 0
 
 
 class SchedulerTickRunner:
@@ -65,6 +73,8 @@ class SchedulerTickRunner:
         repository: JobRepository,
         max_jobs_per_tick: int = 10,
         job_producer: Any | None = None,
+        idempotency_store: IdempotencyStore | None = None,
+        dispatch_dedupe_ttl_seconds: int = DEFAULT_DISPATCH_DEDUPE_TTL_SECONDS,
     ) -> None:
         if max_jobs_per_tick <= 0:
             raise ValueError("max_jobs_per_tick must be a positive integer")
@@ -72,6 +82,12 @@ class SchedulerTickRunner:
         self._repository = repository
         self._max_jobs_per_tick = max_jobs_per_tick
         self._job_producer = job_producer
+        self._idempotency_store = (
+            idempotency_store
+            if idempotency_store is not None
+            else InMemoryIdempotencyStore()
+        )
+        self._dispatch_dedupe_ttl_seconds = dispatch_dedupe_ttl_seconds
 
     def run_once(self) -> SchedulerTickResult:
         """
@@ -103,10 +119,26 @@ class SchedulerTickRunner:
         dispatched_job_ids = [job.job_id for job in claimed_jobs]
         claimed_count = len(claimed_jobs)
         published_count = 0
+        duplicate_dispatches = 0
         publish_errors: list[str] = []
 
         if self._job_producer is not None:
             for job in claimed_jobs:
+                dedupe_key = dispatch_key(job.job_id, job.retry_count)
+                if not self._idempotency_store.try_claim(
+                    dedupe_key,
+                    ttl_seconds=self._dispatch_dedupe_ttl_seconds,
+                ):
+                    duplicate_dispatches += 1
+                    print(
+                        format_log_event(
+                            "duplicate_dispatch",
+                            attempt=job.retry_count,
+                            job_id=job.job_id,
+                        )
+                    )
+                    continue
+
                 event = DispatchEvent(
                     event_type="job.dispatch",
                     job_id=job.job_id,
@@ -132,4 +164,5 @@ class SchedulerTickRunner:
             errors=[],
             published_count=published_count,
             publish_errors=publish_errors,
+            duplicate_dispatches=duplicate_dispatches,
         )

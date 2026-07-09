@@ -28,7 +28,7 @@ What works today (local / dev):
 - **FastAPI** — job enqueue, read, cancel, retry basics
 - **Postgres job persistence** — durable rows survive restarts
 - **Scheduler prototypes** — FIFO, priority, weighted round-robin, composed pipeline
-- **Atomic scheduler job claiming** — `FOR UPDATE SKIP LOCKED` avoids duplicate dispatch
+- **Atomic scheduler job claiming** — `FOR UPDATE SKIP LOCKED` avoids duplicate dispatch; **Day 108** Kafka publish dedupe via **`dispatch_key`**
 - **Kafka dispatch publishing** — scheduler tick publishes `DispatchEvent` to `kernelq.jobs.dispatch`
 - **Go Kafka worker consumer** — poll loop, message validation, execution handler
 - **Go worker pool** — configurable concurrent executors (**default 4**); consumer reads Kafka, workers run jobs in parallel (`worker/internal/worker/worker_pool.go`)
@@ -184,7 +184,7 @@ Honest gaps — not production-ready yet:
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
 - **Worker Kafka backpressure** — **Day 88** env-configurable watermarks (**disabled by default**; EKS ConfigMaps later); **Day 87** in-memory pause/resume wiring; **Day 82** backoff default; real Kafka partition pause/resume still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
-- **Redis dedupe** — **Day 107** completes basic visibility (Prometheus + Grafana + runbooks); persistent shared stats / CloudWatch alerts still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**
+- **Redis dedupe** — result consumer + **Day 108** dispatch boundary (`duplicate_dispatches`); worker execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
 ---

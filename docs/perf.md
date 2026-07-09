@@ -1,6 +1,6 @@
 # Performance
 
-**Day 96–107:** idempotency + consumer dedupe; **Day 107** Grafana/docs for **`kernelq_result_consumer_*`** counters on **`GET /metrics/prometheus`**. Track processed vs duplicate worker results; duplicate spikes may indicate Kafka replay or producer retry. Values may be **0** until shared/persistent stats wired. Future: persistent counters, CloudWatch alerts — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Day 96–108:** idempotency + dedupe boundaries. **Day 108:** scheduler **`duplicate_dispatches`** on dispatch publish. Result dedupe + Grafana exist; worker execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 ## Baseline Metrics Plan
 
@@ -439,7 +439,7 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 ## Result Consumer Metrics Planned
 
-**Day 107:** Grafana **Result Consumer Messages** panel plots **`kernelq_result_consumer_processed_messages`** vs **`kernelq_result_consumer_duplicate_messages`**. Rising duplicates vs processed may signal Kafka replay or producer retry; counters may stay **0** until shared/persistent result-consumer stats are wired.
+**Day 108:** **`SchedulerTickRunner`** — **`duplicate_dispatches`** skipped republish counter; compare with **`published_count`** when investigating replay.
 
 **`KafkaResultConsumer.poll_once`** and **`consume_result_once.py`** exist today; a **long-running loop** and dashboards are not wired yet. When the result consumer path is fully instrumented, we plan to track:
 

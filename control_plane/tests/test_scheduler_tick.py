@@ -21,7 +21,9 @@ import pytest
 from psycopg import OperationalError
 
 from control_plane.kernelq.db import connect
-from control_plane.kernelq.job_repository import JobRepository
+from control_plane.kernelq.idempotency_keys import dispatch_key
+from control_plane.kernelq.idempotency_store import InMemoryIdempotencyStore
+from control_plane.kernelq.job_repository import JobRecord, JobRepository
 from control_plane.kernelq.job_state import JobState
 from control_plane.kernelq.kafka_producer import DispatchEvent
 from control_plane.kernelq.scheduler_tick import SchedulerTickRunner
@@ -407,3 +409,163 @@ def test_run_once_without_producer_does_not_publish() -> None:
             assert repo.get_job(job_id).state == JobState.DISPATCHED.value
         finally:
             _delete_jobs(repo, job_id)
+
+
+def _job_record(
+    job_id: str,
+    *,
+    retry_count: int = 0,
+    tenant_id: str = "tenant-a",
+    priority: int = 1,
+) -> JobRecord:
+    return JobRecord(
+        job_id=job_id,
+        tenant_id=tenant_id,
+        priority=priority,
+        state=JobState.DISPATCHED.value,
+        payload={},
+        retry_count=retry_count,
+        max_retries=3,
+        created_at=0,
+        updated_at=0,
+        dispatched_at=None,
+    )
+
+
+class _FakeClaimRepository:
+    """Returns a fixed list from ``claim_schedulable_jobs`` (no Postgres)."""
+
+    def __init__(self, jobs: list[JobRecord]) -> None:
+        self._jobs = jobs
+
+    def claim_schedulable_jobs(self, limit: int) -> list[JobRecord]:
+        return self._jobs[:limit]
+
+
+class _TrackingIdempotencyStore(InMemoryIdempotencyStore):
+    def __init__(self) -> None:
+        super().__init__()
+        self.claim_calls: list[tuple[str, int]] = []
+
+    def try_claim(self, key: str, ttl_seconds: int) -> bool:
+        self.claim_calls.append((key, ttl_seconds))
+        return super().try_claim(key, ttl_seconds)
+
+
+def test_first_dispatch_publishes() -> None:
+    job = _job_record("job-first-dispatch")
+    fake = FakeJobProducer()
+    store = InMemoryIdempotencyStore()
+    result = SchedulerTickRunner(
+        _FakeClaimRepository([job]),
+        job_producer=fake,
+        idempotency_store=store,
+    ).run_once()
+
+    assert len(fake.published_events) == 1
+    assert result.published_count == 1
+    assert result.duplicate_dispatches == 0
+
+
+def test_duplicate_dispatch_skips_publish() -> None:
+    job = _job_record("job-dup-dispatch")
+    fake = FakeJobProducer()
+    store = InMemoryIdempotencyStore()
+    runner = SchedulerTickRunner(
+        _FakeClaimRepository([job]),
+        job_producer=fake,
+        idempotency_store=store,
+    )
+
+    first = runner.run_once()
+    second = runner.run_once()
+
+    assert len(fake.published_events) == 1
+    assert first.published_count == 1
+    assert second.published_count == 0
+    assert second.duplicate_dispatches == 1
+
+
+def test_duplicate_dispatches_increments() -> None:
+    job = _job_record("job-dup-counter")
+    fake = FakeJobProducer()
+    store = InMemoryIdempotencyStore()
+    runner = SchedulerTickRunner(
+        _FakeClaimRepository([job]),
+        job_producer=fake,
+        idempotency_store=store,
+    )
+
+    runner.run_once()
+    second = runner.run_once()
+    third = runner.run_once()
+
+    assert second.duplicate_dispatches == 1
+    assert third.duplicate_dispatches == 1
+    assert len(fake.published_events) == 1
+
+
+def test_published_count_does_not_increment_for_duplicate() -> None:
+    job = _job_record("job-no-publish-on-dup")
+    fake = FakeJobProducer()
+    runner = SchedulerTickRunner(
+        _FakeClaimRepository([job]),
+        job_producer=fake,
+        idempotency_store=InMemoryIdempotencyStore(),
+    )
+
+    first = runner.run_once()
+    second = runner.run_once()
+
+    assert first.published_count == 1
+    assert second.published_count == 0
+
+
+def test_different_attempts_publish_separately() -> None:
+    job_id = "job-attempts"
+    attempt0 = _job_record(job_id, retry_count=0)
+    attempt1 = _job_record(job_id, retry_count=1)
+    fake = FakeJobProducer()
+    store = InMemoryIdempotencyStore()
+    runner = SchedulerTickRunner(
+        _FakeClaimRepository([attempt0, attempt1]),
+        max_jobs_per_tick=2,
+        job_producer=fake,
+        idempotency_store=store,
+    )
+
+    result = runner.run_once()
+
+    assert len(fake.published_events) == 2
+    assert result.published_count == 2
+    assert result.duplicate_dispatches == 0
+
+
+def test_different_job_ids_publish_separately() -> None:
+    first = _job_record("job-a-dispatch")
+    second = _job_record("job-b-dispatch")
+    fake = FakeJobProducer()
+    result = SchedulerTickRunner(
+        _FakeClaimRepository([first, second]),
+        max_jobs_per_tick=2,
+        job_producer=fake,
+        idempotency_store=InMemoryIdempotencyStore(),
+    ).run_once()
+
+    assert len(fake.published_events) == 2
+    assert result.published_count == 2
+    assert result.duplicate_dispatches == 0
+
+
+def test_custom_store_called_with_dispatch_key() -> None:
+    job = _job_record("job-dispatch-key", retry_count=2)
+    store = _TrackingIdempotencyStore()
+    SchedulerTickRunner(
+        _FakeClaimRepository([job]),
+        job_producer=FakeJobProducer(),
+        idempotency_store=store,
+    ).run_once()
+
+    assert store.claim_calls == [
+        (dispatch_key(job.job_id, job.retry_count), 86400),
+    ]

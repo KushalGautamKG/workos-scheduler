@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 107:** Grafana **KernelQ MVP** dashboard + docs track result-consumer **`processed`** / **`duplicate`** metrics — basic visibility for Redis-backed result idempotency. Counters on **`/metrics/prometheus`** may read **0** until shared/persisted stats are wired. Dispatch/execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 108:** scheduler **dispatch idempotency** — **`duplicate_dispatches`**, **`event=duplicate_dispatch`**. Result dedupe exists; worker execution dedupe still future — **[docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md)**.
 
 ## MVP Status
 

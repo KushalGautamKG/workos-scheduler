@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–107):** **`GET /metrics/prometheus`** exposes result-consumer counters; Grafana **KernelQ MVP** panel **Result Consumer Messages**. See **Duplicate Worker Results** below. Dispatch/execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Redis / idempotency (Day 96–108):** result dedupe + **Day 108** dispatch dedupe (`duplicate_dispatches`, `event=duplicate_dispatch`). Worker execution dedupe still future — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
 
 | Path | Command |
 |------|---------|
@@ -39,7 +39,8 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_queue_wait_metrics` | `success`, `queue_wait_seconds` > 0, `job_id` |
 | `smoke_worker_queue_saturation` | `success=true` — bounded-queue backpressure boundary (no Kafka); test expects **`work_queue_full_errors > 0`** |
 | `smoke_worker_backpressure_config` | `success=true` — **`cmd/consumer`** startup logs **`backpressure_enabled`**, **`backpressure_high_ratio`**, **`backpressure_low_ratio`** |
-| `scheduler_tick` | `published_count`, `errors_count`, `publish_errors_count` |
+| `scheduler_tick` | `published_count`, `duplicate_dispatches`, `errors_count`, `publish_errors_count` |
+| `duplicate_dispatch` | `job_id`, `attempt` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |
 | `result_consumer` | `processed_message`, `errors_count`, optional `error` |
 | `result_consumer_summary` | `processed_messages`, `duplicate_messages`, `idempotency_backend` |
@@ -88,6 +89,33 @@ Also check **`event=result_consumer_summary`** from **`consume_result_once.py`**
 **Future**
 
 - CloudWatch / Grafana alerting on duplicate rate vs processed rate (see **[perf.md](perf.md)**).
+
+## Duplicate Dispatch
+
+When the scheduler republishes the same **`(job_id, retry_count)`** dispatch, idempotency should skip the Kafka publish safely.
+
+**Inspect logs**
+
+```bash
+grep 'event=duplicate_dispatch' <logfile>
+grep 'event=scheduler_tick' <logfile>
+```
+
+Check **`duplicate_dispatches`** vs **`published_count`** on **`event=scheduler_tick`**.
+
+**Possible causes**
+
+- Scheduler republish / reconcile retry for an already-dispatched job
+- Kafka producer retry after partial success
+- Process restart replaying dispatch publish
+
+**Current mitigation**
+
+- **`SchedulerTickRunner`** claims **`dispatch_key(job_id, retry_count)`** before publish — duplicates are **skipped**; Postgres claim behavior unchanged.
+
+**Future**
+
+- Worker **execution** dedupe on Go intake; CloudWatch/Grafana alerts on **`duplicate_dispatches`** spikes.
 
 ## Performance / Benchmarking
 

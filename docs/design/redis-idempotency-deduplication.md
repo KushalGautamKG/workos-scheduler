@@ -1,6 +1,6 @@
 # Redis Idempotency and Deduplication Design
 
-Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 104:** in-process stats. **Day 105:** Prometheus text formatter — **`kernelq_result_consumer_processed_messages`**, **`kernelq_result_consumer_duplicate_messages`**. Future: **`/metrics/prometheus`**, Grafana, CloudWatch. Dispatch/execution dedupe still future.
+Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 100–107:** result consumer dedupe + observability. **Day 108:** scheduler **dispatch dedupe** — **`duplicate_dispatches`**, **`event=duplicate_dispatch`**. Worker execution dedupe still future.
 
 **Interview sound bite:** *“Postgres owns job state; Redis owns short-lived ‘have we seen this event?’ keys with TTLs; Kafka stays at-least-once.”*
 
@@ -31,7 +31,7 @@ Redis is **not** a second database for jobs—it is a **TTL-backed dedupe cache*
 
 **Day 103:** **`scripts/smoke_result_consumer_redis_idempotency.py`** — consumer-level Redis dedupe smoke (no Kafka/Postgres).
 
-**Day 104:** **`ResultConsumerStats`** — **`processed_messages`**, **`duplicate_messages`**. **Day 105:** **`format_result_consumer_metrics()`** in **`prometheus_metrics.py`** — Prometheus text for **`kernelq_result_consumer_processed_messages`** and **`kernelq_result_consumer_duplicate_messages`**. API scrape, Grafana, CloudWatch still future.
+**Day 108:** **`SchedulerTickRunner`** claims **`dispatch_key(job_id, retry_count)`** before Kafka publish. Duplicate dispatches are **skipped**; **`duplicate_dispatches`** counter; **`event=duplicate_dispatch job_id=… attempt=…`**. Postgres claim behavior unchanged. Worker execution dedupe still future.
 
 ---
 
@@ -144,7 +144,7 @@ Both are required; either alone leaves a gap in the pipeline.
 | **Mismatch with Postgres** | Redis says “seen” but row missing or still `queued` | Prefer Postgres on conflict; delete stale Redis key; reconciliation job (future) |
 | **Clock / TTL skew** | Early expiry across nodes | Use relative `EX` from set time; single Redis primary in dev |
 
-**Today:** **Day 105** Prometheus text formatter for result-consumer dedupe counters; **Day 104** in-process stats. Dispatch/execution dedupe not yet.
+**Today:** **Day 108** scheduler dispatch dedupe; **Day 107** result-consumer Grafana/docs. Worker execution dedupe not yet.
 
 ---
 
@@ -162,7 +162,10 @@ Both are required; either alone leaves a gap in the pipeline.
 | **103** | **`smoke_result_consumer_redis_idempotency.py`** — consumer-level Redis dedupe smoke (no Kafka/Postgres) |
 | **104** | **`processed_messages`** / **`duplicate_messages`** stats; **`event=result_consumer_summary`** |
 | **105** | **`format_result_consumer_metrics`** — Prometheus text for dedupe counters |
-| **106+** | Worker **execution** + scheduler **dispatch** dedupe; wire counters into **`/metrics/prometheus`** |
+| **106** | Wire result-consumer counters into **`GET /metrics/prometheus`**; Grafana panel |
+| **107** | Grafana/docs for result-consumer dedupe metrics |
+| **108** | **`SchedulerTickRunner`** — **`dispatch_key`** + **`try_claim`**; **`duplicate_dispatches`** / **`event=duplicate_dispatch`** |
+| **109+** | Worker **execution** dedupe; persistent shared stats; CloudWatch alerts |
 
 Integration order: **interface → in-memory tests → Redis adapter → canonical keys → result consumer → worker/dispatch handlers**.
 
@@ -173,7 +176,7 @@ Integration order: **interface → in-memory tests → Redis adapter → canonic
 - **Not replacing Postgres** — job lifecycle and audit stay in `jobs` table.
 - **Not replacing Kafka offsets** — consumer groups still commit offsets; Redis is additive replay protection.
 - **Not full Kafka replay smoke yet** — Day 103 validates consumer + Redis path only; end-to-end duplicate on **`kernelq.jobs.results`** remains future work.
-- **Not dispatch/execution dedupe yet** — Go worker intake and scheduler publish unchanged.
+- **Not worker execution dedupe yet** — Go worker intake on **`kernelq.jobs.dispatch`** unchanged.
 - **Not exactly-once Kafka** — goal is **effective-once** behavior for job side effects.
 - **Not API idempotency keys for HTTP enqueue yet** — future `Idempotency-Key` header can reuse **`event_key(event_id)`**.
 

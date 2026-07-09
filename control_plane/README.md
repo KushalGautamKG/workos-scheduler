@@ -81,7 +81,7 @@ The **FastAPI API**, **scheduler tick**, **result handler**, and **benchmark scr
 
 ## Scheduler Tick Runner
 
-KernelQ now has a **`SchedulerTickRunner`** (`kernelq/scheduler_tick.py`). Each **`run_once()`** tick calls **`claim_schedulable_jobs`** (up to `max_jobs_per_tick`), then optionally publishes **`DispatchEvent`** messages when a **`job_producer`** is passed in. It runs **synchronously** for now—no async yet.
+KernelQ now has a **`SchedulerTickRunner`** (`kernelq/scheduler_tick.py`). Each **`run_once()`** tick calls **`claim_schedulable_jobs`** (up to `max_jobs_per_tick`), then optionally publishes **`DispatchEvent`** messages when a **`job_producer`** is passed in. **Day 108:** before publish, **`try_claim(dispatch_key(job_id, retry_count))`** — duplicates skip Kafka publish; **`duplicate_dispatches`** counter; **`event=duplicate_dispatch`**. It runs **synchronously** for now—no async yet.
 
 ## Atomic Job Claiming
 
@@ -302,7 +302,7 @@ PYTHONPATH=. python3 control_plane/scripts/smoke_result_consumer_redis_idempoten
 One-shot scripts print an extra **key=value summary line** at the end (via `kernelq/logging_utils.py` for Python scripts; bash helpers in smoke tests). Examples:
 
 ```
-event=scheduler_tick selected_count=1 dispatched_count=1 published_count=1 errors_count=0 publish_errors_count=0
+event=scheduler_tick selected_count=1 dispatched_count=1 published_count=1 duplicate_dispatches=0 errors_count=0 publish_errors_count=0
 event=retry_scanner requeued_count=2 errors_count=0 requeued_job_ids=["job-a","job-b"]
 event=result_consumer processed_message=true errors_count=0
 event=result_consumer_summary duplicate_messages=0 idempotency_backend=memory processed_messages=1
