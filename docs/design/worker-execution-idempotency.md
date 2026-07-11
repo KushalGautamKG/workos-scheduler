@@ -21,7 +21,7 @@ This closes the gap between **scheduler dispatch dedupe** (Python publish) and *
 | **Dispatch dedupe** | **Integrated** — **`SchedulerTickRunner`** claims **`dispatch_key(job_id, retry_count)`** before Kafka publish (**Day 108**) |
 | **Result dedupe** | **Integrated** — **`ResultConsumerRunner`** claims **`worker_result_key(job_id, attempt)`** before Postgres updates (**Day 100+**) |
 | **Canonical key** | **`execution_key(job_id, attempt)`** → **`execution:<job_id>:<attempt>`** exists in **`control_plane/kernelq/idempotency_keys.py`** (**Day 99**) |
-| **Go worker** | **Not integrated** — **`DispatchEventHandler`** runs **`Execute`** on every valid dispatch; no Redis/idempotency store call yet |
+| **Go worker** | **Day 110:** **`IdempotencyStore`** + **`InMemoryIdempotencyStore`** exist; **handler not wired yet**; Redis adapter next |
 
 Dispatch dedupe alone does not protect against replay **after** a message reaches the worker (offset reset, second consumer, crash before commit). Result dedupe alone does not prevent **duplicate side effects** inside the executor (API calls, file writes, billing). Execution dedupe sits at the **worker intake boundary**.
 
@@ -73,8 +73,8 @@ Kafka dispatch message
 
 | Step | Scope |
 |------|--------|
-| **1** | Go **`IdempotencyStore`** interface — **`TryClaim(key, ttlSeconds) bool`** (+ error variant if fail-closed) |
-| **2** | In-memory fake + unit tests (no Redis/Kafka) |
+| **1** | ✅ Go **`IdempotencyStore`** — **`TryClaim(key, ttl) (bool, error)`** (**Day 110**) |
+| **2** | ✅ **`InMemoryIdempotencyStore`** + unit tests (no Redis/Kafka) (**Day 110**) |
 | **3** | Redis adapter — **`SET NX EX`**, shared namespace with Python (**`kernelq:idempotency:`**) |
 | **4** | Wire into **`DispatchEventHandler`** (or **`ConsumerRunner`**) before **`Execute`** |
 | **5** | Smoke test — replay same dispatch twice; second run skips execute |
@@ -86,7 +86,7 @@ Kafka dispatch message
 
 ## 7. Non-Goals (today)
 
-- **Not implemented today** — design and docs only (**Day 109**)
+- **Not wired into the handler today** — interface + in-memory store only (**Day 110**); Redis + handler integration still future
 - **Not replacing dispatch dedupe** — scheduler publish boundary stays separate (**`dispatch_key`**)
 - **Not replacing result dedupe** — control-plane result consumer stays separate (**`worker_result_key`**)
 - **Not replacing Postgres state machine** — no second job database in Redis

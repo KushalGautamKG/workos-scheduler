@@ -14,7 +14,7 @@ Today the control plane **schedules** work: jobs live in Postgres, scheduler tic
 
 Kafka carries the handoff; Postgres stays the system of record. See `docs/architecture.md` and `docs/decisions/ADR-0001-foundations-and-language-split.md`.
 
-**Day 109 — execution idempotency (design only):** **[worker-execution-idempotency.md](../docs/design/worker-execution-idempotency.md)** — planned **`execution:<job_id>:<attempt>`** claim before **`Execute`** to skip duplicate runs on Kafka replay/offset rewind. Not implemented in Go yet; dispatch and result dedupe exist in Python.
+**Day 110 — execution idempotency boundary:** **`IdempotencyStore`** (`TryClaim`) + **`InMemoryIdempotencyStore`** in `internal/worker`. Handler not wired yet; Redis adapter next. Design: **[worker-execution-idempotency.md](../docs/design/worker-execution-idempotency.md)**.
 
 ## What exists today
 
@@ -28,6 +28,8 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/dispatch_event.go` | `DispatchEvent`, `ParseDispatchEvent` |
 | `internal/worker/consumer.go` | `ConsumerRunner`, `ProcessMessage` |
 | `internal/worker/handler.go` | `DispatchEventHandler` |
+| `internal/worker/idempotency.go` | `IdempotencyStore` interface (`TryClaim`) |
+| `internal/worker/in_memory_idempotency.go` | `InMemoryIdempotencyStore` (tests; no Redis) |
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
 | `internal/worker/execution_result_test.go` | Unit tests for execution results |

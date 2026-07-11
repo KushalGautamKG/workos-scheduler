@@ -1,6 +1,6 @@
 # Performance
 
-**Day 96–109:** idempotency boundaries. **Day 109:** worker execution idempotency **design** — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)** (`execution:<job_id>:<attempt>`; Kafka replay at worker boundary; not implemented). — **[redis-idempotency-deduplication.md](design/redis-idempotency-deduplication.md)**.
+**Day 96–110:** idempotency boundaries. **Day 110:** Go **`IdempotencyStore`** + **`InMemoryIdempotencyStore`** (execution dedupe boundary; not wired yet). Redis adapter next — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
 
 ## Baseline Metrics Plan
 

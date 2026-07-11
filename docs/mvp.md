@@ -184,7 +184,7 @@ Honest gaps — not production-ready yet:
 - **Deployment** — no Kubernetes / Helm; local Docker Compose only
 - **Worker Kafka backpressure** — **Day 88** env-configurable watermarks (**disabled by default**; EKS ConfigMaps later); **Day 87** in-memory pause/resume wiring; **Day 82** backoff default; real Kafka partition pause/resume still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
-- **Redis dedupe** — dispatch + result integrated; **Day 109** worker execution design — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)** (not implemented)
+- **Redis dedupe** — dispatch + result integrated; **Day 110** Go **`IdempotencyStore`** / in-memory store (handler not wired; Redis next) — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
 ---
