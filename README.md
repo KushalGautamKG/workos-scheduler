@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 110:** Go **`IdempotencyStore`** + **`InMemoryIdempotencyStore`** (execution dedupe boundary; not wired into handler yet). Redis adapter next — **[docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 111:** Go **`RedisIdempotencyStore`** (go-redis/v9 `SetNX` + TTL). Handler not wired yet — **[docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md)**.
 
 ## MVP Status
 
@@ -43,7 +43,7 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/mvp.md](docs/mvp.md) | MVP checkpoint — demo, tests, talking points |
 | [docs/architecture.md](docs/architecture.md) | System design |
 | [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe; dispatch + result integrated |
-| [docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md) | Worker execution dedupe; Go interface + in-memory store (Day 110) |
+| [docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md) | Worker execution dedupe; Go Redis store (Day 111; handler not wired) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |
 | [docs/benchmarks/day75-baseline.md](docs/benchmarks/day75-baseline.md) | Local benchmark baseline (not production claims) |

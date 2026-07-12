@@ -14,7 +14,7 @@ Today the control plane **schedules** work: jobs live in Postgres, scheduler tic
 
 Kafka carries the handoff; Postgres stays the system of record. See `docs/architecture.md` and `docs/decisions/ADR-0001-foundations-and-language-split.md`.
 
-**Day 110 — execution idempotency boundary:** **`IdempotencyStore`** (`TryClaim`) + **`InMemoryIdempotencyStore`** in `internal/worker`. Handler not wired yet; Redis adapter next. Design: **[worker-execution-idempotency.md](../docs/design/worker-execution-idempotency.md)**.
+**Day 111 — Redis idempotency store:** **`RedisIdempotencyStore`** + **`GoRedisSetNXClient`** (go-redis/v9 `SetNX` + TTL). Unit tests use a fake client; live smoke: **`./worker/scripts/smoke_redis_idempotency.sh`**. Handler not wired yet. Design: **[worker-execution-idempotency.md](../docs/design/worker-execution-idempotency.md)**.
 
 ## What exists today
 
@@ -30,6 +30,8 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/handler.go` | `DispatchEventHandler` |
 | `internal/worker/idempotency.go` | `IdempotencyStore` interface (`TryClaim`) |
 | `internal/worker/in_memory_idempotency.go` | `InMemoryIdempotencyStore` (tests; no Redis) |
+| `internal/worker/redis_idempotency.go` | `RedisIdempotencyStore` + go-redis `SetNX` adapter |
+| `cmd/smoke_redis_idempotency` | Live Redis smoke (`SET NX EX`) |
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
 | `internal/worker/execution_result_test.go` | Unit tests for execution results |

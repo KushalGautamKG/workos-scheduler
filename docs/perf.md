@@ -1,6 +1,6 @@
 # Performance
 
-**Day 96–110:** idempotency boundaries. **Day 110:** Go **`IdempotencyStore`** + **`InMemoryIdempotencyStore`** (execution dedupe boundary; not wired yet). Redis adapter next — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
+**Day 96–111:** idempotency boundaries. **Day 111:** Go **`RedisIdempotencyStore`** (go-redis/v9 `SetNX`). Handler not wired yet — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
 
 ## Baseline Metrics Plan
 

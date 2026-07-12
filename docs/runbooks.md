@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–110):** dispatch + result dedupe integrated. **Day 110:** Go **`IdempotencyStore`** + in-memory store (handler not wired; Redis next) — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
+**Redis / idempotency (Day 96–111):** dispatch + result dedupe integrated. **Day 111:** Go **`RedisIdempotencyStore`** (go-redis/v9; handler not wired) — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**. Live smoke: **`./worker/scripts/smoke_redis_idempotency.sh`**.
 
 | Path | Command |
 |------|---------|
@@ -120,7 +120,7 @@ Check **`duplicate_dispatches`** vs **`published_count`** on **`event=scheduler_
 
 ## Duplicate Execution (planned)
 
-**Boundary exists; handler not wired.** Design: **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**. Day 110: Go **`IdempotencyStore`** / **`InMemoryIdempotencyStore`**. Redis + **`DispatchEventHandler`** integration still future.
+**Stores exist; handler not wired.** Design: **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**. Day 111: Go **`RedisIdempotencyStore`** (go-redis/v9 `SetNX` + TTL). Unit tests use a fake client. **`DispatchEventHandler`** integration still future.
 
 When wired, the Go worker will claim **`execution:<job_id>:<attempt>`** before **`Execute`**. Duplicate dispatch replays (Kafka offset rewind, consumer restart) should **skip execution** — not error. Compare with dispatch dedupe (`event=duplicate_dispatch`) and result dedupe (`event=duplicate_worker_result`).
 

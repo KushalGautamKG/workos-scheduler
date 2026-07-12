@@ -15,8 +15,7 @@ import (
 //   - claimed == true  → first claimant; proceed with side effects
 //   - claimed == false → duplicate while the key is still live; skip execution
 //
-// Redis is intentionally absent: Day 110 defines the boundary; Day 111+ plugs
-// in a Redis adapter that satisfies the same interface.
+// Redis is available via RedisIdempotencyStore (Day 111); handler wiring is still future.
 type IdempotencyStore interface {
 	TryClaim(key string, ttl time.Duration) (claimed bool, err error)
 }
