@@ -27,6 +27,10 @@ const (
 	// ExecutionTerminalFailure means the job failed and should not be
 	// retried automatically (for example invalid payload or max retries hit).
 	ExecutionTerminalFailure ExecutionStatus = "terminal_failure"
+
+	// ExecutionDuplicateSkipped means this (job_id, attempt) was already
+	// claimed — the executor was not run. Not a failure and not retryable.
+	ExecutionDuplicateSkipped ExecutionStatus = "duplicate_skipped"
 )
 
 // executionStatuses lists every valid ExecutionStatus constant.
@@ -35,6 +39,7 @@ var executionStatuses = []ExecutionStatus{
 	ExecutionSucceeded,
 	ExecutionRetryableFailure,
 	ExecutionTerminalFailure,
+	ExecutionDuplicateSkipped,
 }
 
 // ExecutionResult is the structured outcome returned by job execution logic.
@@ -57,10 +62,11 @@ func (r ExecutionResult) Validate() error {
 		}
 	}
 
-	return fmt.Errorf("status must be one of %q, %q, %q, got %q",
+	return fmt.Errorf("status must be one of %q, %q, %q, %q, got %q",
 		ExecutionSucceeded,
 		ExecutionRetryableFailure,
 		ExecutionTerminalFailure,
+		ExecutionDuplicateSkipped,
 		r.Status,
 	)
 }
@@ -89,5 +95,14 @@ func TerminalFailureResult(message string) ExecutionResult {
 	return ExecutionResult{
 		Status:  ExecutionTerminalFailure,
 		Message: message,
+	}
+}
+
+// DuplicateSkippedResult returns a valid result when execution was skipped
+// because the idempotency store already held this (job_id, attempt) claim.
+func DuplicateSkippedResult() ExecutionResult {
+	return ExecutionResult{
+		Status:  ExecutionDuplicateSkipped,
+		Message: "duplicate execution skipped",
 	}
 }

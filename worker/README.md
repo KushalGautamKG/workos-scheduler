@@ -14,7 +14,7 @@ Today the control plane **schedules** work: jobs live in Postgres, scheduler tic
 
 Kafka carries the handoff; Postgres stays the system of record. See `docs/architecture.md` and `docs/decisions/ADR-0001-foundations-and-language-split.md`.
 
-**Day 111 — Redis idempotency store:** **`RedisIdempotencyStore`** + **`GoRedisSetNXClient`** (go-redis/v9 `SetNX` + TTL). Unit tests use a fake client; live smoke: **`./worker/scripts/smoke_redis_idempotency.sh`**. Handler not wired yet. Design: **[worker-execution-idempotency.md](../docs/design/worker-execution-idempotency.md)**.
+**Day 112 — execution idempotency integrated:** before **`Execute`**, optional **`TryClaim(execution:<job_id>:<attempt>)`**. Duplicates skip the executor (`event=duplicate_worker_execution`, status `duplicate_skipped`); Redis errors **fail closed**. Env: **`KERNELQ_WORKER_IDEMPOTENCY_BACKEND=disabled|memory|redis`** (default **disabled**), **`KERNELQ_WORKER_IDEMPOTENCY_TTL_SECONDS`**, **`KERNELQ_REDIS_ADDR`**, **`KERNELQ_REDIS_NAMESPACE`**. Counters: **`duplicate_executions`**, **`idempotency_errors`**. Design: **[worker-execution-idempotency.md](../docs/design/worker-execution-idempotency.md)**.
 
 ## What exists today
 

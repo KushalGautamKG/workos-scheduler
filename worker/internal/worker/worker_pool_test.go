@@ -345,8 +345,8 @@ func TestWorkerPoolRespectsQueueCapacityConfiguration(t *testing.T) {
 	}
 }
 
-func handlerWithExecutor(executor Executor) DispatchEventHandler {
-	return DispatchEventHandler{
+func handlerWithExecutor(executor Executor) *DispatchEventHandler {
+	return &DispatchEventHandler{
 		Executor:   executor,
 		WorkerName: "test-worker",
 	}

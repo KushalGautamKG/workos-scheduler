@@ -21,7 +21,7 @@ This closes the gap between **scheduler dispatch dedupe** (Python publish) and *
 | **Dispatch dedupe** | **Integrated** — **`SchedulerTickRunner`** claims **`dispatch_key(job_id, retry_count)`** before Kafka publish (**Day 108**) |
 | **Result dedupe** | **Integrated** — **`ResultConsumerRunner`** claims **`worker_result_key(job_id, attempt)`** before Postgres updates (**Day 100+**) |
 | **Canonical key** | **`execution_key(job_id, attempt)`** → **`execution:<job_id>:<attempt>`** exists in **`control_plane/kernelq/idempotency_keys.py`** (**Day 99**) |
-| **Go worker** | **Day 111:** **`RedisIdempotencyStore`** (go-redis/v9 `SetNX`); **handler not wired yet** |
+| **Go worker** | **Day 112:** **`DispatchEventHandler`** claims **`execution:<job_id>:<attempt>`** before **`Execute`**; backends `disabled` / `memory` / `redis` |
 
 Dispatch dedupe alone does not protect against replay **after** a message reaches the worker (offset reset, second consumer, crash before commit). Result dedupe alone does not prevent **duplicate side effects** inside the executor (API calls, file writes, billing). Execution dedupe sits at the **worker intake boundary**.
 
@@ -36,7 +36,7 @@ Kafka dispatch message
   → key := execution:<job_id>:<attempt>
   → try_claim(key, ttl_seconds)
        ├─ True  → Executor.Execute → PublishResult (normal path)
-       └─ False → skip Execute; log event=duplicate_execution (or emit skipped result)
+       └─ False → skip Execute; log event=duplicate_worker_execution; return duplicate_skipped
 ```
 
 **Duplicate path:** do **not** treat as handler error or DLQ. Increment a **`duplicate_executions`** counter (future). Optionally publish a **skipped/duplicate result** so the control plane can observe the skip—exact shape TBD (must not double-apply Postgres state; result consumer dedupe is the backstop).
@@ -76,9 +76,9 @@ Kafka dispatch message
 | **1** | ✅ Go **`IdempotencyStore`** — **`TryClaim(key, ttl) (bool, error)`** (**Day 110**) |
 | **2** | ✅ **`InMemoryIdempotencyStore`** + unit tests (no Redis/Kafka) (**Day 110**) |
 | **3** | ✅ Redis adapter — **`RedisIdempotencyStore`** / go-redis **`SetNX`** (**Day 111**) |
-| **4** | Wire into **`DispatchEventHandler`** (or **`ConsumerRunner`**) before **`Execute`** |
+| **4** | ✅ Wire into **`DispatchEventHandler`** before **`Execute`** (**Day 112**) |
 | **5** | Smoke test — replay same dispatch twice; second run skips execute |
-| **6** | Metrics/logs — **`duplicate_executions`**, **`event=duplicate_execution`**; optional Prometheus (future) |
+| **6** | ✅ Metrics/logs — **`duplicate_executions`**, **`idempotency_errors`**, **`event=duplicate_worker_execution`** (**Day 112**) |
 
 **Dependency order:** interface → in-memory tests → Redis → handler → smoke.
 
@@ -86,11 +86,11 @@ Kafka dispatch message
 
 ## 7. Non-Goals (today)
 
-- **Not wired into the handler today** — interface, in-memory, and Redis stores exist (**Day 110–111**); handler integration still future
-- **Not replacing dispatch dedupe** — scheduler publish boundary stays separate (**`dispatch_key`**)
-- **Not replacing result dedupe** — control-plane result consumer stays separate (**`worker_result_key`**)
+- **Handler wired (**Day 112**)** — default backend **disabled** for backward compatibility; set **`KERNELQ_WORKER_IDEMPOTENCY_BACKEND=memory|redis`** to enable
+- **Not replacing dispatch/result dedupe** — separate layers remain
 - **Not replacing Postgres state machine** — no second job database in Redis
 - **Not exactly-once Kafka** — offsets + dedupe layers compose to **effective-once** side effects
+- **Duplicate skip not published** on **`kernelq.jobs.results`** yet (`duplicate_skipped` is worker-local)
 
 ---
 

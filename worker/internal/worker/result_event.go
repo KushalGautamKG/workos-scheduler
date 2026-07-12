@@ -52,10 +52,21 @@ func (e WorkerResultEvent) Validate() error {
 		return fmt.Errorf("job_id must not be blank")
 	}
 
-	// Reuse ExecutionResult rules: status must be a known constant; message may be blank.
+	// Wire statuses for Kafka results — exclude duplicate_skipped (not published).
 	outcome := ExecutionResult{Status: e.Status, Message: e.Message}
-	if err := outcome.Validate(); err != nil {
-		return err
+	switch e.Status {
+	case ExecutionSucceeded, ExecutionRetryableFailure, ExecutionTerminalFailure:
+		if err := outcome.Validate(); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf(
+			"status must be one of %q, %q, %q, got %q",
+			ExecutionSucceeded,
+			ExecutionRetryableFailure,
+			ExecutionTerminalFailure,
+			e.Status,
+		)
 	}
 
 	if strings.TrimSpace(e.Worker) == "" {

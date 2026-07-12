@@ -20,6 +20,9 @@ type DispatchEvent struct {
 	Priority  int               `json:"priority"`
 	State     string            `json:"state"`
 	Payload   map[string]string `json:"payload"`
+	// Attempt is the retry generation (0 = first run). Missing JSON defaults to 0.
+	// Aligns with Python retry_count / execution_key attempt.
+	Attempt int `json:"attempt"`
 }
 
 // ValidateDispatchEvent checks that a decoded dispatch event has the minimum
@@ -40,6 +43,10 @@ func ValidateDispatchEvent(event DispatchEvent) error {
 
 	if event.Priority < 0 {
 		return fmt.Errorf("priority must be >= 0, got %d", event.Priority)
+	}
+
+	if event.Attempt < 0 {
+		return fmt.Errorf("attempt must be >= 0, got %d", event.Attempt)
 	}
 
 	// The scheduler currently publishes events in dispatched state only.

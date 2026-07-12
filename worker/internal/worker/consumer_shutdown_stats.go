@@ -15,5 +15,7 @@ func ConsumerShutdownStatsLines(stats ConsumerStats) []string {
 		fmt.Sprintf("work_queue_full_errors=%d", stats.WorkQueueFullErrors),
 		fmt.Sprintf("backpressure_pause_events=%d", stats.BackpressurePauseEvents),
 		fmt.Sprintf("backpressure_resume_events=%d", stats.BackpressureResumeEvents),
+		fmt.Sprintf("duplicate_executions=%d", stats.DuplicateExecutions),
+		fmt.Sprintf("idempotency_errors=%d", stats.IdempotencyErrors),
 	}
 }

@@ -50,6 +50,8 @@ type ConsumerStats struct {
 	BackpressureResumeEvents int
 	DeadLettersPublished    int
 	DeadLetterPublishErrors int
+	DuplicateExecutions     int
+	IdempotencyErrors       int
 }
 
 // KafkaConsumer wraps a broker poller and our message-processing runner.

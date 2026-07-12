@@ -7,10 +7,13 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/worker"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"github.com/redis/go-redis/v9"
 )
 
 const (
@@ -21,6 +24,10 @@ const (
 
 	defaultBackpressureHighRatio = 0.80
 	defaultBackpressureLowRatio  = 0.50
+
+	defaultIdempotencyTTLSeconds = 86400
+	defaultRedisAddr             = "localhost:6379"
+	defaultRedisNamespace        = "kernelq:idempotency"
 )
 
 // loggingExecutor is a no-op executor for local development.
@@ -71,6 +78,64 @@ func floatFromEnv(name string, defaultValue float64) float64 {
 	return value
 }
 
+func resolveIdempotencyTTL() time.Duration {
+	seconds := positiveIntFromEnv("KERNELQ_WORKER_IDEMPOTENCY_TTL_SECONDS")
+	if seconds == 0 {
+		seconds = defaultIdempotencyTTLSeconds
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// buildIdempotencyStore configures the optional execution-dedupe store.
+// Default backend is "disabled" (nil store) for backward compatibility.
+func buildIdempotencyStore() (worker.IdempotencyStore, string, error) {
+	backend := strings.ToLower(strings.TrimSpace(os.Getenv("KERNELQ_WORKER_IDEMPOTENCY_BACKEND")))
+	if backend == "" {
+		backend = "disabled"
+	}
+
+	switch backend {
+	case "disabled":
+		return nil, backend, nil
+	case "memory":
+		return worker.NewInMemoryIdempotencyStore(), backend, nil
+	case "redis":
+		addr := os.Getenv("KERNELQ_REDIS_ADDR")
+		if strings.TrimSpace(addr) == "" {
+			addr = defaultRedisAddr
+		}
+		namespace := os.Getenv("KERNELQ_REDIS_NAMESPACE")
+		if strings.TrimSpace(namespace) == "" {
+			namespace = defaultRedisNamespace
+		}
+
+		rdb := redis.NewClient(&redis.Options{Addr: addr})
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := rdb.Ping(ctx).Err(); err != nil {
+			_ = rdb.Close()
+			return nil, backend, fmt.Errorf("redis ping %s: %w", addr, err)
+		}
+
+		adapter, err := worker.NewGoRedisSetNXClient(rdb)
+		if err != nil {
+			_ = rdb.Close()
+			return nil, backend, err
+		}
+		store, err := worker.NewRedisIdempotencyStore(adapter, namespace)
+		if err != nil {
+			_ = rdb.Close()
+			return nil, backend, err
+		}
+		return store, backend, nil
+	default:
+		return nil, backend, fmt.Errorf(
+			"invalid KERNELQ_WORKER_IDEMPOTENCY_BACKEND %q (want disabled|memory|redis)",
+			backend,
+		)
+	}
+}
+
 func main() {
 	brokerConsumer, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers": bootstrapServers,
@@ -98,6 +163,13 @@ func main() {
 		log.Fatalf("create result producer: %v", err)
 	}
 
+	idempotencyStore, idempotencyBackend, err := buildIdempotencyStore()
+	if err != nil {
+		_ = brokerConsumer.Close()
+		log.Fatalf("idempotency store: %v", err)
+	}
+	idempotencyTTL := resolveIdempotencyTTL()
+
 	// Wire the worker stack: Kafka → decode → bounded worker pool → handler → executor → results + DLQ.
 	// WorkerCount 0 => DefaultWorkerCount (4). QueueCapacity 0 => DefaultQueueCapacity (100).
 	workerCountConfig := positiveIntFromEnv("KERNELQ_WORKER_COUNT")
@@ -112,14 +184,18 @@ func main() {
 		defaultBackpressureLowRatio,
 	)
 
+	handler := &worker.DispatchEventHandler{
+		Executor:         loggingExecutor{},
+		ResultProducer:   resultProducer,
+		WorkerName:       "kernelq-go-worker",
+		IdempotencyStore: idempotencyStore,
+		IdempotencyTTL:   idempotencyTTL,
+	}
+
 	kafkaConsumer := &worker.KafkaConsumer{
 		Poller: brokerConsumer,
 		Runner: worker.ConsumerRunner{
-			Handler: worker.DispatchEventHandler{
-				Executor:       loggingExecutor{},
-				ResultProducer: resultProducer,
-				WorkerName:     "kernelq-go-worker",
-			},
+			Handler: handler,
 		},
 		WorkerCount:        workerCountConfig,
 		QueueCapacity:      queueCapacity,
@@ -148,6 +224,8 @@ func main() {
 	fmt.Printf("backpressure_enabled=%t\n", backpressureEnabled)
 	fmt.Printf("backpressure_high_ratio=%g\n", backpressureHighRatio)
 	fmt.Printf("backpressure_low_ratio=%g\n", backpressureLowRatio)
+	fmt.Printf("worker_idempotency_backend=%s\n", idempotencyBackend)
+	fmt.Printf("worker_idempotency_ttl_seconds=%d\n", int(idempotencyTTL.Seconds()))
 
 	// Stop cleanly on Ctrl+C or SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -156,6 +234,9 @@ func main() {
 	if err := kafkaConsumer.Run(ctx, pollTimeoutMs); err != nil {
 		log.Fatalf("consumer run failed: %v", err)
 	}
+
+	kafkaConsumer.Stats.DuplicateExecutions = int(handler.DuplicateExecutions())
+	kafkaConsumer.Stats.IdempotencyErrors = int(handler.IdempotencyErrors())
 
 	fmt.Println("KernelQ worker consumer stopped")
 	for _, line := range worker.ConsumerShutdownStatsLines(kafkaConsumer.Stats) {

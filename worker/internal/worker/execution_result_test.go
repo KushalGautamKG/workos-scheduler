@@ -78,6 +78,7 @@ func TestExecutionStatusConstantsAreDistinct(t *testing.T) {
 		ExecutionSucceeded,
 		ExecutionRetryableFailure,
 		ExecutionTerminalFailure,
+		ExecutionDuplicateSkipped,
 	}
 
 	for i := 0; i < len(statuses); i++ {

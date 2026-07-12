@@ -8,36 +8,89 @@ package worker
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
+	"time"
 )
+
+// DefaultExecutionIdempotencyTTL is used when IdempotencyStore is set and
+// IdempotencyTTL is zero (24 hours, aligned with Python/result dedupe).
+const DefaultExecutionIdempotencyTTL = 24 * time.Hour
 
 // DispatchEventHandler implements DispatchHandler by mapping events to Tasks
 // and delegating to an Executor.
 //
 // This sits between "message is valid" and "job actually runs":
 //
-//	DispatchEvent → Task → Executor.Execute → ExecutionResult → (optional) WorkerResultEvent
+//	DispatchEvent → (optional TryClaim) → Task → Executor.Execute → ExecutionResult
+//
+// Use a pointer so idempotency counters stay shared across pool workers.
 type DispatchEventHandler struct {
-	Executor       Executor
-	ResultProducer ResultProducer // optional: publish outcomes to kernelq.jobs.results
-	WorkerName     string         // optional: worker identity on result events
+	Executor         Executor
+	ResultProducer   ResultProducer // optional: publish outcomes to kernelq.jobs.results
+	WorkerName       string         // optional: worker identity on result events
+	IdempotencyStore IdempotencyStore
+	IdempotencyTTL   time.Duration // 0 ⇒ DefaultExecutionIdempotencyTTL when store set
+
+	duplicateExecutions atomic.Int64
+	idempotencyErrors   atomic.Int64
+}
+
+// DuplicateExecutions returns how many dispatch replays were skipped.
+func (handler *DispatchEventHandler) DuplicateExecutions() int64 {
+	return handler.duplicateExecutions.Load()
+}
+
+// IdempotencyErrors returns how many TryClaim store failures occurred.
+func (handler *DispatchEventHandler) IdempotencyErrors() int64 {
+	return handler.idempotencyErrors.Load()
 }
 
 // Handle converts one dispatch event into a Task and runs it.
 //
 // Returns:
 //   - ExecutionResult — structured job outcome when execution completes normally
-//     (success, retryable failure, or terminal failure)
+//     (success, retryable failure, terminal failure, or duplicate skipped)
 //   - error — configuration, validation, infrastructure, publish, or invalid-outcome errors
 //
 // DispatchEvent was already validated at parse time (ParseDispatchEvent).
 // We validate Task again as a safety check before execution.
-func (handler DispatchEventHandler) Handle(event DispatchEvent) (ExecutionResult, error) {
+func (handler *DispatchEventHandler) Handle(event DispatchEvent) (ExecutionResult, error) {
 	// Step 1: ensure an executor is wired.
 	if handler.Executor == nil {
 		return ExecutionResult{}, fmt.Errorf("executor is not configured")
 	}
 
-	// Step 2: map the cross-language event contract onto the worker Task model.
+	// Step 2: optional execution idempotency claim before Execute.
+	if handler.IdempotencyStore != nil {
+		key, err := ExecutionIdempotencyKey(event.JobID, event.Attempt)
+		if err != nil {
+			return ExecutionResult{}, err
+		}
+
+		ttl := handler.IdempotencyTTL
+		if ttl <= 0 {
+			ttl = DefaultExecutionIdempotencyTTL
+		}
+
+		claimed, err := handler.IdempotencyStore.TryClaim(key, ttl)
+		if err != nil {
+			handler.idempotencyErrors.Add(1)
+			return ExecutionResult{}, fmt.Errorf("idempotency claim failed: %w", err)
+		}
+		if !claimed {
+			handler.duplicateExecutions.Add(1)
+			fmt.Printf(
+				"event=duplicate_worker_execution job_id=%s attempt=%d\n",
+				event.JobID,
+				event.Attempt,
+			)
+			// Duplicate skip is not a failure and must not go to DLQ.
+			// Do not publish to results (Python does not accept duplicate_skipped yet).
+			return DuplicateSkippedResult(), nil
+		}
+	}
+
+	// Step 3: map the cross-language event contract onto the worker Task model.
 	task := Task{
 		JobID:    event.JobID,
 		TenantID: event.TenantID,
@@ -45,12 +98,12 @@ func (handler DispatchEventHandler) Handle(event DispatchEvent) (ExecutionResult
 		Payload:  event.Payload,
 	}
 
-	// Step 3: validate the Task before we attempt execution.
+	// Step 4: validate the Task before we attempt execution.
 	if err := ValidateTask(task); err != nil {
 		return ExecutionResult{}, err
 	}
 
-	// Step 4: run the task through the execution boundary.
+	// Step 5: run the task through the execution boundary.
 	result, err := handler.Executor.Execute(task)
 	if err != nil {
 		// Infrastructure failure (for example Postgres unreachable). The executor
@@ -59,15 +112,15 @@ func (handler DispatchEventHandler) Handle(event DispatchEvent) (ExecutionResult
 		return ExecutionResult{}, err
 	}
 
-	// Step 5: validate the outcome before we pass it upstream.
+	// Step 6: validate the outcome before we pass it upstream.
 	// Executors must return one of the known ExecutionStatus constants.
 	if err := result.Validate(); err != nil {
 		return ExecutionResult{}, err
 	}
 
-	// Step 6: optionally publish a WorkerResultEvent for the control plane.
-	// Tests and early wiring can leave ResultProducer nil and skip this step.
-	if handler.ResultProducer != nil {
+	// Step 7: optionally publish a WorkerResultEvent for the control plane.
+	// Skip duplicate_skipped (should not reach here) and nil producers.
+	if handler.ResultProducer != nil && result.Status != ExecutionDuplicateSkipped {
 		workerName := handler.WorkerName
 		if strings.TrimSpace(workerName) == "" {
 			workerName = workerIdentity
