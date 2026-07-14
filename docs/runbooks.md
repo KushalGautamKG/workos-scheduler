@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–112):** dispatch + **execution** + result dedupe. Worker: **`KERNELQ_WORKER_IDEMPOTENCY_BACKEND=disabled|memory|redis`** (default **disabled**). Log **`event=duplicate_worker_execution`**. Counters **`duplicate_executions`**, **`idempotency_errors`**. Redis errors fail closed. — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
+**Redis / idempotency (Day 96–113):** dispatch + execution + result. **Day 113 smoke:** **`./worker/scripts/smoke_worker_execution_idempotency.sh`** (no Kafka). — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
 
 | Path | Command |
 |------|---------|
@@ -120,9 +120,18 @@ Check **`duplicate_dispatches`** vs **`published_count`** on **`event=scheduler_
 
 ## Duplicate Execution (planned)
 
-**Integrated (**Day 112**).** Design: **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
+**Integrated (**Day 112–113**).** Design: **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
 
 Enable with **`KERNELQ_WORKER_IDEMPOTENCY_BACKEND=memory|redis`**. Claim key: **`execution:<job_id>:<attempt>`**. Duplicates skip **`Execute`** (`event=duplicate_worker_execution`, status `duplicate_skipped` — not DLQ). Redis claim errors fail closed (no execute). Shutdown: **`duplicate_executions=`**, **`idempotency_errors=`**.
+
+**Live smoke (no Kafka):**
+
+```bash
+docker compose up -d redis
+./worker/scripts/smoke_worker_execution_idempotency.sh
+```
+
+Expect `executor_calls=1`, `duplicate_executions=1`, `second_skipped=true`. Full Kafka replay smoke still future.
 
 Compare with dispatch dedupe (`event=duplicate_dispatch`) and result dedupe (`event=duplicate_worker_result`).
 

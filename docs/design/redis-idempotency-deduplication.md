@@ -1,6 +1,6 @@
 # Redis Idempotency and Deduplication Design
 
-Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 100–112:** dispatch, execution, and result dedupe boundaries implemented. Execution: **`execution:<job_id>:<attempt>`** on the Go worker — **[worker-execution-idempotency.md](worker-execution-idempotency.md)**.
+Design for fast duplicate suppression across KernelQ’s Kafka handoffs. **Day 100–113:** dispatch, execution, and result dedupe live; Day 113 adds Redis execution smoke — **[worker-execution-idempotency.md](worker-execution-idempotency.md)**.
 
 **Interview sound bite:** *“Postgres owns job state; Redis owns short-lived ‘have we seen this event?’ keys with TTLs; Kafka stays at-least-once.”*
 
@@ -33,7 +33,7 @@ Redis is **not** a second database for jobs—it is a **TTL-backed dedupe cache*
 
 **Day 108:** **`SchedulerTickRunner`** claims **`dispatch_key(job_id, retry_count)`** before Kafka publish. Duplicate dispatches are **skipped**; **`duplicate_dispatches`** counter; **`event=duplicate_dispatch job_id=… attempt=…`**. Postgres claim behavior unchanged.
 
-**Day 109–112:** Go worker execution idempotency — design → store → **`DispatchEventHandler`** integration (`execution:<job_id>:<attempt>`, fail-closed Redis errors).
+**Day 109–113:** Go worker execution idempotency — design → store → handler → live Redis smoke (`execution:<job_id>:<attempt>`).
 
 ---
 
@@ -146,7 +146,7 @@ Both are required; either alone leaves a gap in the pipeline.
 | **Mismatch with Postgres** | Redis says “seen” but row missing or still `queued` | Prefer Postgres on conflict; delete stale Redis key; reconciliation job (future) |
 | **Clock / TTL skew** | Early expiry across nodes | Use relative `EX` from set time; single Redis primary in dev |
 
-**Today:** **Day 112** all three boundaries live (dispatch + execution + result). Postgres remains source of truth.
+**Today:** **Day 113** live Redis execution-idempotency smoke (handler path, no Kafka). Full Kafka replay smoke still future. Postgres remains source of truth.
 
 ---
 
@@ -171,7 +171,8 @@ Both are required; either alone leaves a gap in the pipeline.
 | **110** | Go **`IdempotencyStore`** + **`InMemoryIdempotencyStore`** |
 | **111** | Go **`RedisIdempotencyStore`** (go-redis/v9 `SetNX`); live smoke |
 | **112** | Wire **`DispatchEventHandler`** execution claim; `disabled|memory|redis` backends |
-| **113+** | End-to-end dispatch-replay smoke; CloudWatch alerts |
+| **113** | Live Redis worker-execution idempotency smoke (handler path; no Kafka) |
+| **114+** | End-to-end Kafka dispatch-replay smoke; CloudWatch alerts |
 
 Integration order: **interface → in-memory tests → Redis adapter → canonical keys → result consumer → worker/dispatch handlers**.
 
@@ -182,7 +183,7 @@ Integration order: **interface → in-memory tests → Redis adapter → canonic
 - **Not replacing Postgres** — job lifecycle and audit stay in `jobs` table.
 - **Not replacing Kafka offsets** — consumer groups still commit offsets; Redis is additive replay protection.
 - **Not full Kafka replay smoke yet** — Day 103 validates consumer + Redis path only; end-to-end duplicate on **`kernelq.jobs.results`** remains future work.
-- **Not end-to-end execution-replay smoke yet** — unit-tested; live Kafka replay smoke still future.
+- **Not end-to-end Kafka execution-replay smoke yet** — Day 113 covers Redis + handler only.
 - **Not exactly-once Kafka** — goal is **effective-once** behavior for job side effects.
 - **Not API idempotency keys for HTTP enqueue yet** — future `Idempotency-Key` header can reuse **`event_key(event_id)`**.
 

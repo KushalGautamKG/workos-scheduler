@@ -1,6 +1,6 @@
 # Performance
 
-**Day 96–112:** three idempotency boundaries. **Day 112:** Go worker execution claim (`duplicate_executions`, fail-closed Redis). — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
+**Day 96–113:** three idempotency boundaries. **Day 113:** live Redis worker-execution smoke (executor once on duplicate submit). — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
 
 ## Baseline Metrics Plan
 
@@ -439,7 +439,7 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 ## Result Consumer Metrics Planned
 
-**Day 112:** worker **`duplicate_executions`** / **`idempotency_errors`** on shutdown; compare with dispatch **`duplicate_dispatches`** and result **`duplicate_messages`**.
+**Day 113:** **`./worker/scripts/smoke_worker_execution_idempotency.sh`** — Redis + handler; assert `executor_calls=1`, `duplicate_executions=1`. Full Kafka replay smoke still future.
 
 **`KafkaResultConsumer.poll_once`** and **`consume_result_once.py`** exist today; a **long-running loop** and dashboards are not wired yet. When the result consumer path is fully instrumented, we plan to track:
 
