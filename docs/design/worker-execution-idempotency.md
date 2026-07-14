@@ -21,7 +21,7 @@ This closes the gap between **scheduler dispatch dedupe** (Python publish) and *
 | **Dispatch dedupe** | **Integrated** — **`SchedulerTickRunner`** claims **`dispatch_key(job_id, retry_count)`** before Kafka publish (**Day 108**) |
 | **Result dedupe** | **Integrated** — **`ResultConsumerRunner`** claims **`worker_result_key(job_id, attempt)`** before Postgres updates (**Day 100+**) |
 | **Canonical key** | **`execution_key(job_id, attempt)`** → **`execution:<job_id>:<attempt>`** exists in **`control_plane/kernelq/idempotency_keys.py`** (**Day 99**) |
-| **Go worker** | **Day 113:** live Redis handler smoke — same `job_id`+`attempt` twice → executor once; backends `disabled` / `memory` / `redis` |
+| **Go worker** | **Day 114:** Kafka replay smoke — same dispatch published twice → Redis skips second execute; backends `disabled` / `memory` / `redis` |
 
 Dispatch dedupe alone does not protect against replay **after** a message reaches the worker (offset reset, second consumer, crash before commit). Result dedupe alone does not prevent **duplicate side effects** inside the executor (API calls, file writes, billing). Execution dedupe sits at the **worker intake boundary**.
 
@@ -79,8 +79,9 @@ Kafka dispatch message
 | **4** | ✅ Wire into **`DispatchEventHandler`** before **`Execute`** (**Day 112**) |
 | **5** | ✅ Smoke — same dispatch twice against live Redis; second skips execute (**Day 113**) |
 | **6** | ✅ Metrics/logs — **`duplicate_executions`**, **`idempotency_errors`**, **`event=duplicate_worker_execution`** (**Day 112**) |
+| **7** | ✅ Kafka replay smoke — identical dispatch published twice; executor once (**Day 114**) |
 
-**Dependency order:** interface → in-memory tests → Redis → handler → smoke.
+**Dependency order:** interface → in-memory tests → Redis → handler → smoke → Kafka replay.
 
 ---
 
@@ -88,7 +89,8 @@ Kafka dispatch message
 
 - **Handler wired (**Day 112**)** — default backend **disabled**; set **`KERNELQ_WORKER_IDEMPOTENCY_BACKEND=memory|redis`** to enable
 - **Live Redis handler smoke (**Day 113**)** — **`smoke_worker_execution_idempotency.sh`**; no Kafka
-- **Not full Kafka replay smoke yet** — focused Redis/handler path only
+- **Kafka replay smoke (**Day 114**)** — **`smoke_kafka_execution_replay.sh`**; duplicate publish is expected, not an error
+- **Not crash-after-claim recovery yet** — worker crash between claim and result still future
 - **Not replacing dispatch/result dedupe** — separate layers remain
 - **Not replacing Postgres state machine** — no second job database in Redis
 - **Not exactly-once Kafka** — offsets + dedupe layers compose to **effective-once** side effects

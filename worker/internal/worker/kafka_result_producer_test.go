@@ -76,7 +76,7 @@ func TestPublishResultValueContainsExpectedJSONFields(t *testing.T) {
 	}
 }
 
-func TestPublishResultCallsFlush(t *testing.T) {
+func TestPublishResultWaitsForDelivery(t *testing.T) {
 	fakeClient := &fakeKafkaProducerClient{}
 	producer := newTestKafkaResultProducer(fakeClient)
 
@@ -84,11 +84,11 @@ func TestPublishResultCallsFlush(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
-	if !fakeClient.flushCalled {
-		t.Fatal("expected Flush to be called")
+	if len(fakeClient.messages) != 1 {
+		t.Fatalf("expected 1 produced message, got %d", len(fakeClient.messages))
 	}
-	if fakeClient.flushTimeoutMs != resultFlushTimeoutMs {
-		t.Fatalf("expected flush timeout %d, got %d", resultFlushTimeoutMs, fakeClient.flushTimeoutMs)
+	if fakeClient.flushCalled {
+		t.Fatal("delivery-channel publish should not call Flush")
 	}
 }
 

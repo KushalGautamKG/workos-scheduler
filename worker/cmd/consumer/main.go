@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -32,11 +33,18 @@ const (
 
 // loggingExecutor is a no-op executor for local development.
 // It prints the job id so we can see messages flowing through the stack.
-type loggingExecutor struct{}
+type loggingExecutor struct {
+	calls atomic.Int64
+}
 
-func (loggingExecutor) Execute(task worker.Task) (worker.ExecutionResult, error) {
+func (executor *loggingExecutor) Execute(task worker.Task) (worker.ExecutionResult, error) {
+	executor.calls.Add(1)
 	fmt.Printf("received task job_id=%s\n", task.JobID)
 	return worker.SuccessResult(), nil
+}
+
+func (executor *loggingExecutor) Calls() int64 {
+	return executor.calls.Load()
 }
 
 // positiveIntFromEnv reads an env var as a positive int. Missing, invalid, or <= 0 returns 0.
@@ -137,10 +145,19 @@ func buildIdempotencyStore() (worker.IdempotencyStore, string, error) {
 }
 
 func main() {
+	groupID := strings.TrimSpace(os.Getenv("KERNELQ_KAFKA_GROUP_ID"))
+	if groupID == "" {
+		groupID = consumerGroupID
+	}
+	autoOffsetReset := strings.TrimSpace(os.Getenv("KERNELQ_KAFKA_AUTO_OFFSET_RESET"))
+	if autoOffsetReset == "" {
+		autoOffsetReset = "earliest"
+	}
+
 	brokerConsumer, err := kafka.NewConsumer(&kafka.ConfigMap{
 		"bootstrap.servers": bootstrapServers,
-		"group.id":          consumerGroupID,
-		"auto.offset.reset": "earliest",
+		"group.id":          groupID,
+		"auto.offset.reset": autoOffsetReset,
 	})
 	if err != nil {
 		log.Fatalf("create kafka consumer: %v", err)
@@ -184,8 +201,9 @@ func main() {
 		defaultBackpressureLowRatio,
 	)
 
+	executor := &loggingExecutor{}
 	handler := &worker.DispatchEventHandler{
-		Executor:         loggingExecutor{},
+		Executor:         executor,
 		ResultProducer:   resultProducer,
 		WorkerName:       "kernelq-go-worker",
 		IdempotencyStore: idempotencyStore,
@@ -226,6 +244,8 @@ func main() {
 	fmt.Printf("backpressure_low_ratio=%g\n", backpressureLowRatio)
 	fmt.Printf("worker_idempotency_backend=%s\n", idempotencyBackend)
 	fmt.Printf("worker_idempotency_ttl_seconds=%d\n", int(idempotencyTTL.Seconds()))
+	fmt.Printf("kafka_group_id=%s\n", groupID)
+	fmt.Printf("kafka_auto_offset_reset=%s\n", autoOffsetReset)
 
 	// Stop cleanly on Ctrl+C or SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -239,6 +259,7 @@ func main() {
 	kafkaConsumer.Stats.IdempotencyErrors = int(handler.IdempotencyErrors())
 
 	fmt.Println("KernelQ worker consumer stopped")
+	fmt.Printf("executor_calls=%d\n", executor.Calls())
 	for _, line := range worker.ConsumerShutdownStatsLines(kafkaConsumer.Stats) {
 		fmt.Println(line)
 	}

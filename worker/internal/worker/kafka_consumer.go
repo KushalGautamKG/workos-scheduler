@@ -335,6 +335,8 @@ func (c *KafkaConsumer) handleProcessingErrorWithWorker(
 	c.Stats.MessageErrors++
 	c.statsMu.Unlock()
 
+	fmt.Printf("event=message_processing_error worker=%s error=%q\n", workerName, processingErr.Error())
+
 	// No DLQ producer wired (common in tests or gradual rollout).
 	if c.DeadLetterProducer == nil {
 		return

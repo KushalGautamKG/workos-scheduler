@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 113:** live Redis worker-execution idempotency smoke — same `job_id`+`attempt` twice → executor once, `duplicate_skipped` — **[docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 114:** Kafka execution replay smoke — same dispatch published twice → Redis skips second run; executor once — **[docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md)**.
 
 ## MVP Status
 
@@ -43,7 +43,8 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/mvp.md](docs/mvp.md) | MVP checkpoint — demo, tests, talking points |
 | [docs/architecture.md](docs/architecture.md) | System design |
 | [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe; dispatch + result integrated |
-| [docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md) | Worker execution dedupe + Redis smoke (Day 113) |
+| [docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md) | Worker execution dedupe + Kafka replay smoke (Day 114) |
+| [docs/benchmarks/day114-kafka-execution-replay.md](docs/benchmarks/day114-kafka-execution-replay.md) | Duplicate Kafka dispatch replay methodology (Day 114) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |
 | [docs/benchmarks/day75-baseline.md](docs/benchmarks/day75-baseline.md) | Local benchmark baseline (not production claims) |

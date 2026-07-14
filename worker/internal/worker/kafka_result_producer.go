@@ -7,12 +7,13 @@ package worker
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
 // resultFlushTimeoutMs is how long PublishResult waits for the broker to
-// accept the message before returning a flush timeout error.
+// accept the message before returning a delivery timeout error.
 const resultFlushTimeoutMs = 5000
 
 // KafkaResultProducer publishes WorkerResultEvent JSON to a Kafka results topic.
@@ -41,7 +42,8 @@ func NewKafkaResultProducer(bootstrapServers string) (*KafkaResultProducer, erro
 
 // PublishResult validates, JSON-encodes, and publishes one worker result event.
 //
-// This is synchronous for now: produce, then flush before returning.
+// This is synchronous: produce with a delivery channel and wait for the broker
+// ack (avoids Flush while Events() is unread — a common flush stall).
 // JobID becomes the Kafka message key so all results for one job land on the
 // same partition when the topic uses key-based partitioning.
 func (p KafkaResultProducer) PublishResult(event WorkerResultEvent) error {
@@ -64,14 +66,22 @@ func (p KafkaResultProducer) PublishResult(event WorkerResultEvent) error {
 		Value: []byte(jsonPayload),
 	}
 
-	if err := p.Producer.Produce(message, nil); err != nil {
+	deliveryChan := make(chan kafka.Event, 1)
+	if err := p.Producer.Produce(message, deliveryChan); err != nil {
 		return fmt.Errorf("produce result event: %w", err)
 	}
 
-	remaining := p.Producer.Flush(resultFlushTimeoutMs)
-	if remaining > 0 {
-		return fmt.Errorf("flush result event: %d message(s) still in queue", remaining)
+	select {
+	case ev := <-deliveryChan:
+		msg, ok := ev.(*kafka.Message)
+		if !ok {
+			return fmt.Errorf("deliver result event: unexpected event type %T", ev)
+		}
+		if msg.TopicPartition.Error != nil {
+			return fmt.Errorf("deliver result event: %w", msg.TopicPartition.Error)
+		}
+		return nil
+	case <-time.After(time.Duration(resultFlushTimeoutMs) * time.Millisecond):
+		return fmt.Errorf("deliver result event: timed out after %dms", resultFlushTimeoutMs)
 	}
-
-	return nil
 }

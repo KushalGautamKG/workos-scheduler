@@ -4,7 +4,7 @@
 
 Quick checks from the **repository root** after infra is up (`docker compose up -d postgres zookeeper kafka redis`, `./infra/kafka/create-topics.sh`). See **[mvp.md](mvp.md)** for full MVP context. **[Day 90 checkpoint](checkpoints/day90.md)** summarizes production-readiness state, completed features, remaining gaps, and roadmap toward **Redis**, **gRPC**, **OpenTelemetry**, **Kubernetes/EKS**, and **CloudWatch**.
 
-**Redis / idempotency (Day 96–113):** dispatch + execution + result. **Day 113 smoke:** **`./worker/scripts/smoke_worker_execution_idempotency.sh`** (no Kafka). — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
+**Redis / idempotency (Day 96–114):** dispatch + execution + result. **Day 114 Kafka replay:** **`./worker/scripts/smoke_kafka_execution_replay.sh`**. — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
 
 | Path | Command |
 |------|---------|
@@ -39,6 +39,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_queue_wait_metrics` | `success`, `queue_wait_seconds` > 0, `job_id` |
 | `smoke_worker_queue_saturation` | `success=true` — bounded-queue backpressure boundary (no Kafka); test expects **`work_queue_full_errors > 0`** |
 | `smoke_worker_backpressure_config` | `success=true` — **`cmd/consumer`** startup logs **`backpressure_enabled`**, **`backpressure_high_ratio`**, **`backpressure_low_ratio`** |
+| `smoke_kafka_execution_replay` | `success=true` — Kafka duplicate dispatch; Redis skips second execute (`executor_calls=1`, `duplicate_executions=1`) |
 | `scheduler_tick` | `published_count`, `duplicate_dispatches`, `errors_count`, `publish_errors_count` |
 | `duplicate_dispatch` | `job_id`, `attempt` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |
@@ -115,23 +116,29 @@ Check **`duplicate_dispatches`** vs **`published_count`** on **`event=scheduler_
 
 **Future**
 
-- Worker **execution** dedupe on Go intake — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**
 - CloudWatch / Grafana alerting on **`duplicate_dispatches`** spikes.
 
-## Duplicate Execution (planned)
+## Duplicate Execution
 
-**Integrated (**Day 112–113**).** Design: **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
+**Integrated (**Day 112–114**).** Design: **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
 
-Enable with **`KERNELQ_WORKER_IDEMPOTENCY_BACKEND=memory|redis`**. Claim key: **`execution:<job_id>:<attempt>`**. Duplicates skip **`Execute`** (`event=duplicate_worker_execution`, status `duplicate_skipped` — not DLQ). Redis claim errors fail closed (no execute). Shutdown: **`duplicate_executions=`**, **`idempotency_errors=`**.
+Enable with **`KERNELQ_WORKER_IDEMPOTENCY_BACKEND=memory|redis`**. Claim key: **`execution:<job_id>:<attempt>`**. Duplicates skip **`Execute`** (`event=duplicate_worker_execution`, status `duplicate_skipped` — not DLQ). Redis claim errors fail closed (no execute). Shutdown: **`duplicate_executions=`**, **`idempotency_errors=`**. Duplicate Kafka replay is **expected**, not an error.
 
-**Live smoke (no Kafka):**
+**Handler smoke (no Kafka):**
 
 ```bash
 docker compose up -d redis
 ./worker/scripts/smoke_worker_execution_idempotency.sh
 ```
 
-Expect `executor_calls=1`, `duplicate_executions=1`, `second_skipped=true`. Full Kafka replay smoke still future.
+**Kafka replay smoke (Day 114):**
+
+```bash
+docker compose up -d redis kafka zookeeper
+./worker/scripts/smoke_kafka_execution_replay.sh
+```
+
+Expect `executor_calls=1`, `duplicate_executions=1`, `processed_messages=2`, `idempotency_errors=0`. Crash-after-claim remains future work.
 
 Compare with dispatch dedupe (`event=duplicate_dispatch`) and result dedupe (`event=duplicate_worker_result`).
 

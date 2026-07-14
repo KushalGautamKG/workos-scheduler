@@ -23,6 +23,9 @@ func (client *fakeKafkaProducerClient) Produce(msg *kafka.Message, deliveryChan 
 		return client.produceErr
 	}
 	client.messages = append(client.messages, msg)
+	if deliveryChan != nil {
+		deliveryChan <- msg
+	}
 	return nil
 }
 

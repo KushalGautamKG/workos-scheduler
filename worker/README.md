@@ -14,7 +14,9 @@ Today the control plane **schedules** work: jobs live in Postgres, scheduler tic
 
 Kafka carries the handoff; Postgres stays the system of record. See `docs/architecture.md` and `docs/decisions/ADR-0001-foundations-and-language-split.md`.
 
-**Day 113 — execution idempotency smoke:** **`./worker/scripts/smoke_worker_execution_idempotency.sh`** — live Redis + real handler; same `job_id`+`attempt` twice → executor once, second `duplicate_skipped`. No Kafka. Full Kafka replay smoke still future.
+**Day 113 — execution idempotency smoke:** **`./worker/scripts/smoke_worker_execution_idempotency.sh`** — live Redis + real handler; same `job_id`+`attempt` twice → executor once, second `duplicate_skipped`. No Kafka.
+
+**Day 114 — Kafka execution replay:** **`./worker/scripts/smoke_kafka_execution_replay.sh`** — same dispatch event published twice on Kafka; Redis claim skips second execution (`executor_calls=1`, `duplicate_executions=1`, `processed_messages=2`). Duplicate replay is expected, not an error. Crash-after-claim remains future work.
 
 ## What exists today
 
@@ -33,6 +35,7 @@ This is **foundation only**—not a running worker yet:
 | `internal/worker/redis_idempotency.go` | `RedisIdempotencyStore` + go-redis `SetNX` adapter |
 | `cmd/smoke_redis_idempotency` | Live Redis smoke (`SET NX EX`) |
 | `cmd/idempotency-smoke` | Live Redis handler execution-dedupe smoke (Day 113) |
+| `scripts/smoke_kafka_execution_replay.sh` | Kafka duplicate-dispatch replay + Redis execution claim (Day 114) |
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
 | `internal/worker/execution_result_test.go` | Unit tests for execution results |
