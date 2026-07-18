@@ -16,7 +16,9 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 113 — execution idempotency smoke:** **`./worker/scripts/smoke_worker_execution_idempotency.sh`** — live Redis + real handler; same `job_id`+`attempt` twice → executor once, second `duplicate_skipped`. No Kafka.
 
-**Day 114 — Kafka execution replay:** **`./worker/scripts/smoke_kafka_execution_replay.sh`** — same dispatch event published twice on Kafka; Redis claim skips second execution (`executor_calls=1`, `duplicate_executions=1`, `processed_messages=2`). Duplicate replay is expected, not an error. Crash-after-claim remains future work.
+**Day 114 — Kafka execution replay:** **`./worker/scripts/smoke_kafka_execution_replay.sh`** — same dispatch event published twice on Kafka; Redis claim skips second execution (`executor_calls=1`, `duplicate_executions=1`, `processed_messages=2`). Duplicate replay is expected, not an error.
+
+**Day 115 — claim-before-completion gap:** **`./worker/scripts/smoke_execution_claim_gap.sh`** — educational: claim Redis execution key, skip execute, claim again → `recovery_needed=true`. Duplicate suppression is complete; **execution recovery intentionally deferred** (lease + watchdog). See **[execution-recovery.md](../docs/design/execution-recovery.md)**.
 
 ## What exists today
 
@@ -36,6 +38,7 @@ This is **foundation only**—not a running worker yet:
 | `cmd/smoke_redis_idempotency` | Live Redis smoke (`SET NX EX`) |
 | `cmd/idempotency-smoke` | Live Redis handler execution-dedupe smoke (Day 113) |
 | `scripts/smoke_kafka_execution_replay.sh` | Kafka duplicate-dispatch replay + Redis execution claim (Day 114) |
+| `scripts/smoke_execution_claim_gap.sh` | Educational claim-before-completion gap demo (Day 115; no fix) |
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
 | `internal/worker/execution_result_test.go` | Unit tests for execution results |

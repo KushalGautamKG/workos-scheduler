@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 114:** Kafka execution replay smoke — same dispatch published twice → Redis skips second run; executor once — **[docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 115:** duplicate suppression complete; **claim-before-completion** gap documented — recovery (lease + watchdog) deferred — **[docs/design/execution-recovery.md](docs/design/execution-recovery.md)**.
 
 ## MVP Status
 
@@ -40,10 +40,12 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | Doc | Purpose |
 |-----|---------|
 | [docs/checkpoints/day90.md](docs/checkpoints/day90.md) | Day 90 checkpoint — platform status, benchmarks, limitations, roadmap |
+| [docs/checkpoints/day115.md](docs/checkpoints/day115.md) | Day 115 — dedupe complete; execution recovery deferred |
 | [docs/mvp.md](docs/mvp.md) | MVP checkpoint — demo, tests, talking points |
 | [docs/architecture.md](docs/architecture.md) | System design |
 | [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe; dispatch + result integrated |
 | [docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md) | Worker execution dedupe + Kafka replay smoke (Day 114) |
+| [docs/design/execution-recovery.md](docs/design/execution-recovery.md) | Claim-before-completion gap; lease + watchdog (future) |
 | [docs/benchmarks/day114-kafka-execution-replay.md](docs/benchmarks/day114-kafka-execution-replay.md) | Duplicate Kafka dispatch replay methodology (Day 114) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |

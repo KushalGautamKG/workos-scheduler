@@ -21,7 +21,7 @@ This closes the gap between **scheduler dispatch dedupe** (Python publish) and *
 | **Dispatch dedupe** | **Integrated** — **`SchedulerTickRunner`** claims **`dispatch_key(job_id, retry_count)`** before Kafka publish (**Day 108**) |
 | **Result dedupe** | **Integrated** — **`ResultConsumerRunner`** claims **`worker_result_key(job_id, attempt)`** before Postgres updates (**Day 100+**) |
 | **Canonical key** | **`execution_key(job_id, attempt)`** → **`execution:<job_id>:<attempt>`** exists in **`control_plane/kernelq/idempotency_keys.py`** (**Day 99**) |
-| **Go worker** | **Day 114:** Kafka replay smoke — same dispatch published twice → Redis skips second execute; backends `disabled` / `memory` / `redis` |
+| **Go worker** | **Day 114–115:** Kafka replay validated; claim-before-completion gap documented — recovery deferred ([execution-recovery.md](execution-recovery.md)) |
 
 Dispatch dedupe alone does not protect against replay **after** a message reaches the worker (offset reset, second consumer, crash before commit). Result dedupe alone does not prevent **duplicate side effects** inside the executor (API calls, file writes, billing). Execution dedupe sits at the **worker intake boundary**.
 
@@ -63,7 +63,7 @@ Kafka dispatch message
 |---------|---------|----------------------|
 | **Redis unavailable** | **`try_claim`** errors | **Fail closed** (skip execute, alert) vs **fail open** (log + execute)—document per environment; prefer fail closed for non-idempotent work |
 | **TTL too short** | Key expires; replay executes again | Increase TTL; align with retry window; metric on unexpected re-execution |
-| **Worker crash after claim, before result** | Key live, result may never publish | Retry dispatch may hit duplicate execution skip; rely on redispatch + result path; reconciliation future |
+| **Worker crash after claim, before result** | Key live, result may never publish | **Documented Day 115** — fail closed today; future lease + watchdog — **[execution-recovery.md](execution-recovery.md)** |
 | **Duplicate after TTL expiry** | Rare double execution | Terminal Postgres updates should be idempotent; alert on duplicate execution rate |
 | **Redis vs Postgres mismatch** | Redis “seen” but job still **`queued`** | Prefer Postgres; optional key delete on reconciliation; do not override durable state from cache alone |
 
@@ -80,8 +80,9 @@ Kafka dispatch message
 | **5** | ✅ Smoke — same dispatch twice against live Redis; second skips execute (**Day 113**) |
 | **6** | ✅ Metrics/logs — **`duplicate_executions`**, **`idempotency_errors`**, **`event=duplicate_worker_execution`** (**Day 112**) |
 | **7** | ✅ Kafka replay smoke — identical dispatch published twice; executor once (**Day 114**) |
+| **8** | ✅ Document claim-before-completion gap + recovery boundary (**Day 115**) |
 
-**Dependency order:** interface → in-memory tests → Redis → handler → smoke → Kafka replay.
+**Dependency order:** interface → in-memory tests → Redis → handler → smoke → Kafka replay → recovery design.
 
 ---
 
@@ -90,7 +91,8 @@ Kafka dispatch message
 - **Handler wired (**Day 112**)** — default backend **disabled**; set **`KERNELQ_WORKER_IDEMPOTENCY_BACKEND=memory|redis`** to enable
 - **Live Redis handler smoke (**Day 113**)** — **`smoke_worker_execution_idempotency.sh`**; no Kafka
 - **Kafka replay smoke (**Day 114**)** — **`smoke_kafka_execution_replay.sh`**; duplicate publish is expected, not an error
-- **Not crash-after-claim recovery yet** — worker crash between claim and result still future
+- **Claim-before-completion gap documented (**Day 115**)** — **`smoke_execution_claim_gap.sh`**; recovery intentionally deferred
+- **Not crash-after-claim recovery yet** — lease + watchdog future — **[execution-recovery.md](execution-recovery.md)**
 - **Not replacing dispatch/result dedupe** — separate layers remain
 - **Not replacing Postgres state machine** — no second job database in Redis
 - **Not exactly-once Kafka** — offsets + dedupe layers compose to **effective-once** side effects
@@ -101,6 +103,7 @@ Kafka dispatch message
 ## Related
 
 - [redis-idempotency-deduplication.md](redis-idempotency-deduplication.md) — cross-plane dedupe overview
+- [execution-recovery.md](execution-recovery.md) — claim-before-completion gap; lease + watchdog (future)
 - [ADR-0002 Kafka choice](../decisions/ADR-0002-kafka-choice.md) — at-least-once handoff
 - [worker/README.md](../../worker/README.md) — Go worker plane
 - [architecture.md](../architecture.md) — control plane vs worker split

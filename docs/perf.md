@@ -1,6 +1,6 @@
 # Performance
 
-**Day 96–114:** three idempotency boundaries. **Day 114:** Kafka dispatch replay smoke (duplicate publish → Redis skips second execute). — **[worker-execution-idempotency.md](design/worker-execution-idempotency.md)**.
+**Day 96–115:** three idempotency boundaries complete. **Day 115:** claim-before-completion gap documented; execution recovery (lease + watchdog) deferred. — **[execution-recovery.md](design/execution-recovery.md)**.
 
 ## Baseline Metrics Plan
 
@@ -441,7 +441,9 @@ Prometheus names may align with **`handler_result_publish_success_total`** / **`
 
 **Day 113:** **`./worker/scripts/smoke_worker_execution_idempotency.sh`** — Redis + handler; assert `executor_calls=1`, `duplicate_executions=1`.
 
-**Day 114:** **`./worker/scripts/smoke_kafka_execution_replay.sh`** — same Kafka dispatch twice; Redis claim → `executor_calls=1`, `duplicate_executions=1`, `processed_messages=2`. Duplicate replay is expected. Crash-after-claim still future. See **[day114-kafka-execution-replay.md](benchmarks/day114-kafka-execution-replay.md)**.
+**Day 114:** **`./worker/scripts/smoke_kafka_execution_replay.sh`** — same Kafka dispatch twice; Redis claim → `executor_calls=1`, `duplicate_executions=1`, `processed_messages=2`. Duplicate replay is expected. See **[day114-kafka-execution-replay.md](benchmarks/day114-kafka-execution-replay.md)**.
+
+**Day 115:** **`./worker/scripts/smoke_execution_claim_gap.sh`** — claim without execute → `first_claim=true`, `second_claim=false`, `recovery_needed=true`. Duplicate suppression complete; execution recovery deferred.
 
 **`KafkaResultConsumer.poll_once`** and **`consume_result_once.py`** exist today; a **long-running loop** and dashboards are not wired yet. When the result consumer path is fully instrumented, we plan to track:
 
