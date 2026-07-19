@@ -417,26 +417,24 @@ The tests cover both success and failure paths, including:
 
 ## Internal gRPC APIs
 
-The control plane (Python) and worker plane (Go) communicate via gRPC for:
+**Day 116:** KernelQ introduces an internal **`WorkerExecutionService`** gRPC contract. Kafka remains the async dispatch path; the public control-plane API stays REST/HTTP.
 
-- **Job Assignment**: Control plane assigns jobs to workers
-- **Status Updates**: Workers report job completion, failures, metrics
-- **Heartbeats**: Workers send health status
-- **Resource Queries**: Control plane queries worker capacity
+| Item | Status |
+|------|--------|
+| Proto | [`proto/worker_execution.proto`](../proto/worker_execution.proto) |
+| Go skeleton | `worker/internal/grpc` (no listener yet) |
+| Design | [grpc-worker-execution.md](design/grpc-worker-execution.md) |
 
-### gRPC Service Definitions
+```protobuf
+service WorkerExecutionService {
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+}
+```
 
-TODO: Define proto files for:
-- `JobService`: Job assignment and status reporting
-- `WorkerService`: Worker registration and health checks
-- `MetricsService`: Metrics collection from workers
+Regenerate stubs: `make proto` from the repository root.
+
+Earlier planned JobService / WorkerService / MetricsService ideas remain future; Day 116 keeps the first RPC intentionally small.
 
 ### Example Proto Structure
 
-```protobuf
-// TODO: Full proto definitions
-service JobService {
-  rpc AssignJob(JobRequest) returns (JobAssignment);
-  rpc ReportStatus(StatusUpdate) returns (Ack);
-}
-```
+See **`proto/worker_execution.proto`** for the live Day 116 contract (`SUCCESS` / `FAILED` / `DUPLICATE_SKIPPED`).

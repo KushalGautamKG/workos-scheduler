@@ -20,6 +20,8 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 115 — claim-before-completion gap:** **`./worker/scripts/smoke_execution_claim_gap.sh`** — educational: claim Redis execution key, skip execute, claim again → `recovery_needed=true`. Duplicate suppression is complete; **execution recovery intentionally deferred** (lease + watchdog). See **[execution-recovery.md](../docs/design/execution-recovery.md)**.
 
+**Day 116 — internal gRPC execution service:** **`proto/worker_execution.proto`** + **`internal/grpc`** skeleton. Kafka remains the dispatch mechanism; **no network listener yet**. Prepares for tracing and future service decomposition — **[grpc-worker-execution.md](../docs/design/grpc-worker-execution.md)**. Regenerate stubs: **`make proto`** from repo root.
+
 ## What exists today
 
 This is **foundation only**—not a running worker yet:
@@ -39,6 +41,8 @@ This is **foundation only**—not a running worker yet:
 | `cmd/idempotency-smoke` | Live Redis handler execution-dedupe smoke (Day 113) |
 | `scripts/smoke_kafka_execution_replay.sh` | Kafka duplicate-dispatch replay + Redis execution claim (Day 114) |
 | `scripts/smoke_execution_claim_gap.sh` | Educational claim-before-completion gap demo (Day 115; no fix) |
+| `internal/grpc` | Local `WorkerExecutionService` skeleton (Day 116; no listener) |
+| `../proto/worker_execution.proto` | gRPC contract — regenerate with `make proto` |
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |
 | `internal/worker/execution_result_test.go` | Unit tests for execution results |

@@ -6,6 +6,8 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 **Redis / idempotency (Day 96–115):** dispatch + execution + result complete. **Claim-before-completion gap:** **`./worker/scripts/smoke_execution_claim_gap.sh`** (demo only). Recovery deferred — **[execution-recovery.md](design/execution-recovery.md)**.
 
+**Internal gRPC (Day 116):** `WorkerExecutionService` contract + local skeleton (`worker/internal/grpc`). Kafka remains dispatch. No network listener yet. Unit tests: `cd worker && go test ./internal/grpc`. Design: **[grpc-worker-execution.md](design/grpc-worker-execution.md)**. Regenerate: `make proto`.
+
 | Path | Command |
 |------|---------|
 | **Success** | `./control_plane/scripts/smoke_full_completion.sh` |

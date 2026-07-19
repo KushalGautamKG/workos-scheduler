@@ -47,6 +47,7 @@ The worker plane prioritizes throughput, low latency, and resource efficiency. I
 - **Postgres**: Persistent storage for job definitions, schedules, and state
 - **Redis**: Fast **idempotency / duplicate-suppression** boundary — dispatch + execution + result layers live (**Day 96–114**). **Claim-before-completion** gap documented (**Day 115**); execution recovery (lease + watchdog) deferred — **[execution-recovery.md](design/execution-recovery.md)**. Postgres stays source of truth.
 - **Workers**: Go processes that consume from Kafka and execute tasks
+- **Internal gRPC (Day 116):** `WorkerExecutionService` contract + in-process Go skeleton — **[grpc-worker-execution.md](design/grpc-worker-execution.md)**. Kafka remains the async dispatch mechanism; no network listener yet. Prepares for OpenTelemetry interceptors and later service decomposition.
 
 ## FIFO Scheduling Policy
 

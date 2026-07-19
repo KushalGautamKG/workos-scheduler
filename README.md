@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 115:** duplicate suppression complete; **claim-before-completion** gap documented — recovery (lease + watchdog) deferred — **[docs/design/execution-recovery.md](docs/design/execution-recovery.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 116:** internal **WorkerExecutionService** gRPC contract + local skeleton (no network listener; Kafka dispatch unchanged) — **[docs/design/grpc-worker-execution.md](docs/design/grpc-worker-execution.md)**.
 
 ## MVP Status
 
@@ -46,6 +46,7 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/design/redis-idempotency-deduplication.md](docs/design/redis-idempotency-deduplication.md) | Redis idempotency/dedupe; dispatch + result integrated |
 | [docs/design/worker-execution-idempotency.md](docs/design/worker-execution-idempotency.md) | Worker execution dedupe + Kafka replay smoke (Day 114) |
 | [docs/design/execution-recovery.md](docs/design/execution-recovery.md) | Claim-before-completion gap; lease + watchdog (future) |
+| [docs/design/grpc-worker-execution.md](docs/design/grpc-worker-execution.md) | Internal gRPC WorkerExecutionService (Day 116) |
 | [docs/benchmarks/day114-kafka-execution-replay.md](docs/benchmarks/day114-kafka-execution-replay.md) | Duplicate Kafka dispatch replay methodology (Day 114) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |

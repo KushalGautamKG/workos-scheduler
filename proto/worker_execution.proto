@@ -1,0 +1,24 @@
+syntax = "proto3";
+
+package kernelq.worker.v1;
+
+option go_package = "github.com/KushalGautamKG/workos-scheduler/worker/internal/grpc/pb;pb";
+
+// WorkerExecutionService is the internal execution RPC boundary.
+// Day 116: contract + local Go skeleton only — Kafka dispatch path unchanged.
+service WorkerExecutionService {
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse);
+}
+
+message ExecuteRequest {
+  string job_id = 1;
+  int32 attempt = 2;
+  map<string, string> payload = 3;
+}
+
+message ExecuteResponse {
+  // SUCCESS | FAILED | DUPLICATE_SKIPPED
+  string status = 1;
+  bool duplicate_skipped = 2;
+  string error_message = 3;
+}
