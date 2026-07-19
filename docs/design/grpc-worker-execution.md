@@ -1,40 +1,30 @@
 # gRPC Worker Execution Service
 
-Day 116 introduces an **internal gRPC contract** for worker execution. Kafka remains the async dispatch path; nothing in the live pipeline is replaced yet.
+Internal gRPC contract for worker execution. Kafka remains the async dispatch path; the RPC layer is additive.
 
 **Interview sound bite:** *“Kafka moves work asynchronously; gRPC is the typed internal execution boundary we’ll instrument with OpenTelemetry later.”*
 
 ---
 
-## 1. Current vs Future
-
-**Current (unchanged):**
+## 1. Current Architecture
 
 ```
 Scheduler
     │
-Kafka Dispatch
+Kafka Dispatch          ← still the production dispatch layer
     │
 Go Worker → DispatchEventHandler → Executor
+
+                +
+
+cmd/grpc-server (localhost)
+    │
+gRPC WorkerExecutionService
+    │
+same DispatchEventHandler
 ```
 
-**Day 116 (additive):**
-
-```
-Kafka
-  │
-Worker (consumer still owns intake)
-  │
-gRPC WorkerExecutionService   ← contract + in-process skeleton
-  │
-Execution Handler
-```
-
-**Later:**
-
-```
-Kafka → Worker → gRPC (network) → Execution Service → OpenTelemetry
-```
+Day 117 adds a **network listener** and **client** validated on loopback. No production RPC routing yet.
 
 ---
 
@@ -48,8 +38,6 @@ Kafka → Worker → gRPC (network) → Execution Service → OpenTelemetry
 | **Interceptors** | Natural hook for OpenTelemetry tracing (Days 119–122) |
 | **Future streaming** | Unary `Execute` today; streaming heartbeats/batches possible later |
 
-REST stays appropriate for the **public** control-plane API. gRPC is for **internal** service decomposition.
-
 ---
 
 ## 3. Contract
@@ -61,48 +49,43 @@ File: [`proto/worker_execution.proto`](../../proto/worker_execution.proto)
 - **RPC:** `Execute(ExecuteRequest) → ExecuteResponse`
 - **Statuses:** `SUCCESS`, `FAILED`, `DUPLICATE_SKIPPED`
 
-Intentionally small: `job_id`, `attempt`, `payload` in; status / duplicate flag / error out.
-
-Generate Go stubs:
-
 ```bash
 make proto
 ```
 
-Output: `worker/internal/grpc/pb/`.
-
 ---
 
-## 4. Local Skeleton
+## 4. Implementation Status
 
-`worker/internal/grpc.Server` implements the generated server interface and delegates to an `ExecutionHandler` (`*worker.DispatchEventHandler` satisfies it).
-
-| Day 116 | Status |
-|---------|--------|
-| Proto + generated Go | ✅ |
-| In-process `Execute` + validation | ✅ |
-| Unit tests (no network) | ✅ |
-| Network listener / client | ❌ Day 117–118 |
-| Replace Kafka dispatch | ❌ Never Day 116 goal |
-| Auth / mTLS | ❌ Deferred |
+| Item | Status |
+|------|--------|
+| Proto + generated Go | ✅ Day 116 |
+| In-process server + unit tests | ✅ Day 116 |
+| Network listener (`cmd/grpc-server`) | ✅ Day 117 |
+| Client + loopback tests | ✅ Day 117 |
+| Loopback smoke | ✅ `./worker/scripts/smoke_grpc_execute.sh` |
+| Replace Kafka dispatch | ❌ Not a goal |
+| TLS / auth / production routing | ❌ Deferred |
 | OpenTelemetry interceptors | ❌ Day 119+ |
 
-When `Handler` is nil, `Execute` returns gRPC **`Unimplemented`**.
+**Listener:** `KERNELQ_GRPC_ADDR` (default `127.0.0.1:50051`). Graceful shutdown on SIGINT/SIGTERM. Default idempotency backend for the gRPC server binary: **memory**.
+
+**Client:** `worker/internal/grpc.Client` — dial endpoint, context timeout, no retries yet.
 
 ---
 
 ## 5. Non-Goals
 
-- No change to Kafka consumer wiring
+- No change to Kafka consumer → handler wiring
 - No Python gRPC client yet
-- No authentication
-- No production listener bind
+- No authentication / mTLS
+- No service-mesh or cross-host production routing
 
 ---
 
 ## Related
 
-- [execution-recovery.md](execution-recovery.md) — crash-after-claim (orthogonal)
-- [worker-execution-idempotency.md](worker-execution-idempotency.md) — Redis claim before execute
-- [ADR-0001](../decisions/ADR-0001-foundations-and-language-split.md) — language split / protocol need
-- `worker/internal/grpc/` — server skeleton + tests
+- [day117-grpc-loopback.md](../benchmarks/day117-grpc-loopback.md) — functional loopback note
+- [worker-execution-idempotency.md](worker-execution-idempotency.md)
+- [ADR-0001](../decisions/ADR-0001-foundations-and-language-split.md)
+- `worker/cmd/grpc-server`, `worker/internal/grpc/`

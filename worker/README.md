@@ -20,7 +20,9 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 115 — claim-before-completion gap:** **`./worker/scripts/smoke_execution_claim_gap.sh`** — educational: claim Redis execution key, skip execute, claim again → `recovery_needed=true`. Duplicate suppression is complete; **execution recovery intentionally deferred** (lease + watchdog). See **[execution-recovery.md](../docs/design/execution-recovery.md)**.
 
-**Day 116 — internal gRPC execution service:** **`proto/worker_execution.proto`** + **`internal/grpc`** skeleton. Kafka remains the dispatch mechanism; **no network listener yet**. Prepares for tracing and future service decomposition — **[grpc-worker-execution.md](../docs/design/grpc-worker-execution.md)**. Regenerate stubs: **`make proto`** from repo root.
+**Day 116 — internal gRPC execution service:** **`proto/worker_execution.proto`** + **`internal/grpc`** skeleton. Kafka remains the dispatch mechanism.
+
+**Day 117 — gRPC network listener:** **`cmd/grpc-server`** on **`KERNELQ_GRPC_ADDR`** (default `127.0.0.1:50051`) + client + **`./worker/scripts/smoke_grpc_execute.sh`**. Reuses **`DispatchEventHandler`**. Localhost validation complete; **no production RPC routing yet**. See **[grpc-worker-execution.md](../docs/design/grpc-worker-execution.md)**.
 
 ## What exists today
 
@@ -41,7 +43,10 @@ This is **foundation only**—not a running worker yet:
 | `cmd/idempotency-smoke` | Live Redis handler execution-dedupe smoke (Day 113) |
 | `scripts/smoke_kafka_execution_replay.sh` | Kafka duplicate-dispatch replay + Redis execution claim (Day 114) |
 | `scripts/smoke_execution_claim_gap.sh` | Educational claim-before-completion gap demo (Day 115; no fix) |
-| `internal/grpc` | Local `WorkerExecutionService` skeleton (Day 116; no listener) |
+| `internal/grpc` | `WorkerExecutionService` server + client (Days 116–117) |
+| `cmd/grpc-server` | Localhost gRPC listener (Day 117; graceful shutdown) |
+| `cmd/grpc-execute` | Thin CLI client for loopback smoke |
+| `scripts/smoke_grpc_execute.sh` | Loopback SUCCESS → DUPLICATE_SKIPPED smoke (Day 117) |
 | `../proto/worker_execution.proto` | gRPC contract — regenerate with `make proto` |
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |

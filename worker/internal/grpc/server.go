@@ -1,7 +1,8 @@
-// Package grpc implements the local WorkerExecutionService skeleton (Day 116).
+// Package grpc implements WorkerExecutionService transport (Days 116–117).
 //
-// No network listener yet — unit tests call Server.Execute directly. Kafka
-// remains the async dispatch path; this RPC boundary prepares for OTel later.
+// Server maps protobuf ↔ DispatchEventHandler. Client dials a configurable
+// endpoint. Kafka remains the async dispatch path; this RPC boundary prepares
+// for OpenTelemetry later.
 package grpc
 
 import (

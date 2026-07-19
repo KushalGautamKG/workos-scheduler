@@ -6,7 +6,7 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 **Redis / idempotency (Day 96–115):** dispatch + execution + result complete. **Claim-before-completion gap:** **`./worker/scripts/smoke_execution_claim_gap.sh`** (demo only). Recovery deferred — **[execution-recovery.md](design/execution-recovery.md)**.
 
-**Internal gRPC (Day 116):** `WorkerExecutionService` contract + local skeleton (`worker/internal/grpc`). Kafka remains dispatch. No network listener yet. Unit tests: `cd worker && go test ./internal/grpc`. Design: **[grpc-worker-execution.md](design/grpc-worker-execution.md)**. Regenerate: `make proto`.
+**Internal gRPC (Day 116–117):** `WorkerExecutionService` listener (`cmd/grpc-server`, `KERNELQ_GRPC_ADDR`, default `127.0.0.1:50051`) + client. Kafka remains dispatch. Execution handler reused. Localhost smoke: **`./worker/scripts/smoke_grpc_execute.sh`**. No production RPC routing yet. Design: **[grpc-worker-execution.md](design/grpc-worker-execution.md)**. Regenerate: `make proto`.
 
 | Path | Command |
 |------|---------|
@@ -43,6 +43,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_worker_backpressure_config` | `success=true` — **`cmd/consumer`** startup logs **`backpressure_enabled`**, **`backpressure_high_ratio`**, **`backpressure_low_ratio`** |
 | `smoke_kafka_execution_replay` | `success=true` — Kafka duplicate dispatch; Redis skips second execute (`executor_calls=1`, `duplicate_executions=1`) |
 | `smoke_execution_claim_gap` | `success=true` — claim without execute; `first_claim=true`, `second_claim=false`, `recovery_needed=true` |
+| `smoke_grpc_execute` | `success=true` — localhost gRPC; first `SUCCESS`, second `DUPLICATE_SKIPPED` |
 | `scheduler_tick` | `published_count`, `duplicate_dispatches`, `errors_count`, `publish_errors_count` |
 | `duplicate_dispatch` | `job_id`, `attempt` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |
