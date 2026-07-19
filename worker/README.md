@@ -24,6 +24,8 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 117 — gRPC network listener:** **`cmd/grpc-server`** on **`KERNELQ_GRPC_ADDR`** (default `127.0.0.1:50051`) + client + **`./worker/scripts/smoke_grpc_execute.sh`**. Reuses **`DispatchEventHandler`**. Localhost validation complete; **no production RPC routing yet**. See **[grpc-worker-execution.md](../docs/design/grpc-worker-execution.md)**.
 
+**Day 118 — gRPC lifecycle:** official **`grpc.health.v1`** readiness (**SERVING** / **NOT_SERVING**), centralized **`internal/config`** (`KERNELQ_GRPC_ADDR`, `KERNELQ_GRPC_SHUTDOWN_TIMEOUT`, `KERNELQ_GRPC_REQUEST_TIMEOUT`), graceful shutdown. Smoke: **`./worker/scripts/smoke_grpc_health.sh`**. Kubernetes-ready lifecycle foundation — **[grpc-lifecycle.md](../docs/design/grpc-lifecycle.md)**.
+
 ## What exists today
 
 This is **foundation only**—not a running worker yet:
@@ -44,9 +46,12 @@ This is **foundation only**—not a running worker yet:
 | `scripts/smoke_kafka_execution_replay.sh` | Kafka duplicate-dispatch replay + Redis execution claim (Day 114) |
 | `scripts/smoke_execution_claim_gap.sh` | Educational claim-before-completion gap demo (Day 115; no fix) |
 | `internal/grpc` | `WorkerExecutionService` server + client (Days 116–117) |
-| `cmd/grpc-server` | Localhost gRPC listener (Day 117; graceful shutdown) |
+| `cmd/grpc-server` | Localhost gRPC listener + health lifecycle (Days 117–118) |
 | `cmd/grpc-execute` | Thin CLI client for loopback smoke |
+| `cmd/grpc-health` | Thin `grpc.health.v1` Check CLI (Day 118) |
+| `internal/config` | `KERNELQ_GRPC_*` parsing (Day 118) |
 | `scripts/smoke_grpc_execute.sh` | Loopback SUCCESS → DUPLICATE_SKIPPED smoke (Day 117) |
+| `scripts/smoke_grpc_health.sh` | Health SERVING + clean SIGINT smoke (Day 118) |
 | `../proto/worker_execution.proto` | gRPC contract — regenerate with `make proto` |
 | `internal/worker/executor.go` | `Executor` interface |
 | `internal/worker/execution_result.go` | `ExecutionResult`, outcome status constants |

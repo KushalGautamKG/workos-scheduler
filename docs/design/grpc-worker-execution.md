@@ -62,11 +62,13 @@ make proto
 | Proto + generated Go | ✅ Day 116 |
 | In-process server + unit tests | ✅ Day 116 |
 | Network listener (`cmd/grpc-server`) | ✅ Day 117 |
-| Client + loopback tests | ✅ Day 117 |
-| Loopback smoke | ✅ `./worker/scripts/smoke_grpc_execute.sh` |
+| Client + loopback tests / smoke | ✅ Day 117 |
+| Health + readiness lifecycle | ✅ Day 118 — [grpc-lifecycle.md](grpc-lifecycle.md) |
+| Centralized `KERNELQ_GRPC_*` config | ✅ Day 118 |
 | Replace Kafka dispatch | ❌ Not a goal |
 | TLS / auth / production routing | ❌ Deferred |
 | OpenTelemetry interceptors | ❌ Day 119+ |
+| Kubernetes probes wired | ❌ Documented; deploy later |
 
 **Listener:** `KERNELQ_GRPC_ADDR` (default `127.0.0.1:50051`). Graceful shutdown on SIGINT/SIGTERM. Default idempotency backend for the gRPC server binary: **memory**.
 

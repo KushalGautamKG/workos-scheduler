@@ -57,12 +57,14 @@ KERNELQ_WORKER_IDEMPOTENCY_BACKEND=memory \
 "${SERVER_BIN}" >"${SERVER_LOG}" 2>&1 &
 SERVER_PID=$!
 
-# Wait until the listener accepts connections.
 READY=0
-for _ in $(seq 1 40); do
-  if grep -Fq "event=grpc_server_start" "${SERVER_LOG}" 2>/dev/null; then
-    READY=1
-    break
+for _ in $(seq 1 50); do
+  if grep -Fq "event=grpc_server_ready status=SERVING" "${SERVER_LOG}" 2>/dev/null \
+    || grep -Fq "event=grpc_server_start" "${SERVER_LOG}" 2>/dev/null; then
+    if grep -Fq "event=grpc_server_ready status=SERVING" "${SERVER_LOG}" 2>/dev/null; then
+      READY=1
+      break
+    fi
   fi
   if ! kill -0 "${SERVER_PID}" 2>/dev/null; then
     fail "gRPC server exited before becoming ready"
@@ -70,7 +72,7 @@ for _ in $(seq 1 40); do
   sleep 0.1
 done
 if [[ "${READY}" -ne 1 ]]; then
-  fail "gRPC server did not log startup"
+  fail "gRPC server did not become SERVING"
 fi
 sleep 0.2
 

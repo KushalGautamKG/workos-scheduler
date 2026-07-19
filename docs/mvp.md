@@ -185,7 +185,7 @@ Honest gaps — not production-ready yet:
 - **Worker Kafka backpressure** — **Day 88** env-configurable watermarks (**disabled by default**; EKS ConfigMaps later); **Day 87** in-memory pause/resume wiring; **Day 82** backoff default; real Kafka partition pause/resume still future ([`docs/design/kafka-pause-resume-backpressure.md`](design/kafka-pause-resume-backpressure.md))
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
 - **Redis dedupe** — three layers complete; **Day 115** documents **claim-before-completion** gap (recovery deferred) — **[execution-recovery.md](design/execution-recovery.md)**
-- **Internal gRPC** — **Day 117** network listener + loopback smoke; Kafka still dispatches; handler reused; no production RPC routing — **[grpc-worker-execution.md](design/grpc-worker-execution.md)**
+- **Internal gRPC** — **Day 118** health + readiness lifecycle + env config; Kafka still dispatches — **[grpc-lifecycle.md](design/grpc-lifecycle.md)**
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
 ---

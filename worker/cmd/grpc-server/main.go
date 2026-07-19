@@ -12,13 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/config"
 	workergrpc "github.com/KushalGautamKG/workos-scheduler/worker/internal/grpc"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/grpc/pb"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/worker"
 	"google.golang.org/grpc"
 )
-
-const defaultGRPCAddr = "127.0.0.1:50051"
 
 // loggingExecutor prints job ids for local smoke / loopback debugging.
 type loggingExecutor struct {
@@ -32,9 +31,9 @@ func (executor *loggingExecutor) Execute(task worker.Task) (worker.ExecutionResu
 }
 
 func main() {
-	addr := strings.TrimSpace(os.Getenv("KERNELQ_GRPC_ADDR"))
-	if addr == "" {
-		addr = defaultGRPCAddr
+	cfg, err := config.LoadGRPCConfig()
+	if err != nil {
+		log.Fatalf("load grpc config: %v", err)
 	}
 
 	idempotencyStore, backend := buildIdempotencyStore()
@@ -45,22 +44,34 @@ func main() {
 		WorkerName:       "kernelq-grpc-server",
 	}
 
-	listener, err := net.Listen("tcp", addr)
+	health := workergrpc.NewHealth()
+
+	listener, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
-		log.Fatalf("listen %s: %v", addr, err)
+		log.Fatalf("listen %s: %v", cfg.Addr, err)
 	}
 
 	grpcServer := grpc.NewServer()
 	pb.RegisterWorkerExecutionServiceServer(grpcServer, &workergrpc.Server{
 		Handler: handler,
 	})
+	health.Register(grpcServer)
 
-	fmt.Printf("event=grpc_server_start addr=%s idempotency_backend=%s\n", addr, backend)
+	fmt.Printf(
+		"event=grpc_server_start addr=%s idempotency_backend=%s shutdown_timeout=%s request_timeout=%s\n",
+		cfg.Addr,
+		backend,
+		cfg.ShutdownTimeout,
+		cfg.RequestTimeout,
+	)
 
 	errCh := make(chan error, 1)
 	go func() {
 		errCh <- grpcServer.Serve(listener)
 	}()
+
+	health.MarkReady()
+	fmt.Println("event=grpc_server_ready status=SERVING")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -68,6 +79,9 @@ func main() {
 	select {
 	case <-ctx.Done():
 		fmt.Println("event=grpc_server_shutdown reason=signal")
+		health.MarkNotReady()
+		fmt.Println("event=grpc_server_not_ready status=NOT_SERVING")
+
 		stopped := make(chan struct{})
 		go func() {
 			grpcServer.GracefulStop()
@@ -75,11 +89,13 @@ func main() {
 		}()
 		select {
 		case <-stopped:
-		case <-time.After(10 * time.Second):
+			fmt.Println("event=grpc_server_shutdown reason=graceful")
+		case <-time.After(cfg.ShutdownTimeout):
 			fmt.Println("event=grpc_server_shutdown reason=force_stop")
 			grpcServer.Stop()
 		}
 	case err := <-errCh:
+		health.MarkNotReady()
 		if err != nil {
 			log.Fatalf("grpc serve: %v", err)
 		}
@@ -97,7 +113,6 @@ func buildIdempotencyStore() (worker.IdempotencyStore, string) {
 	case "disabled", "off", "none":
 		return nil, "disabled"
 	default:
-		// Unknown value: fail closed to memory so local smokes stay predictable.
 		fmt.Printf(
 			"event=grpc_server_idempotency_fallback requested=%s using=memory\n",
 			backend,

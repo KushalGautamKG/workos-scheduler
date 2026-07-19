@@ -6,7 +6,7 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 **Redis / idempotency (Day 96–115):** dispatch + execution + result complete. **Claim-before-completion gap:** **`./worker/scripts/smoke_execution_claim_gap.sh`** (demo only). Recovery deferred — **[execution-recovery.md](design/execution-recovery.md)**.
 
-**Internal gRPC (Day 116–117):** `WorkerExecutionService` listener (`cmd/grpc-server`, `KERNELQ_GRPC_ADDR`, default `127.0.0.1:50051`) + client. Kafka remains dispatch. Execution handler reused. Localhost smoke: **`./worker/scripts/smoke_grpc_execute.sh`**. No production RPC routing yet. Design: **[grpc-worker-execution.md](design/grpc-worker-execution.md)**. Regenerate: `make proto`.
+**Internal gRPC (Day 116–118):** `WorkerExecutionService` listener + **`grpc.health.v1`** readiness (`SERVING` / `NOT_SERVING`). Config: `KERNELQ_GRPC_ADDR`, `KERNELQ_GRPC_SHUTDOWN_TIMEOUT`, `KERNELQ_GRPC_REQUEST_TIMEOUT`. Smokes: **`./worker/scripts/smoke_grpc_execute.sh`**, **`./worker/scripts/smoke_grpc_health.sh`**. Kafka remains dispatch. Lifecycle is Kubernetes-ready (probes later). Design: **[grpc-lifecycle.md](design/grpc-lifecycle.md)**.
 
 | Path | Command |
 |------|---------|
@@ -44,6 +44,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_kafka_execution_replay` | `success=true` — Kafka duplicate dispatch; Redis skips second execute (`executor_calls=1`, `duplicate_executions=1`) |
 | `smoke_execution_claim_gap` | `success=true` — claim without execute; `first_claim=true`, `second_claim=false`, `recovery_needed=true` |
 | `smoke_grpc_execute` | `success=true` — localhost gRPC; first `SUCCESS`, second `DUPLICATE_SKIPPED` |
+| `smoke_grpc_health` | `success=true` — health `SERVING`, clean SIGINT shutdown |
 | `scheduler_tick` | `published_count`, `duplicate_dispatches`, `errors_count`, `publish_errors_count` |
 | `duplicate_dispatch` | `job_id`, `attempt` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |
