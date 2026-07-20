@@ -9,9 +9,10 @@ import (
 	"time"
 
 	workergrpc "github.com/KushalGautamKG/workos-scheduler/worker/internal/grpc"
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 )
 
-// Thin CLI for Day 117 loopback smoke — uses the shared gRPC Client.
+// Thin CLI for gRPC Execute smokes — uses the shared Client (otelgrpc dial options).
 func main() {
 	addr := flag.String("addr", envOr("KERNELQ_GRPC_ADDR", "127.0.0.1:50051"), "gRPC server address")
 	jobID := flag.String("job-id", "", "job id")
@@ -23,6 +24,26 @@ func main() {
 	if strings.TrimSpace(*jobID) == "" {
 		fail("job-id is required")
 	}
+
+	otelCfg, err := telemetry.LoadConfig()
+	if err != nil {
+		fail(err.Error())
+	}
+	// CLI stays quiet unless smoke/dev explicitly enables OTel (avoids mixing
+	// pretty-printed spans into status=SUCCESS stdout used by other smokes).
+	if strings.TrimSpace(os.Getenv("KERNELQ_OTEL_ENABLED")) == "" {
+		otelCfg.Enabled = false
+		otelCfg.Exporter = telemetry.ExporterNone
+	}
+	provider, err := telemetry.NewTracerProvider(context.Background(), otelCfg)
+	if err != nil {
+		fail(err.Error())
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = provider.Shutdown(shutdownCtx)
+	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout+2*time.Second)
 	defer cancel()

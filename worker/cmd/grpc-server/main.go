@@ -76,7 +76,7 @@ func main() {
 		log.Fatalf("listen %s: %v", cfg.Addr, err)
 	}
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(telemetry.GRPCServerOptions()...)
 	pb.RegisterWorkerExecutionServiceServer(grpcServer, &workergrpc.Server{
 		Handler: handler,
 	})

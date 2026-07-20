@@ -8,7 +8,9 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 **Internal gRPC (Day 116–118):** `WorkerExecutionService` listener + **`grpc.health.v1`** readiness (`SERVING` / `NOT_SERVING`). Config: `KERNELQ_GRPC_ADDR`, `KERNELQ_GRPC_SHUTDOWN_TIMEOUT`, `KERNELQ_GRPC_REQUEST_TIMEOUT`. Smokes: **`./worker/scripts/smoke_grpc_execute.sh`**, **`./worker/scripts/smoke_grpc_health.sh`**. Kafka remains dispatch. Lifecycle is Kubernetes-ready (probes later). Design: **[grpc-lifecycle.md](design/grpc-lifecycle.md)**.
 
-**OpenTelemetry (Day 119–120):** shared tracer provider + **`worker.execute`** spans (`job.id`, `job.attempt`, `execution.status`). Smoke: **`./worker/scripts/smoke_worker_trace.sh`**. Distributed tracing continues Days 121–122. Design: **[worker-tracing.md](design/worker-tracing.md)**.
+**OpenTelemetry (Day 119–121):** shared tracer provider + **`worker.execute`** + automatic **gRPC** propagation (`otelgrpc`). Smokes: **`./worker/scripts/smoke_worker_trace.sh`**, **`./worker/scripts/smoke_grpc_trace.sh`**. Kafka headers Day 122; OTLP deferred (stdout). Design: **[grpc-tracing.md](design/grpc-tracing.md)**.
+
+**Diagnosing `smoke_grpc_trace` failure:** check for a leftover **`grpc-server`** holding the port (`lsof -nP -iTCP:<port> -sTCP:LISTEN`); confirm **`KERNELQ_OTEL_ENABLED=true`** and **`KERNELQ_OTEL_EXPORTER=stdout`** on both client and server; confirm both use otelgrpc dial/server options.
 
 | Path | Command |
 |------|---------|
@@ -48,6 +50,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_grpc_execute` | `success=true` — localhost gRPC; first `SUCCESS`, second `DUPLICATE_SKIPPED` |
 | `smoke_grpc_health` | `success=true` — health `SERVING`, clean SIGINT shutdown |
 | `smoke_worker_trace` | `success=true` — stdout contains `worker.execute` + job/status attrs |
+| `smoke_grpc_trace` | `success=true` — shared TraceID across gRPC client/server + `worker.execute` |
 | `scheduler_tick` | `published_count`, `duplicate_dispatches`, `errors_count`, `publish_errors_count` |
 | `duplicate_dispatch` | `job_id`, `attempt` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |

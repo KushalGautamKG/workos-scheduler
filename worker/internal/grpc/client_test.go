@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/grpc/pb"
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/worker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -32,7 +33,7 @@ func startLoopbackServer(t *testing.T, handler ExecutionHandler) (addr string, s
 		t.Fatalf("listen: %v", err)
 	}
 
-	server := grpc.NewServer()
+	server := grpc.NewServer(telemetry.GRPCServerOptions()...)
 	pb.RegisterWorkerExecutionServiceServer(server, &Server{Handler: handler})
 
 	errCh := make(chan error, 1)

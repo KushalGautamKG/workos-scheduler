@@ -28,7 +28,9 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 119 — OpenTelemetry foundation:** shared tracer provider in **`internal/telemetry`** (`KERNELQ_OTEL_*`; exporters `stdout` \| `none`). Globally registered from **`cmd/grpc-server`**; graceful provider shutdown.
 
-**Day 120 — execution spans:** **`worker.execute`** around `DispatchEventHandler` with `job.id` / `job.attempt` / `execution.status` (+ error recording). Smoke: **`./worker/scripts/smoke_worker_trace.sh`**. Distributed tracing continues Days 121–122 — **[worker-tracing.md](../docs/design/worker-tracing.md)**.
+**Day 120 — execution spans:** **`worker.execute`** around `DispatchEventHandler` with `job.id` / `job.attempt` / `execution.status` (+ error recording). Smoke: **`./worker/scripts/smoke_worker_trace.sh`**.
+
+**Day 121 — gRPC propagation:** official **`otelgrpc`** StatsHandlers on server dial/listen; W3C context in metadata; RPC spans nest **`worker.execute`**. Smoke: **`./worker/scripts/smoke_grpc_trace.sh`**. Kafka headers next (Day 122); OTLP deferred — **[grpc-tracing.md](../docs/design/grpc-tracing.md)**.
 
 ## What exists today
 
@@ -54,8 +56,9 @@ This is **foundation only**—not a running worker yet:
 | `cmd/grpc-execute` | Thin CLI client for loopback smoke |
 | `cmd/grpc-health` | Thin `grpc.health.v1` Check CLI (Day 118) |
 | `internal/config` | `KERNELQ_GRPC_*` parsing (Day 118) |
-| `internal/telemetry` | OTel provider + `worker.execute` spans (Days 119–120) |
+| `internal/telemetry` | OTel provider + `worker.execute` + otelgrpc helpers (Days 119–121) |
 | `scripts/smoke_worker_trace.sh` | stdout `worker.execute` smoke (Day 120) |
+| `scripts/smoke_grpc_trace.sh` | shared TraceID across gRPC + execute (Day 121) |
 | `scripts/smoke_grpc_execute.sh` | Loopback SUCCESS → DUPLICATE_SKIPPED smoke (Day 117) |
 | `scripts/smoke_grpc_health.sh` | Health SERVING + clean SIGINT smoke (Day 118) |
 | `../proto/worker_execution.proto` | gRPC contract — regenerate with `make proto` |
