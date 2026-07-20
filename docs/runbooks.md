@@ -8,7 +8,7 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 **Internal gRPC (Day 116–118):** `WorkerExecutionService` listener + **`grpc.health.v1`** readiness (`SERVING` / `NOT_SERVING`). Config: `KERNELQ_GRPC_ADDR`, `KERNELQ_GRPC_SHUTDOWN_TIMEOUT`, `KERNELQ_GRPC_REQUEST_TIMEOUT`. Smokes: **`./worker/scripts/smoke_grpc_execute.sh`**, **`./worker/scripts/smoke_grpc_health.sh`**. Kafka remains dispatch. Lifecycle is Kubernetes-ready (probes later). Design: **[grpc-lifecycle.md](design/grpc-lifecycle.md)**.
 
-**OpenTelemetry (Day 119):** shared tracer provider (`worker/internal/telemetry`). Env: `KERNELQ_OTEL_ENABLED`, `KERNELQ_OTEL_SERVICE_NAME`, `KERNELQ_OTEL_EXPORTER` (`stdout`\|`none`). Globally registered in `cmd/grpc-server`; provider shutdown on exit. **No spans yet; OTLP deferred.** Design: **[opentelemetry.md](design/opentelemetry.md)**.
+**OpenTelemetry (Day 119–120):** shared tracer provider + **`worker.execute`** spans (`job.id`, `job.attempt`, `execution.status`). Smoke: **`./worker/scripts/smoke_worker_trace.sh`**. Distributed tracing continues Days 121–122. Design: **[worker-tracing.md](design/worker-tracing.md)**.
 
 | Path | Command |
 |------|---------|
@@ -47,6 +47,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_execution_claim_gap` | `success=true` — claim without execute; `first_claim=true`, `second_claim=false`, `recovery_needed=true` |
 | `smoke_grpc_execute` | `success=true` — localhost gRPC; first `SUCCESS`, second `DUPLICATE_SKIPPED` |
 | `smoke_grpc_health` | `success=true` — health `SERVING`, clean SIGINT shutdown |
+| `smoke_worker_trace` | `success=true` — stdout contains `worker.execute` + job/status attrs |
 | `scheduler_tick` | `published_count`, `duplicate_dispatches`, `errors_count`, `publish_errors_count` |
 | `duplicate_dispatch` | `job_id`, `attempt` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |

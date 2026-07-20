@@ -62,9 +62,9 @@ Package: `worker/internal/telemetry`. Wired from `cmd/grpc-server` (lifecycle on
 | stdout / none exporters | ✅ 119 |
 | Global `otel.SetTracerProvider` | ✅ 119 |
 | Provider shutdown on SIGINT | ✅ 119 |
-| gRPC interceptors / spans | ❌ 120+ |
+| `worker.execute` spans | ✅ 120 — [worker-tracing.md](worker-tracing.md) |
+| gRPC interceptors / Kafka propagation | ❌ 121+ |
 | OTLP exporter | ❌ Deferred |
-| Kafka / Python propagation | ❌ Later |
 
 ---
 

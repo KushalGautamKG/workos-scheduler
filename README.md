@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 119:** shared **OpenTelemetry tracer provider** (stdout/none; no spans/OTLP yet) — **[docs/design/opentelemetry.md](docs/design/opentelemetry.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 120:** first **`worker.execute`** OpenTelemetry spans (job metadata + status/errors; distributed tracing continues Days 121–122) — **[docs/design/worker-tracing.md](docs/design/worker-tracing.md)**.
 
 ## MVP Status
 
@@ -49,9 +49,11 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/design/grpc-worker-execution.md](docs/design/grpc-worker-execution.md) | Internal gRPC WorkerExecutionService (Days 116–117) |
 | [docs/design/grpc-lifecycle.md](docs/design/grpc-lifecycle.md) | gRPC health + readiness lifecycle (Day 118) |
 | [docs/design/opentelemetry.md](docs/design/opentelemetry.md) | Shared OTel tracer provider foundation (Day 119) |
+| [docs/design/worker-tracing.md](docs/design/worker-tracing.md) | worker.execute spans (Day 120) |
 | [docs/benchmarks/day117-grpc-loopback.md](docs/benchmarks/day117-grpc-loopback.md) | Localhost gRPC loopback functional note (Day 117) |
 | [docs/benchmarks/day118-grpc-health.md](docs/benchmarks/day118-grpc-health.md) | gRPC health lifecycle functional note (Day 118) |
 | [docs/benchmarks/day119-otel-foundation.md](docs/benchmarks/day119-otel-foundation.md) | OTel provider init functional note (Day 119) |
+| [docs/benchmarks/day120-worker-tracing.md](docs/benchmarks/day120-worker-tracing.md) | worker.execute stdout smoke note (Day 120) |
 | [docs/benchmarks/day114-kafka-execution-replay.md](docs/benchmarks/day114-kafka-execution-replay.md) | Duplicate Kafka dispatch replay methodology (Day 114) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |

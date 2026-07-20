@@ -19,7 +19,7 @@ type fakeExecutionHandler struct {
 	err       error
 }
 
-func (f *fakeExecutionHandler) Handle(event worker.DispatchEvent) (worker.ExecutionResult, error) {
+func (f *fakeExecutionHandler) Handle(ctx context.Context, event worker.DispatchEvent) (worker.ExecutionResult, error) {
 	f.called++
 	f.lastEvent = event
 	return f.result, f.err

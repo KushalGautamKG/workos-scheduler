@@ -186,7 +186,7 @@ Honest gaps — not production-ready yet:
 - **Delivery semantics** — no exactly-once guarantees; at-least-once with idempotency left to callers
 - **Redis dedupe** — three layers complete; **Day 115** documents **claim-before-completion** gap (recovery deferred) — **[execution-recovery.md](design/execution-recovery.md)**
 - **Internal gRPC** — **Day 118** health + readiness lifecycle + env config; Kafka still dispatches — **[grpc-lifecycle.md](design/grpc-lifecycle.md)**
-- **OpenTelemetry** — **Day 119** shared tracer provider (stdout/none); spans/OTLP later — **[opentelemetry.md](design/opentelemetry.md)**
+- **OpenTelemetry** — **Day 120** `worker.execute` spans; provider from Day 119; Kafka/gRPC propagation later — **[worker-tracing.md](design/worker-tracing.md)**
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
 ---

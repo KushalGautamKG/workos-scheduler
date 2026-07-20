@@ -5,7 +5,10 @@
 // Message values. Today we only process messages in memory (tests, fakes).
 package worker
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // Message is one record the worker received from a broker (or a test fake).
 //
@@ -20,8 +23,9 @@ type Message struct {
 //
 // A future execution pipeline will implement this interface. Tests can use a
 // small fake handler that records events or returns errors on purpose.
+// Context carries deadlines and OpenTelemetry span context.
 type DispatchHandler interface {
-	Handle(event DispatchEvent) (ExecutionResult, error)
+	Handle(ctx context.Context, event DispatchEvent) (ExecutionResult, error)
 }
 
 // ConsumerRunner connects "message bytes in" to "handler logic out".
@@ -50,7 +54,7 @@ func (runner ConsumerRunner) ProcessMessage(message Message) error {
 	}
 
 	// Hand off to execution logic (real or test fake).
-	if _, err := runner.Handler.Handle(event); err != nil {
+	if _, err := runner.Handler.Handle(context.Background(), event); err != nil {
 		return err
 	}
 

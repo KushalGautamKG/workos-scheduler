@@ -77,7 +77,7 @@ func TestExecutionIdempotencyLiveRedisHandlerSkipsDuplicate(t *testing.T) {
 		Attempt:   0,
 	}
 
-	first, err := handler.Handle(event)
+	first, err := handler.Handle(context.Background(), event)
 	if err != nil {
 		t.Fatalf("first: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestExecutionIdempotencyLiveRedisHandlerSkipsDuplicate(t *testing.T) {
 		t.Fatalf("first status = %q, want %q", first.Status, ExecutionSucceeded)
 	}
 
-	second, err := handler.Handle(event)
+	second, err := handler.Handle(context.Background(), event)
 	if err != nil {
 		t.Fatalf("second: %v", err)
 	}

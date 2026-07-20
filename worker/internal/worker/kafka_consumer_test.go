@@ -19,7 +19,7 @@ type fakeDispatchHandler struct {
 	called   bool
 }
 
-func (handler *fakeDispatchHandler) Handle(event DispatchEvent) (ExecutionResult, error) {
+func (handler *fakeDispatchHandler) Handle(ctx context.Context, event DispatchEvent) (ExecutionResult, error) {
 	handler.received = event
 	handler.called = true
 	return SuccessResult(), nil

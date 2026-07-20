@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -362,7 +363,7 @@ type countingHandler struct {
 	count int
 }
 
-func (handler *countingHandler) Handle(event DispatchEvent) (ExecutionResult, error) {
+func (handler *countingHandler) Handle(ctx context.Context, event DispatchEvent) (ExecutionResult, error) {
 	handler.mu.Lock()
 	handler.count++
 	handler.mu.Unlock()

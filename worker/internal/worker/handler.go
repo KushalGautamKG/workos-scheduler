@@ -6,10 +6,13 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 )
 
 // DefaultExecutionIdempotencyTTL is used when IdempotencyStore is set and
@@ -54,7 +57,41 @@ func (handler *DispatchEventHandler) IdempotencyErrors() int64 {
 //
 // DispatchEvent was already validated at parse time (ParseDispatchEvent).
 // We validate Task again as a safety check before execution.
-func (handler *DispatchEventHandler) Handle(event DispatchEvent) (ExecutionResult, error) {
+//
+// Day 120: wraps the unit of work in a worker.execute span (no payload attrs).
+func (handler *DispatchEventHandler) Handle(
+	ctx context.Context,
+	event DispatchEvent,
+) (ExecutionResult, error) {
+	ctx, span := telemetry.StartExecutionSpan(ctx, event.JobID, event.Attempt)
+	defer span.End()
+
+	result, err := handler.handle(ctx, event)
+	if err != nil {
+		telemetry.RecordExecutionFailure(span, err)
+		return result, err
+	}
+
+	switch result.Status {
+	case ExecutionDuplicateSkipped:
+		telemetry.RecordExecutionDuplicate(span)
+	case ExecutionSucceeded:
+		telemetry.RecordExecutionSuccess(span)
+	case ExecutionRetryableFailure, ExecutionTerminalFailure:
+		telemetry.RecordExecutionFailure(span, fmt.Errorf("%s", result.Message))
+	default:
+		telemetry.RecordExecutionFailure(span, fmt.Errorf("unknown execution status %q", result.Status))
+	}
+
+	return result, nil
+}
+
+func (handler *DispatchEventHandler) handle(
+	ctx context.Context,
+	event DispatchEvent,
+) (ExecutionResult, error) {
+	_ = ctx
+
 	// Step 1: ensure an executor is wired.
 	if handler.Executor == nil {
 		return ExecutionResult{}, fmt.Errorf("executor is not configured")

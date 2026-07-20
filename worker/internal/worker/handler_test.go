@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -62,7 +63,7 @@ func TestHandleSuccessResultFlowsThroughHandler(t *testing.T) {
 	handler := DispatchEventHandler{Executor: executor}
 	event := validDispatchEventForHandler()
 
-	result, err := handler.Handle(event)
+	result, err := handler.Handle(context.Background(), event)
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -90,7 +91,7 @@ func TestHandleRetryableFailureResultFlowsThroughHandler(t *testing.T) {
 	executor := &fakeExecutor{result: expected}
 	handler := DispatchEventHandler{Executor: executor}
 
-	result, err := handler.Handle(validDispatchEventForHandler())
+	result, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err != nil {
 		t.Fatalf("expected retryable failure to flow through, got error: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestHandleTerminalFailureResultFlowsThroughHandler(t *testing.T) {
 	executor := &fakeExecutor{result: expected}
 	handler := DispatchEventHandler{Executor: executor}
 
-	result, err := handler.Handle(validDispatchEventForHandler())
+	result, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err != nil {
 		t.Fatalf("expected terminal failure to flow through, got error: %v", err)
 	}
@@ -122,7 +123,7 @@ func TestHandleTerminalFailureResultFlowsThroughHandler(t *testing.T) {
 func TestHandleNilExecutorReturnsError(t *testing.T) {
 	handler := DispatchEventHandler{Executor: nil}
 
-	_, err := handler.Handle(validDispatchEventForHandler())
+	_, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err == nil {
 		t.Fatal("expected error when executor is nil, got nil")
 	}
@@ -138,7 +139,7 @@ func TestHandleInvalidTaskReturnsError(t *testing.T) {
 	event := validDispatchEventForHandler()
 	event.JobID = "   "
 
-	_, err := handler.Handle(event)
+	_, err := handler.Handle(context.Background(), event)
 	if err == nil {
 		t.Fatal("expected validation error for blank job id, got nil")
 	}
@@ -152,7 +153,7 @@ func TestHandleExecutorInfrastructureErrorReturnsError(t *testing.T) {
 	executor := &fakeExecutor{err: expectedErr}
 	handler := DispatchEventHandler{Executor: executor}
 
-	_, err := handler.Handle(validDispatchEventForHandler())
+	_, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err == nil {
 		t.Fatal("expected infrastructure error, got nil")
 	}
@@ -170,7 +171,7 @@ func TestHandleInvalidExecutionResultReturnsError(t *testing.T) {
 	}
 	handler := DispatchEventHandler{Executor: executor}
 
-	_, err := handler.Handle(validDispatchEventForHandler())
+	_, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err == nil {
 		t.Fatal("expected error for invalid execution result, got nil")
 	}
@@ -187,7 +188,7 @@ func TestHandleSuccessfulExecutionPublishesWorkerResultEvent(t *testing.T) {
 	}
 	event := validDispatchEventForHandler()
 
-	result, err := handler.Handle(event)
+	result, err := handler.Handle(context.Background(), event)
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -213,7 +214,7 @@ func TestHandleRetryableFailurePublishesWorkerResultEvent(t *testing.T) {
 		ResultProducer: producer,
 	}
 
-	_, err := handler.Handle(validDispatchEventForHandler())
+	_, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -236,7 +237,7 @@ func TestHandleTerminalFailurePublishesWorkerResultEvent(t *testing.T) {
 		ResultProducer: producer,
 	}
 
-	_, err := handler.Handle(validDispatchEventForHandler())
+	_, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -256,7 +257,7 @@ func TestHandlePublishesWorkerResultEventWithCustomWorkerName(t *testing.T) {
 		WorkerName:     "custom-worker-1",
 	}
 
-	_, err := handler.Handle(validDispatchEventForHandler())
+	_, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -273,7 +274,7 @@ func TestHandleDefaultsBlankWorkerNameToKernelqGoWorker(t *testing.T) {
 		WorkerName:     "   ",
 	}
 
-	_, err := handler.Handle(validDispatchEventForHandler())
+	_, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -291,7 +292,7 @@ func TestHandleReturnsResultProducerPublishError(t *testing.T) {
 		ResultProducer: producer,
 	}
 
-	result, err := handler.Handle(validDispatchEventForHandler())
+	result, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err == nil {
 		t.Fatal("expected publish error, got nil")
 	}
@@ -312,7 +313,7 @@ func TestHandleReturnsExecutionResultWhenResultProducerNil(t *testing.T) {
 		ResultProducer: nil,
 	}
 
-	result, err := handler.Handle(validDispatchEventForHandler())
+	result, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err != nil {
 		t.Fatalf("expected success without producer, got error: %v", err)
 	}

@@ -19,7 +19,7 @@ type slowExecutionHandler struct {
 	result worker.ExecutionResult
 }
 
-func (h *slowExecutionHandler) Handle(event worker.DispatchEvent) (worker.ExecutionResult, error) {
+func (h *slowExecutionHandler) Handle(ctx context.Context, event worker.DispatchEvent) (worker.ExecutionResult, error) {
 	time.Sleep(h.delay)
 	return h.result, nil
 }

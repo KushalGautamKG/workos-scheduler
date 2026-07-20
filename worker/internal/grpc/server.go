@@ -26,7 +26,7 @@ const (
 // ExecutionHandler is the internal worker boundary used by the gRPC server.
 // *worker.DispatchEventHandler satisfies this interface.
 type ExecutionHandler interface {
-	Handle(event worker.DispatchEvent) (worker.ExecutionResult, error)
+	Handle(ctx context.Context, event worker.DispatchEvent) (worker.ExecutionResult, error)
 }
 
 // Server implements pb.WorkerExecutionServiceServer without starting a listener.
@@ -42,8 +42,6 @@ func (s *Server) Execute(
 	ctx context.Context,
 	req *pb.ExecuteRequest,
 ) (*pb.ExecuteResponse, error) {
-	_ = ctx
-
 	if s == nil || s.Handler == nil {
 		return nil, status.Error(codes.Unimplemented, "execution handler not wired")
 	}
@@ -64,11 +62,11 @@ func (s *Server) Execute(
 		Attempt:   int(req.GetAttempt()),
 	}
 
-	result, err := s.Handler.Handle(event)
+	result, err := s.Handler.Handle(ctx, event)
 	if err != nil {
 		return &pb.ExecuteResponse{
-			Status:         StatusFailed,
-			ErrorMessage:   err.Error(),
+			Status:           StatusFailed,
+			ErrorMessage:     err.Error(),
 			DuplicateSkipped: false,
 		}, nil
 	}

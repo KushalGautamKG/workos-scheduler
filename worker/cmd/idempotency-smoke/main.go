@@ -79,11 +79,11 @@ func main() {
 		Attempt:   attempt,
 	}
 
-	first, err := handler.Handle(event)
+	first, err := handler.Handle(context.Background(), event)
 	if err != nil {
 		fail(fmt.Sprintf("first handle: %v", err))
 	}
-	second, err := handler.Handle(event)
+	second, err := handler.Handle(context.Background(), event)
 	if err != nil {
 		fail(fmt.Sprintf("second handle: %v", err))
 	}

@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync/atomic"
@@ -78,7 +79,7 @@ func TestHandleNoStoreConfiguredExecutorRunsNormally(t *testing.T) {
 	executor := &countingExecutor{}
 	handler := &DispatchEventHandler{Executor: executor}
 
-	result, err := handler.Handle(validDispatchEventForHandler())
+	result, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestHandleFirstClaimExecutorRunsOnce(t *testing.T) {
 		IdempotencyTTL:   time.Hour,
 	}
 
-	result, err := handler.Handle(validDispatchEventForHandler())
+	result, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -123,12 +124,12 @@ func TestHandleDuplicateClaimExecutorNotCalled(t *testing.T) {
 	}
 	event := validDispatchEventForHandler()
 
-	first, err := handler.Handle(event)
+	first, err := handler.Handle(context.Background(), event)
 	if err != nil || first.Status != ExecutionSucceeded {
 		t.Fatalf("first: status=%q err=%v", first.Status, err)
 	}
 
-	second, err := handler.Handle(event)
+	second, err := handler.Handle(context.Background(), event)
 	if err != nil {
 		t.Fatalf("duplicate should not error: %v", err)
 	}
@@ -146,8 +147,8 @@ func TestHandleDuplicateResultMarkedSkippedNotFailed(t *testing.T) {
 		IdempotencyStore: newFakeClaimStore(),
 	}
 	event := validDispatchEventForHandler()
-	_, _ = handler.Handle(event)
-	result, err := handler.Handle(event)
+	_, _ = handler.Handle(context.Background(), event)
+	result, err := handler.Handle(context.Background(), event)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -165,9 +166,9 @@ func TestHandleDuplicateCounterIncrements(t *testing.T) {
 		IdempotencyStore: newFakeClaimStore(),
 	}
 	event := validDispatchEventForHandler()
-	_, _ = handler.Handle(event)
-	_, _ = handler.Handle(event)
-	_, _ = handler.Handle(event)
+	_, _ = handler.Handle(context.Background(), event)
+	_, _ = handler.Handle(context.Background(), event)
+	_, _ = handler.Handle(context.Background(), event)
 
 	if handler.DuplicateExecutions() != 2 {
 		t.Fatalf("duplicate_executions = %d, want 2", handler.DuplicateExecutions())
@@ -186,7 +187,7 @@ func TestHandleStoreErrorExecutorNotCalled(t *testing.T) {
 		IdempotencyStore: store,
 	}
 
-	_, err := handler.Handle(validDispatchEventForHandler())
+	_, err := handler.Handle(context.Background(), validDispatchEventForHandler())
 	if err == nil {
 		t.Fatal("expected store error")
 	}
@@ -206,7 +207,7 @@ func TestHandleStoreErrorIncrementsIdempotencyErrors(t *testing.T) {
 		IdempotencyStore: store,
 	}
 
-	_, _ = handler.Handle(validDispatchEventForHandler())
+	_, _ = handler.Handle(context.Background(), validDispatchEventForHandler())
 	if handler.IdempotencyErrors() != 1 {
 		t.Fatalf("idempotency_errors = %d, want 1", handler.IdempotencyErrors())
 	}
@@ -227,10 +228,10 @@ func TestHandleDifferentAttemptsExecuteSeparately(t *testing.T) {
 	second := validDispatchEventForHandler()
 	second.Attempt = 1
 
-	if _, err := handler.Handle(first); err != nil {
+	if _, err := handler.Handle(context.Background(), first); err != nil {
 		t.Fatalf("attempt 0: %v", err)
 	}
-	if _, err := handler.Handle(second); err != nil {
+	if _, err := handler.Handle(context.Background(), second); err != nil {
 		t.Fatalf("attempt 1: %v", err)
 	}
 	if executor.calls.Load() != 2 {
@@ -250,10 +251,10 @@ func TestHandleDifferentJobIDsExecuteSeparately(t *testing.T) {
 	b := validDispatchEventForHandler()
 	b.JobID = "job-b"
 
-	if _, err := handler.Handle(a); err != nil {
+	if _, err := handler.Handle(context.Background(), a); err != nil {
 		t.Fatalf("job-a: %v", err)
 	}
-	if _, err := handler.Handle(b); err != nil {
+	if _, err := handler.Handle(context.Background(), b); err != nil {
 		t.Fatalf("job-b: %v", err)
 	}
 	if executor.calls.Load() != 2 {
@@ -269,8 +270,8 @@ func TestHandleDuplicateDoesNotPublishResult(t *testing.T) {
 		IdempotencyStore: newFakeClaimStore(),
 	}
 	event := validDispatchEventForHandler()
-	_, _ = handler.Handle(event)
-	_, err := handler.Handle(event)
+	_, _ = handler.Handle(context.Background(), event)
+	_, err := handler.Handle(context.Background(), event)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

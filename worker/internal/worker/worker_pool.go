@@ -6,6 +6,7 @@
 package worker
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -122,7 +123,7 @@ func (pool *WorkerPool) runWorker(workerID string) {
 	defer pool.wg.Done()
 
 	for item := range pool.workCh {
-		_, err := pool.handler.Handle(item.Event)
+		_, err := pool.handler.Handle(context.Background(), item.Event)
 		if err != nil {
 			if pool.onError != nil {
 				pool.onError(workerID, item, err)
