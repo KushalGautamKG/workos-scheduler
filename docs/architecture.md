@@ -48,6 +48,7 @@ The worker plane prioritizes throughput, low latency, and resource efficiency. I
 - **Redis**: Fast **idempotency / duplicate-suppression** boundary — dispatch + execution + result layers live (**Day 96–114**). **Claim-before-completion** gap documented (**Day 115**); execution recovery (lease + watchdog) deferred — **[execution-recovery.md](design/execution-recovery.md)**. Postgres stays source of truth.
 - **Workers**: Go processes that consume from Kafka and execute tasks
 - **Internal gRPC (Day 116–118):** `WorkerExecutionService` + **`grpc.health.v1`** readiness lifecycle and env-based config — **[grpc-lifecycle.md](design/grpc-lifecycle.md)**. Kafka remains the async dispatch mechanism. Graceful shutdown + health prepare Kubernetes probes; no production RPC routing yet.
+- **OpenTelemetry (Day 119):** shared tracer provider foundation (stdout/none exporters, global registration) — **[opentelemetry.md](design/opentelemetry.md)**. Spans and OTLP come later; metrics remain Prometheus.
 
 ## FIFO Scheduling Policy
 

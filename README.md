@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 118:** gRPC **health + lifecycle** (SERVING/NOT_SERVING, env config, graceful shutdown) — Kubernetes-ready foundation — **[docs/design/grpc-lifecycle.md](docs/design/grpc-lifecycle.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 119:** shared **OpenTelemetry tracer provider** (stdout/none; no spans/OTLP yet) — **[docs/design/opentelemetry.md](docs/design/opentelemetry.md)**.
 
 ## MVP Status
 
@@ -48,8 +48,10 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/design/execution-recovery.md](docs/design/execution-recovery.md) | Claim-before-completion gap; lease + watchdog (future) |
 | [docs/design/grpc-worker-execution.md](docs/design/grpc-worker-execution.md) | Internal gRPC WorkerExecutionService (Days 116–117) |
 | [docs/design/grpc-lifecycle.md](docs/design/grpc-lifecycle.md) | gRPC health + readiness lifecycle (Day 118) |
+| [docs/design/opentelemetry.md](docs/design/opentelemetry.md) | Shared OTel tracer provider foundation (Day 119) |
 | [docs/benchmarks/day117-grpc-loopback.md](docs/benchmarks/day117-grpc-loopback.md) | Localhost gRPC loopback functional note (Day 117) |
 | [docs/benchmarks/day118-grpc-health.md](docs/benchmarks/day118-grpc-health.md) | gRPC health lifecycle functional note (Day 118) |
+| [docs/benchmarks/day119-otel-foundation.md](docs/benchmarks/day119-otel-foundation.md) | OTel provider init functional note (Day 119) |
 | [docs/benchmarks/day114-kafka-execution-replay.md](docs/benchmarks/day114-kafka-execution-replay.md) | Duplicate Kafka dispatch replay methodology (Day 114) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |

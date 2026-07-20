@@ -8,6 +8,8 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 **Internal gRPC (Day 116–118):** `WorkerExecutionService` listener + **`grpc.health.v1`** readiness (`SERVING` / `NOT_SERVING`). Config: `KERNELQ_GRPC_ADDR`, `KERNELQ_GRPC_SHUTDOWN_TIMEOUT`, `KERNELQ_GRPC_REQUEST_TIMEOUT`. Smokes: **`./worker/scripts/smoke_grpc_execute.sh`**, **`./worker/scripts/smoke_grpc_health.sh`**. Kafka remains dispatch. Lifecycle is Kubernetes-ready (probes later). Design: **[grpc-lifecycle.md](design/grpc-lifecycle.md)**.
 
+**OpenTelemetry (Day 119):** shared tracer provider (`worker/internal/telemetry`). Env: `KERNELQ_OTEL_ENABLED`, `KERNELQ_OTEL_SERVICE_NAME`, `KERNELQ_OTEL_EXPORTER` (`stdout`\|`none`). Globally registered in `cmd/grpc-server`; provider shutdown on exit. **No spans yet; OTLP deferred.** Design: **[opentelemetry.md](design/opentelemetry.md)**.
+
 | Path | Command |
 |------|---------|
 | **Success** | `./control_plane/scripts/smoke_full_completion.sh` |

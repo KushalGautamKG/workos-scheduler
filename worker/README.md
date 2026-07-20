@@ -26,6 +26,8 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 118 — gRPC lifecycle:** official **`grpc.health.v1`** readiness (**SERVING** / **NOT_SERVING**), centralized **`internal/config`** (`KERNELQ_GRPC_ADDR`, `KERNELQ_GRPC_SHUTDOWN_TIMEOUT`, `KERNELQ_GRPC_REQUEST_TIMEOUT`), graceful shutdown. Smoke: **`./worker/scripts/smoke_grpc_health.sh`**. Kubernetes-ready lifecycle foundation — **[grpc-lifecycle.md](../docs/design/grpc-lifecycle.md)**.
 
+**Day 119 — OpenTelemetry foundation:** shared tracer provider in **`internal/telemetry`** (`KERNELQ_OTEL_*`; exporters `stdout` \| `none`). Globally registered from **`cmd/grpc-server`**; graceful provider shutdown. **No spans yet; OTLP deferred.** — **[opentelemetry.md](../docs/design/opentelemetry.md)**.
+
 ## What exists today
 
 This is **foundation only**—not a running worker yet:
@@ -50,6 +52,7 @@ This is **foundation only**—not a running worker yet:
 | `cmd/grpc-execute` | Thin CLI client for loopback smoke |
 | `cmd/grpc-health` | Thin `grpc.health.v1` Check CLI (Day 118) |
 | `internal/config` | `KERNELQ_GRPC_*` parsing (Day 118) |
+| `internal/telemetry` | Shared OTel tracer provider (Day 119; stdout/none) |
 | `scripts/smoke_grpc_execute.sh` | Loopback SUCCESS → DUPLICATE_SKIPPED smoke (Day 117) |
 | `scripts/smoke_grpc_health.sh` | Health SERVING + clean SIGINT smoke (Day 118) |
 | `../proto/worker_execution.proto` | gRPC contract — regenerate with `make proto` |

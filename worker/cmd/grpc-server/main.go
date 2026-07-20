@@ -15,6 +15,7 @@ import (
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/config"
 	workergrpc "github.com/KushalGautamKG/workos-scheduler/worker/internal/grpc"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/grpc/pb"
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/worker"
 	"google.golang.org/grpc"
 )
@@ -35,6 +36,30 @@ func main() {
 	if err != nil {
 		log.Fatalf("load grpc config: %v", err)
 	}
+
+	otelCfg, err := telemetry.LoadConfig()
+	if err != nil {
+		log.Fatalf("load otel config: %v", err)
+	}
+	tracerProvider, err := telemetry.NewTracerProvider(context.Background(), otelCfg)
+	if err != nil {
+		log.Fatalf("otel tracer provider: %v", err)
+	}
+	fmt.Printf(
+		"event=otel_tracer_provider_start enabled=%t exporter=%s service=%s\n",
+		tracerProvider.Enabled(),
+		otelCfg.Exporter,
+		otelCfg.ServiceName,
+	)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
+			fmt.Printf("event=otel_tracer_provider_shutdown error=%q\n", err.Error())
+			return
+		}
+		fmt.Println("event=otel_tracer_provider_stopped")
+	}()
 
 	idempotencyStore, backend := buildIdempotencyStore()
 	handler := &worker.DispatchEventHandler{
