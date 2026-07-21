@@ -10,6 +10,10 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 **OpenTelemetry (Day 119–122):** shared tracer provider + **`worker.execute`** + **gRPC** + **Kafka** W3C header propagation. Smokes: **`./worker/scripts/smoke_worker_trace.sh`**, **`./worker/scripts/smoke_grpc_trace.sh`**, **`./worker/scripts/smoke_kafka_trace.sh`**. OTLP deferred (stdout). Design: **[kafka-tracing.md](design/kafka-tracing.md)**.
 
+**Containers (Day 123):** multi-stage images in **`deploy/docker/`**, Kubernetes manifests in **`deploy/kubernetes/`** (ConfigMap, Secret example, Deployments, Services, gRPC/HTTP probes, non-root). Smoke: **`./worker/scripts/smoke_container.sh`**. Cluster apply Day 124 — **[containerization.md](design/containerization.md)**.
+
+**Diagnosing `smoke_container` failure:** confirm Docker is running; rebuild with `docker build -f deploy/docker/Dockerfile.worker …`; ensure **`KERNELQ_GRPC_ADDR=0.0.0.0:50051`** inside the container (not `127.0.0.1`); check logs for `event=grpc_server_ready status=SERVING`.
+
 **Diagnosing `smoke_grpc_trace` failure:** leftover **`grpc-server`** on the port; **`KERNELQ_OTEL_ENABLED=true`** / **`KERNELQ_OTEL_EXPORTER=stdout`**; both sides use otelgrpc options.
 
 **Diagnosing `smoke_kafka_trace` failure:** confirm the global W3C propagator is installed (`NewTracerProvider`); producers inject **after** starting `kafka.publish`; consumers extract **before** starting `kafka.process`; unrelated Kafka headers are preserved; **`KERNELQ_OTEL_ENABLED=true`** and **`KERNELQ_OTEL_EXPORTER=stdout`** for local verification.
@@ -54,6 +58,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_worker_trace` | `success=true` — stdout contains `worker.execute` + job/status attrs |
 | `smoke_grpc_trace` | `success=true` — shared TraceID across gRPC client/server + `worker.execute` |
 | `smoke_kafka_trace` | `success=true` — shared TraceID across Kafka publish/process + `worker.execute` |
+| `smoke_container` | `success=true` — worker/control-plane images build; worker reaches SERVING; clean stop |
 | `scheduler_tick` | `published_count`, `duplicate_dispatches`, `errors_count`, `publish_errors_count` |
 | `duplicate_dispatch` | `job_id`, `attempt` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |

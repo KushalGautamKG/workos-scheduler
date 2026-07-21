@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kernelq-worker
+  namespace: kernelq
+  labels:
+    app.kubernetes.io/name: kernelq-worker
+    app.kubernetes.io/part-of: kernelq
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kernelq-worker
+  ports:
+    - name: grpc
+      port: 50051
+      targetPort: grpc
+      protocol: TCP

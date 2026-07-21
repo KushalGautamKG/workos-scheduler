@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kernelq-worker
+  namespace: kernelq
+  labels:
+    app.kubernetes.io/name: kernelq-worker
+    app.kubernetes.io/part-of: kernelq
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kernelq-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kernelq-worker
+        app.kubernetes.io/part-of: kernelq
+        app.kubernetes.io/component: worker
+    spec:
+      restartPolicy: Always
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      containers:
+        - name: grpc-server
+          image: kernelq-worker:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: grpc
+              containerPort: 50051
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: kernelq-config
+            - secretRef:
+                name: kernelq-secrets
+                optional: true
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          # Native gRPC probes (Kubernetes 1.24+). Empty service name = overall
+          # readiness from Day 118 grpc.health.v1 (SERVING / NOT_SERVING).
+          # Fallback for older clusters / local tools without grpc probes:
+          #   readinessProbe:
+          #     exec:
+          #       command: ["/usr/local/bin/grpc-health", "-addr", "127.0.0.1:50051"]
+          #     initialDelaySeconds: 2
+          #     periodSeconds: 5
+          startupProbe:
+            grpc:
+              port: 50051
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            grpc:
+              port: 50051
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            grpc:
+              port: 50051
+            periodSeconds: 10
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL

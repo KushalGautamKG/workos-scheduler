@@ -1,0 +1,36 @@
+# KernelQ Python control plane — multi-stage build (Day 123).
+# Build from repository root:
+#   docker build -f deploy/docker/Dockerfile.control-plane -t kernelq-control-plane .
+
+# --- Stage 1: dependencies ---
+FROM python:3.12-slim-bookworm AS builder
+
+WORKDIR /build
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY control_plane/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# --- Stage 2: runtime ---
+FROM python:3.12-slim-bookworm
+
+RUN groupadd --gid 65532 nonroot \
+    && useradd --uid 65532 --gid 65532 --shell /usr/sbin/nologin --create-home nonroot
+
+WORKDIR /app
+
+COPY --from=builder /install /usr/local
+COPY control_plane/ /app/control_plane/
+
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+USER nonroot:nonroot
+
+EXPOSE 8000
+
+CMD ["uvicorn", "control_plane.api:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -34,6 +34,8 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 122 — Kafka propagation:** W3C context in Kafka headers; **`kafka.publish`** / **`kafka.process`** → **`worker.execute`** → result **`kafka.publish`**. Missing/malformed headers never block work. Smoke: **`./worker/scripts/smoke_kafka_trace.sh`**. OTLP deferred — **[kafka-tracing.md](../docs/design/kafka-tracing.md)**.
 
+**Day 123 — containers:** multi-stage **`deploy/docker/Dockerfile.worker`** (default **`grpc-server`**, also ships **`consumer`**); Kubernetes manifests under **`deploy/kubernetes/`** with Day 118 gRPC probes. Smoke: **`./worker/scripts/smoke_container.sh`** — **[containerization.md](../docs/design/containerization.md)**.
+
 ## What exists today
 
 This is **foundation only**—not a running worker yet:
@@ -62,6 +64,7 @@ This is **foundation only**—not a running worker yet:
 | `scripts/smoke_worker_trace.sh` | stdout `worker.execute` smoke (Day 120) |
 | `scripts/smoke_grpc_trace.sh` | shared TraceID across gRPC + execute (Day 121) |
 | `scripts/smoke_kafka_trace.sh` | shared TraceID across Kafka + execute (Day 122) |
+| `scripts/smoke_container.sh` | Docker build + worker SERVING smoke (Day 123) |
 | `scripts/smoke_grpc_execute.sh` | Loopback SUCCESS → DUPLICATE_SKIPPED smoke (Day 117) |
 | `scripts/smoke_grpc_health.sh` | Health SERVING + clean SIGINT smoke (Day 118) |
 | `../proto/worker_execution.proto` | gRPC contract — regenerate with `make proto` |

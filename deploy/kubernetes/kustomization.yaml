@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: kernelq
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  # Copy secret.example.yaml → secret.yaml (do not commit real credentials), then:
+  # - secret.yaml
+  - worker-deployment.yaml
+  - worker-service.yaml
+  - control-plane-deployment.yaml
+  - control-plane-service.yaml
+
+images:
+  - name: kernelq-worker
+    newName: kernelq-worker
+    newTag: local
+  - name: kernelq-control-plane
+    newName: kernelq-control-plane
+    newTag: local

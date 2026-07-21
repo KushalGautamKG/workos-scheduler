@@ -1,0 +1,51 @@
+# KernelQ Go worker — multi-stage build (Day 123).
+# Build from repository root:
+#   docker build -f deploy/docker/Dockerfile.worker -t kernelq-worker .
+#
+# Default entrypoint is grpc-server (gRPC + Day 118 health). The Kafka consumer
+# binary is also present for the same image with a command override later.
+
+# --- Stage 1: build ---
+FROM golang:1.25-bookworm AS builder
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends librdkafka-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+
+COPY worker/go.mod worker/go.sum ./
+RUN go mod download
+
+COPY worker/ ./
+
+# CGO required by confluent-kafka-go (package worker links Kafka).
+ENV CGO_ENABLED=1
+RUN go build -trimpath -ldflags="-s -w" -o /out/grpc-server ./cmd/grpc-server \
+    && go build -trimpath -ldflags="-s -w" -o /out/grpc-health ./cmd/grpc-health \
+    && go build -trimpath -ldflags="-s -w" -o /out/consumer ./cmd/consumer
+
+# --- Stage 2: runtime ---
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates librdkafka1 \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --gid 65532 nonroot \
+    && useradd --uid 65532 --gid 65532 --shell /usr/sbin/nologin --create-home nonroot
+
+COPY --from=builder /out/grpc-server /usr/local/bin/grpc-server
+COPY --from=builder /out/grpc-health /usr/local/bin/grpc-health
+COPY --from=builder /out/consumer /usr/local/bin/consumer
+
+USER nonroot:nonroot
+
+# Containers must bind all interfaces (ConfigMap / smoke set this explicitly).
+ENV KERNELQ_GRPC_ADDR=0.0.0.0:50051 \
+    KERNELQ_OTEL_ENABLED=false \
+    KERNELQ_OTEL_EXPORTER=none \
+    KERNELQ_WORKER_IDEMPOTENCY_BACKEND=memory
+
+EXPOSE 50051
+
+ENTRYPOINT ["/usr/local/bin/grpc-server"]
