@@ -10,6 +10,10 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // DefaultWorkerCount is how many goroutines run jobs when WorkerCount is unset.
@@ -29,11 +33,15 @@ var ErrWorkerQueueFull = errors.New("worker queue full")
 //
 // Original Kafka fields are kept so execution failures can still publish
 // dead-letter events with the same metadata as the synchronous path.
+// Headers carry W3C trace context for kafka.process → worker.execute.
 type WorkItem struct {
 	Event         DispatchEvent
 	OriginalKey   string
 	OriginalValue []byte
 	SourceTopic   string
+	Headers       []kafka.Header
+	Partition     int32
+	Offset        int64
 }
 
 // WorkerPool runs DispatchHandler.Handle on a fixed number of goroutines.
@@ -44,6 +52,7 @@ type WorkerPool struct {
 	workerCount   int
 	queueCapacity int
 	handler       DispatchHandler
+	baseCtx       context.Context
 	workCh        chan WorkItem
 	wg            sync.WaitGroup
 
@@ -55,6 +64,7 @@ type WorkerPool struct {
 //
 // workerCount <= 0 uses DefaultWorkerCount (4).
 // queueCapacity <= 0 uses DefaultQueueCapacity (100).
+// baseCtx is the lifecycle context (cancellation); nil uses Background.
 func NewWorkerPool(
 	workerCount int,
 	queueCapacity int,
@@ -62,6 +72,29 @@ func NewWorkerPool(
 	onSuccess func(workerID string, item WorkItem),
 	onError func(workerID string, item WorkItem, err error),
 ) *WorkerPool {
+	return NewWorkerPoolWithContext(
+		context.Background(),
+		workerCount,
+		queueCapacity,
+		handler,
+		onSuccess,
+		onError,
+	)
+}
+
+// NewWorkerPoolWithContext is like NewWorkerPool but ties workers to baseCtx
+// for cancellation and as the parent for ExtractKafkaContext.
+func NewWorkerPoolWithContext(
+	baseCtx context.Context,
+	workerCount int,
+	queueCapacity int,
+	handler DispatchHandler,
+	onSuccess func(workerID string, item WorkItem),
+	onError func(workerID string, item WorkItem, err error),
+) *WorkerPool {
+	if baseCtx == nil {
+		baseCtx = context.Background()
+	}
 	if workerCount <= 0 {
 		workerCount = DefaultWorkerCount
 	}
@@ -73,6 +106,7 @@ func NewWorkerPool(
 		workerCount:   workerCount,
 		queueCapacity: queueCapacity,
 		handler:       handler,
+		baseCtx:       baseCtx,
 		workCh:        make(chan WorkItem, queueCapacity),
 		onSuccess:     onSuccess,
 		onError:       onError,
@@ -123,13 +157,24 @@ func (pool *WorkerPool) runWorker(workerID string) {
 	defer pool.wg.Done()
 
 	for item := range pool.workCh {
-		_, err := pool.handler.Handle(context.Background(), item.Event)
+		parentCtx := telemetry.ExtractKafkaContext(pool.baseCtx, item.Headers)
+		topic := item.SourceTopic
+		if topic == "" {
+			topic = "unknown"
+		}
+		ctx, span := telemetry.StartKafkaProcessSpan(parentCtx, topic, item.Partition, item.Offset)
+
+		_, err := pool.handler.Handle(ctx, item.Event)
 		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			span.End()
 			if pool.onError != nil {
 				pool.onError(workerID, item, err)
 			}
 			continue
 		}
+		span.End()
 		if pool.onSuccess != nil {
 			pool.onSuccess(workerID, item)
 		}

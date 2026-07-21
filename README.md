@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 121:** automatic **gRPC** OpenTelemetry propagation (`otelgrpc`) connects client → server → **`worker.execute`** in one trace — **[docs/design/grpc-tracing.md](docs/design/grpc-tracing.md)**. Kafka header propagation is Day 122; OTLP remains deferred (stdout verification).
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 122:** Kafka **W3C** trace propagation (`kafka.publish` / `kafka.process` → **`worker.execute`** → result publish) — **[docs/design/kafka-tracing.md](docs/design/kafka-tracing.md)**. OTLP remains deferred (stdout verification).
 
 ## MVP Status
 
@@ -51,11 +51,13 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/design/opentelemetry.md](docs/design/opentelemetry.md) | Shared OTel tracer provider foundation (Day 119) |
 | [docs/design/worker-tracing.md](docs/design/worker-tracing.md) | worker.execute spans (Day 120) |
 | [docs/design/grpc-tracing.md](docs/design/grpc-tracing.md) | gRPC client/server trace propagation (Day 121) |
+| [docs/design/kafka-tracing.md](docs/design/kafka-tracing.md) | Kafka header trace propagation (Day 122) |
 | [docs/benchmarks/day117-grpc-loopback.md](docs/benchmarks/day117-grpc-loopback.md) | Localhost gRPC loopback functional note (Day 117) |
 | [docs/benchmarks/day118-grpc-health.md](docs/benchmarks/day118-grpc-health.md) | gRPC health lifecycle functional note (Day 118) |
 | [docs/benchmarks/day119-otel-foundation.md](docs/benchmarks/day119-otel-foundation.md) | OTel provider init functional note (Day 119) |
 | [docs/benchmarks/day120-worker-tracing.md](docs/benchmarks/day120-worker-tracing.md) | worker.execute stdout smoke note (Day 120) |
 | [docs/benchmarks/day121-grpc-tracing.md](docs/benchmarks/day121-grpc-tracing.md) | gRPC shared-trace verification note (Day 121) |
+| [docs/benchmarks/day122-kafka-tracing.md](docs/benchmarks/day122-kafka-tracing.md) | Kafka shared-trace verification note (Day 122) |
 | [docs/benchmarks/day114-kafka-execution-replay.md](docs/benchmarks/day114-kafka-execution-replay.md) | Duplicate Kafka dispatch replay methodology (Day 114) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |

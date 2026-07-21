@@ -30,7 +30,9 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 120 — execution spans:** **`worker.execute`** around `DispatchEventHandler` with `job.id` / `job.attempt` / `execution.status` (+ error recording). Smoke: **`./worker/scripts/smoke_worker_trace.sh`**.
 
-**Day 121 — gRPC propagation:** official **`otelgrpc`** StatsHandlers on server dial/listen; W3C context in metadata; RPC spans nest **`worker.execute`**. Smoke: **`./worker/scripts/smoke_grpc_trace.sh`**. Kafka headers next (Day 122); OTLP deferred — **[grpc-tracing.md](../docs/design/grpc-tracing.md)**.
+**Day 121 — gRPC propagation:** official **`otelgrpc`** StatsHandlers on server dial/listen; W3C context in metadata; RPC spans nest **`worker.execute`**. Smoke: **`./worker/scripts/smoke_grpc_trace.sh`**.
+
+**Day 122 — Kafka propagation:** W3C context in Kafka headers; **`kafka.publish`** / **`kafka.process`** → **`worker.execute`** → result **`kafka.publish`**. Missing/malformed headers never block work. Smoke: **`./worker/scripts/smoke_kafka_trace.sh`**. OTLP deferred — **[kafka-tracing.md](../docs/design/kafka-tracing.md)**.
 
 ## What exists today
 
@@ -56,9 +58,10 @@ This is **foundation only**—not a running worker yet:
 | `cmd/grpc-execute` | Thin CLI client for loopback smoke |
 | `cmd/grpc-health` | Thin `grpc.health.v1` Check CLI (Day 118) |
 | `internal/config` | `KERNELQ_GRPC_*` parsing (Day 118) |
-| `internal/telemetry` | OTel provider + `worker.execute` + otelgrpc helpers (Days 119–121) |
+| `internal/telemetry` | OTel provider + execute + otelgrpc + Kafka header helpers (Days 119–122) |
 | `scripts/smoke_worker_trace.sh` | stdout `worker.execute` smoke (Day 120) |
 | `scripts/smoke_grpc_trace.sh` | shared TraceID across gRPC + execute (Day 121) |
+| `scripts/smoke_kafka_trace.sh` | shared TraceID across Kafka + execute (Day 122) |
 | `scripts/smoke_grpc_execute.sh` | Loopback SUCCESS → DUPLICATE_SKIPPED smoke (Day 117) |
 | `scripts/smoke_grpc_health.sh` | Health SERVING + clean SIGINT smoke (Day 118) |
 | `../proto/worker_execution.proto` | gRPC contract — regenerate with `make proto` |

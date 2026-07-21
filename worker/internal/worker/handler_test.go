@@ -47,7 +47,8 @@ type fakeResultProducer struct {
 	err       error
 }
 
-func (producer *fakeResultProducer) PublishResult(event WorkerResultEvent) error {
+func (producer *fakeResultProducer) PublishResult(ctx context.Context, event WorkerResultEvent) error {
+	_ = ctx
 	if producer.err != nil {
 		return producer.err
 	}

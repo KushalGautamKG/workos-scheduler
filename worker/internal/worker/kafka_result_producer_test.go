@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -18,7 +19,7 @@ func TestPublishResultSendsMessageToResultsTopic(t *testing.T) {
 	fakeClient := &fakeKafkaProducerClient{}
 	producer := newTestKafkaResultProducer(fakeClient)
 
-	err := producer.PublishResult(validWorkerResultEvent())
+	err := producer.PublishResult(context.Background(), validWorkerResultEvent())
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -38,7 +39,7 @@ func TestPublishResultUsesJobIDAsKafkaKey(t *testing.T) {
 	producer := newTestKafkaResultProducer(fakeClient)
 	event := validWorkerResultEvent()
 
-	err := producer.PublishResult(event)
+	err := producer.PublishResult(context.Background(), event)
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -53,7 +54,7 @@ func TestPublishResultValueContainsExpectedJSONFields(t *testing.T) {
 	producer := newTestKafkaResultProducer(fakeClient)
 	event := validWorkerResultEvent()
 
-	err := producer.PublishResult(event)
+	err := producer.PublishResult(context.Background(), event)
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -80,7 +81,7 @@ func TestPublishResultWaitsForDelivery(t *testing.T) {
 	fakeClient := &fakeKafkaProducerClient{}
 	producer := newTestKafkaResultProducer(fakeClient)
 
-	err := producer.PublishResult(validWorkerResultEvent())
+	err := producer.PublishResult(context.Background(), validWorkerResultEvent())
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestPublishResultReturnsErrorForInvalidEventWithoutProducing(t *testing.T) 
 	event := validWorkerResultEvent()
 	event.JobID = "   "
 
-	err := producer.PublishResult(event)
+	err := producer.PublishResult(context.Background(), event)
 	if err == nil {
 		t.Fatal("expected validation error, got nil")
 	}
@@ -119,7 +120,7 @@ func TestPublishResultReturnsProduceError(t *testing.T) {
 	fakeClient := &fakeKafkaProducerClient{produceErr: expectedErr}
 	producer := newTestKafkaResultProducer(fakeClient)
 
-	err := producer.PublishResult(validWorkerResultEvent())
+	err := producer.PublishResult(context.Background(), validWorkerResultEvent())
 	if err == nil {
 		t.Fatal("expected produce error, got nil")
 	}
@@ -136,7 +137,7 @@ func TestPublishResultRespectsCustomTopic(t *testing.T) {
 		Topic:    customTopic,
 	}
 
-	err := producer.PublishResult(validWorkerResultEvent())
+	err := producer.PublishResult(context.Background(), validWorkerResultEvent())
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}

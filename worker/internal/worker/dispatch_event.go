@@ -75,3 +75,19 @@ func ParseDispatchEvent(data []byte) (DispatchEvent, error) {
 
 	return event, nil
 }
+
+// Validate is a method alias for ValidateDispatchEvent.
+func (event DispatchEvent) Validate() error {
+	return ValidateDispatchEvent(event)
+}
+
+// ToJSON encodes the dispatch event as Kafka message value bytes.
+func (event DispatchEvent) ToJSON() ([]byte, error) {
+	if err := event.Validate(); err != nil {
+		return nil, err
+	}
+	return json.Marshal(event)
+}
+
+// DispatchTopic is the Kafka topic for runnable worker dispatch events.
+const DispatchTopic = "kernelq.jobs.dispatch"

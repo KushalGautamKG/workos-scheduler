@@ -80,18 +80,29 @@ type KafkaConsumer struct {
 }
 
 // ProcessKafkaMessage handles one record from the Kafka client.
-func (c KafkaConsumer) ProcessKafkaMessage(msg *kafka.Message) error {
+func (c KafkaConsumer) ProcessKafkaMessage(ctx context.Context, msg *kafka.Message) error {
 	if msg == nil {
 		return fmt.Errorf("kafka message is nil")
 	}
-
-	// Map broker record fields onto our simple Message type.
-	message := Message{
-		Key:   string(msg.Key),
-		Value: msg.Value,
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
-	if err := c.Runner.ProcessMessage(message); err != nil {
+	var offset int64
+	if msg.TopicPartition.Offset >= 0 {
+		offset = int64(msg.TopicPartition.Offset)
+	}
+
+	message := Message{
+		Key:       string(msg.Key),
+		Value:     msg.Value,
+		Headers:   append([]kafka.Header(nil), msg.Headers...),
+		Topic:     sourceTopicFromMessage(msg),
+		Partition: msg.TopicPartition.Partition,
+		Offset:    offset,
+	}
+
+	if err := c.Runner.ProcessMessage(ctx, message); err != nil {
 		return err
 	}
 
@@ -115,7 +126,8 @@ func (c *KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 	}
 
 	var pool *WorkerPool
-	pool = NewWorkerPool(
+	pool = NewWorkerPoolWithContext(
+		ctx,
 		c.WorkerCount,
 		c.QueueCapacity,
 		c.Runner.Handler,
@@ -174,11 +186,19 @@ func (c *KafkaConsumer) enqueueKafkaMessage(pool *WorkerPool, msg *kafka.Message
 		return
 	}
 
+	var offset int64
+	if msg.TopicPartition.Offset >= 0 {
+		offset = int64(msg.TopicPartition.Offset)
+	}
+
 	item := WorkItem{
 		Event:         event,
 		OriginalKey:   string(msg.Key),
 		OriginalValue: msg.Value,
 		SourceTopic:   sourceTopicFromMessage(msg),
+		Headers:       append([]kafka.Header(nil), msg.Headers...),
+		Partition:     msg.TopicPartition.Partition,
+		Offset:        offset,
 	}
 
 	if err := pool.Enqueue(item); err != nil {

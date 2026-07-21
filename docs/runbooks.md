@@ -8,9 +8,11 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 **Internal gRPC (Day 116–118):** `WorkerExecutionService` listener + **`grpc.health.v1`** readiness (`SERVING` / `NOT_SERVING`). Config: `KERNELQ_GRPC_ADDR`, `KERNELQ_GRPC_SHUTDOWN_TIMEOUT`, `KERNELQ_GRPC_REQUEST_TIMEOUT`. Smokes: **`./worker/scripts/smoke_grpc_execute.sh`**, **`./worker/scripts/smoke_grpc_health.sh`**. Kafka remains dispatch. Lifecycle is Kubernetes-ready (probes later). Design: **[grpc-lifecycle.md](design/grpc-lifecycle.md)**.
 
-**OpenTelemetry (Day 119–121):** shared tracer provider + **`worker.execute`** + automatic **gRPC** propagation (`otelgrpc`). Smokes: **`./worker/scripts/smoke_worker_trace.sh`**, **`./worker/scripts/smoke_grpc_trace.sh`**. Kafka headers Day 122; OTLP deferred (stdout). Design: **[grpc-tracing.md](design/grpc-tracing.md)**.
+**OpenTelemetry (Day 119–122):** shared tracer provider + **`worker.execute`** + **gRPC** + **Kafka** W3C header propagation. Smokes: **`./worker/scripts/smoke_worker_trace.sh`**, **`./worker/scripts/smoke_grpc_trace.sh`**, **`./worker/scripts/smoke_kafka_trace.sh`**. OTLP deferred (stdout). Design: **[kafka-tracing.md](design/kafka-tracing.md)**.
 
-**Diagnosing `smoke_grpc_trace` failure:** check for a leftover **`grpc-server`** holding the port (`lsof -nP -iTCP:<port> -sTCP:LISTEN`); confirm **`KERNELQ_OTEL_ENABLED=true`** and **`KERNELQ_OTEL_EXPORTER=stdout`** on both client and server; confirm both use otelgrpc dial/server options.
+**Diagnosing `smoke_grpc_trace` failure:** leftover **`grpc-server`** on the port; **`KERNELQ_OTEL_ENABLED=true`** / **`KERNELQ_OTEL_EXPORTER=stdout`**; both sides use otelgrpc options.
+
+**Diagnosing `smoke_kafka_trace` failure:** confirm the global W3C propagator is installed (`NewTracerProvider`); producers inject **after** starting `kafka.publish`; consumers extract **before** starting `kafka.process`; unrelated Kafka headers are preserved; **`KERNELQ_OTEL_ENABLED=true`** and **`KERNELQ_OTEL_EXPORTER=stdout`** for local verification.
 
 | Path | Command |
 |------|---------|
@@ -51,6 +53,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_grpc_health` | `success=true` — health `SERVING`, clean SIGINT shutdown |
 | `smoke_worker_trace` | `success=true` — stdout contains `worker.execute` + job/status attrs |
 | `smoke_grpc_trace` | `success=true` — shared TraceID across gRPC client/server + `worker.execute` |
+| `smoke_kafka_trace` | `success=true` — shared TraceID across Kafka publish/process + `worker.execute` |
 | `scheduler_tick` | `published_count`, `duplicate_dispatches`, `errors_count`, `publish_errors_count` |
 | `duplicate_dispatch` | `job_id`, `attempt` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |

@@ -90,7 +90,7 @@ func (handler *DispatchEventHandler) handle(
 	ctx context.Context,
 	event DispatchEvent,
 ) (ExecutionResult, error) {
-	_ = ctx
+	// ctx carries kafka.process (or caller) span into worker.execute / result publish.
 
 	// Step 1: ensure an executor is wired.
 	if handler.Executor == nil {
@@ -164,7 +164,7 @@ func (handler *DispatchEventHandler) handle(
 		}
 
 		resultEvent := NewWorkerResultEvent(event.JobID, result, workerName)
-		if err := handler.ResultProducer.PublishResult(resultEvent); err != nil {
+		if err := handler.ResultProducer.PublishResult(ctx, resultEvent); err != nil {
 			// Execution succeeded from the executor's perspective, but we could
 			// not hand the outcome to Kafka—return the result plus the error.
 			return result, err

@@ -48,7 +48,7 @@ The worker plane prioritizes throughput, low latency, and resource efficiency. I
 - **Redis**: Fast **idempotency / duplicate-suppression** boundary — dispatch + execution + result layers live (**Day 96–114**). **Claim-before-completion** gap documented (**Day 115**); execution recovery (lease + watchdog) deferred — **[execution-recovery.md](design/execution-recovery.md)**. Postgres stays source of truth.
 - **Workers**: Go processes that consume from Kafka and execute tasks
 - **Internal gRPC (Day 116–118):** `WorkerExecutionService` + **`grpc.health.v1`** readiness lifecycle and env-based config — **[grpc-lifecycle.md](design/grpc-lifecycle.md)**. Kafka remains the async dispatch mechanism. Graceful shutdown + health prepare Kubernetes probes; no production RPC routing yet.
-- **OpenTelemetry (Day 119–121):** shared tracer provider + **`worker.execute`** spans + automatic **gRPC** client/server propagation (`otelgrpc`, W3C metadata) — **[grpc-tracing.md](design/grpc-tracing.md)**. Kafka header propagation is Day 122; OTLP deferred (stdout verification); metrics remain Prometheus.
+- **OpenTelemetry (Day 119–122):** shared tracer provider + **`worker.execute`** + **gRPC** (`otelgrpc`) + **Kafka** W3C header propagation (`kafka.publish` / `kafka.process`) — **[kafka-tracing.md](design/kafka-tracing.md)**. Payloads are not traced; missing headers do not block processing. OTLP deferred (stdout verification); metrics remain Prometheus.
 
 ## FIFO Scheduling Policy
 

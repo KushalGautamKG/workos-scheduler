@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/worker"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"github.com/redis/go-redis/v9"
@@ -145,6 +146,30 @@ func buildIdempotencyStore() (worker.IdempotencyStore, string, error) {
 }
 
 func main() {
+	otelCfg, err := telemetry.LoadConfig()
+	if err != nil {
+		log.Fatalf("load otel config: %v", err)
+	}
+	tracerProvider, err := telemetry.NewTracerProvider(context.Background(), otelCfg)
+	if err != nil {
+		log.Fatalf("otel tracer provider: %v", err)
+	}
+	fmt.Printf(
+		"event=otel_tracer_provider_start enabled=%t exporter=%s service=%s\n",
+		tracerProvider.Enabled(),
+		otelCfg.Exporter,
+		otelCfg.ServiceName,
+	)
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
+			fmt.Printf("event=otel_tracer_provider_shutdown error=%q\n", err.Error())
+			return
+		}
+		fmt.Println("event=otel_tracer_provider_stopped")
+	}()
+
 	groupID := strings.TrimSpace(os.Getenv("KERNELQ_KAFKA_GROUP_ID"))
 	if groupID == "" {
 		groupID = consumerGroupID

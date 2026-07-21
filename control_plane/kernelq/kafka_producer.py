@@ -84,20 +84,30 @@ class KafkaJobProducer:
             # Real Confluent client — connects on first produce/flush.
             self._producer = Producer({"bootstrap.servers": bootstrap_servers})
 
-    def publish_dispatch_event(self, event: DispatchEvent) -> None:
+    def publish_dispatch_event(
+        self,
+        event: DispatchEvent,
+        headers: list[tuple[str, bytes]] | None = None,
+    ) -> None:
         """
         Publish one dispatch event to ``kernelq.jobs.dispatch``.
 
         - **Key** = ``job_id`` (keeps all events for one job on the same
           partition when partition count > 1).
         - **Value** = JSON from ``event.to_json()``.
+        - **headers** = optional Kafka headers (W3C ``traceparent`` when the
+          caller injects OpenTelemetry context — Day 122). Payload schema is
+          unchanged; tracing never lives inside the JSON body.
         - **flush()** waits until the broker acks (simple, synchronous feel).
         """
-        self._producer.produce(
-            DISPATCH_TOPIC,
-            key=event.job_id,
-            value=event.to_json(),
-        )
+        produce_kwargs: dict[str, Any] = {
+            "topic": DISPATCH_TOPIC,
+            "key": event.job_id,
+            "value": event.to_json(),
+        }
+        if headers:
+            produce_kwargs["headers"] = headers
+        self._producer.produce(**produce_kwargs)
         # Block until outstanding messages are delivered (or timeout).
         # Keeps the first version easy to reason about; async batching later.
         self._producer.flush()

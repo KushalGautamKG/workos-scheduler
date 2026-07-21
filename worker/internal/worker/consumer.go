@@ -8,15 +8,24 @@ package worker
 import (
 	"context"
 	"fmt"
+
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
+	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
+	"go.opentelemetry.io/otel/codes"
 )
 
 // Message is one record the worker received from a broker (or a test fake).
 //
 // Key is usually the job_id (Kafka message key from the Python producer).
 // Value is the raw JSON body (DispatchEvent bytes).
+// Headers carry W3C trace context (and other non-payload metadata).
 type Message struct {
-	Key   string
-	Value []byte
+	Key       string
+	Value     []byte
+	Headers   []kafka.Header
+	Topic     string
+	Partition int32
+	Offset    int64
 }
 
 // DispatchHandler runs business logic for one validated dispatch event.
@@ -39,22 +48,39 @@ type ConsumerRunner struct {
 // ProcessMessage is the single entry point for one dispatch message.
 //
 // Steps:
-//  1. Parse and validate JSON (ParseDispatchEvent).
-//  2. Ensure a handler is configured.
-//  3. Call Handler.Handle with the validated event.
-func (runner ConsumerRunner) ProcessMessage(message Message) error {
-	// Turn broker bytes into a typed, validated DispatchEvent.
+//  1. Extract remote trace context from Kafka headers (safe if missing).
+//  2. Start kafka.process span.
+//  3. Parse and validate JSON (ParseDispatchEvent).
+//  4. Call Handler.Handle with the process span context.
+func (runner ConsumerRunner) ProcessMessage(ctx context.Context, message Message) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	parentCtx := telemetry.ExtractKafkaContext(ctx, message.Headers)
+	topic := message.Topic
+	if topic == "" {
+		topic = "unknown"
+	}
+	ctx, span := telemetry.StartKafkaProcessSpan(parentCtx, topic, message.Partition, message.Offset)
+	defer span.End()
+
 	event, err := ParseDispatchEvent(message.Value)
 	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 
 	if runner.Handler == nil {
-		return fmt.Errorf("dispatch handler is not configured")
+		err := fmt.Errorf("dispatch handler is not configured")
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return err
 	}
 
-	// Hand off to execution logic (real or test fake).
-	if _, err := runner.Handler.Handle(context.Background(), event); err != nil {
+	if _, err := runner.Handler.Handle(ctx, event); err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return err
 	}
 

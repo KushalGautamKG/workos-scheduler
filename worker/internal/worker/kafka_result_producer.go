@@ -6,9 +6,11 @@
 package worker
 
 import (
+	"context"
 	"fmt"
 	"time"
 
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
 
@@ -42,46 +44,69 @@ func NewKafkaResultProducer(bootstrapServers string) (*KafkaResultProducer, erro
 
 // PublishResult validates, JSON-encodes, and publishes one worker result event.
 //
-// This is synchronous: produce with a delivery channel and wait for the broker
-// ack (avoids Flush while Events() is unread — a common flush stall).
-// JobID becomes the Kafka message key so all results for one job land on the
-// same partition when the topic uses key-based partitioning.
-func (p KafkaResultProducer) PublishResult(event WorkerResultEvent) error {
+// Starts kafka.publish under the caller context (typically worker.execute),
+// injects W3C trace context into headers, then waits for broker ack.
+func (p KafkaResultProducer) PublishResult(ctx context.Context, event WorkerResultEvent) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	topic := p.Topic
+	ctx, span := telemetry.StartKafkaPublishSpan(ctx, topic, "publish")
+	defer span.End()
+
 	if err := event.Validate(); err != nil {
+		telemetry.RecordSpanError(span, err)
 		return err
 	}
 
 	jsonPayload, err := event.ToJSON()
 	if err != nil {
+		telemetry.RecordSpanError(span, err)
 		return err
 	}
 
-	topic := p.Topic
+	headers := []kafka.Header{}
+	telemetry.InjectKafkaContext(ctx, &headers)
+
 	message := &kafka.Message{
 		TopicPartition: kafka.TopicPartition{
 			Topic:     &topic,
 			Partition: kafka.PartitionAny,
 		},
-		Key:   []byte(event.JobID),
-		Value: []byte(jsonPayload),
+		Key:     []byte(event.JobID),
+		Value:   []byte(jsonPayload),
+		Headers: headers,
 	}
 
 	deliveryChan := make(chan kafka.Event, 1)
 	if err := p.Producer.Produce(message, deliveryChan); err != nil {
-		return fmt.Errorf("produce result event: %w", err)
+		err = fmt.Errorf("produce result event: %w", err)
+		telemetry.RecordSpanError(span, err)
+		return err
 	}
 
 	select {
 	case ev := <-deliveryChan:
 		msg, ok := ev.(*kafka.Message)
 		if !ok {
-			return fmt.Errorf("deliver result event: unexpected event type %T", ev)
+			err := fmt.Errorf("deliver result event: unexpected event type %T", ev)
+			telemetry.RecordSpanError(span, err)
+			return err
 		}
 		if msg.TopicPartition.Error != nil {
-			return fmt.Errorf("deliver result event: %w", msg.TopicPartition.Error)
+			err := fmt.Errorf("deliver result event: %w", msg.TopicPartition.Error)
+			telemetry.RecordSpanError(span, err)
+			return err
 		}
+		telemetry.SetKafkaDeliveryAttributes(
+			span,
+			msg.TopicPartition.Partition,
+			int64(msg.TopicPartition.Offset),
+		)
 		return nil
 	case <-time.After(time.Duration(resultFlushTimeoutMs) * time.Millisecond):
-		return fmt.Errorf("deliver result event: timed out after %dms", resultFlushTimeoutMs)
+		err := fmt.Errorf("deliver result event: timed out after %dms", resultFlushTimeoutMs)
+		telemetry.RecordSpanError(span, err)
+		return err
 	}
 }

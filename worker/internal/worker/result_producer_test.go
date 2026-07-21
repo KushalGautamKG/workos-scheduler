@@ -1,6 +1,7 @@
 package worker
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -9,7 +10,7 @@ func TestRecordingResultProducerStoresValidWorkerResultEvent(t *testing.T) {
 	producer := &RecordingResultProducer{}
 	event := validWorkerResultEvent()
 
-	err := producer.PublishResult(event)
+	err := producer.PublishResult(context.Background(), event)
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -26,7 +27,7 @@ func TestRecordingResultProducerReturnsErrorForInvalidEvent(t *testing.T) {
 	event := validWorkerResultEvent()
 	event.JobID = "   "
 
-	err := producer.PublishResult(event)
+	err := producer.PublishResult(context.Background(), event)
 	if err == nil {
 		t.Fatal("expected validation error, got nil")
 	}
@@ -40,7 +41,7 @@ func TestRecordingResultProducerDoesNotAppendInvalidEvent(t *testing.T) {
 	event := validWorkerResultEvent()
 	event.EventType = "job.dispatch"
 
-	_ = producer.PublishResult(event)
+	_ = producer.PublishResult(context.Background(), event)
 
 	if len(producer.Published) != 0 {
 		t.Fatalf("expected 0 published events, got %d", len(producer.Published))
@@ -55,7 +56,7 @@ func TestRecordingResultProducerStoresMultipleValidEventsInOrder(t *testing.T) {
 	third := NewWorkerResultEvent("job-3", TerminalFailureResult("bad payload"), testWorkerIdentity)
 
 	for _, event := range []WorkerResultEvent{first, second, third} {
-		if err := producer.PublishResult(event); err != nil {
+		if err := producer.PublishResult(context.Background(), event); err != nil {
 			t.Fatalf("expected success for job %q, got error: %v", event.JobID, err)
 		}
 	}

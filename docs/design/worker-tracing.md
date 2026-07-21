@@ -61,7 +61,7 @@ Infrastructure and failed outcomes call `span.RecordError` and set span status `
 | Item | Notes |
 |------|--------|
 | Child spans | claim, publish result |
-| Kafka propagation | inject/extract trace context on dispatch/results |
+| Kafka propagation | ✅ Day 122 — [kafka-tracing.md](kafka-tracing.md) |
 | gRPC propagation | ✅ Day 121 — [grpc-tracing.md](grpc-tracing.md) |
 | OTLP | replace stdout when collector exists |
 

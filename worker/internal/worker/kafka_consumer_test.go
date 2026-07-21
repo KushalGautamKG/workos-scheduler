@@ -39,7 +39,7 @@ func TestProcessKafkaMessageReachesHandlerForValidMessage(t *testing.T) {
 		Runner: ConsumerRunner{Handler: handler},
 	}
 
-	err := consumer.ProcessKafkaMessage(newKafkaMessage("job-123", validDispatchJSON()))
+	err := consumer.ProcessKafkaMessage(context.Background(), newKafkaMessage("job-123", validDispatchJSON()))
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestProcessKafkaMessageReturnsErrorForInvalidJSON(t *testing.T) {
 		Runner: ConsumerRunner{Handler: handler},
 	}
 
-	err := consumer.ProcessKafkaMessage(newKafkaMessage("job-123", []byte(`{"event_type":`)))
+	err := consumer.ProcessKafkaMessage(context.Background(), newKafkaMessage("job-123", []byte(`{"event_type":`)))
 	if err == nil {
 		t.Fatal("expected error for invalid JSON, got nil")
 	}
@@ -69,7 +69,7 @@ func TestProcessKafkaMessageReturnsErrorForNilMessage(t *testing.T) {
 		Runner: ConsumerRunner{Handler: handler},
 	}
 
-	err := consumer.ProcessKafkaMessage(nil)
+	err := consumer.ProcessKafkaMessage(context.Background(), nil)
 	if err == nil {
 		t.Fatal("expected error for nil message, got nil")
 	}
@@ -97,7 +97,7 @@ func TestProcessKafkaMessageHandlerReceivesCorrectJobID(t *testing.T) {
 		"payload":{"kind":"kafka-test"}
 	}`)
 
-	err := consumer.ProcessKafkaMessage(newKafkaMessage(jobID, value))
+	err := consumer.ProcessKafkaMessage(context.Background(), newKafkaMessage(jobID, value))
 	if err != nil {
 		t.Fatalf("expected success, got error: %v", err)
 	}

@@ -27,12 +27,14 @@ class FakeProducer:
         self.topic: str | None = None
         self.key: str | None = None
         self.value: str | None = None
+        self.headers = None
         self.flush_called = False
 
     def produce(self, topic: str, key: str | None = None, value: str | None = None, **kwargs) -> None:
         self.topic = topic
         self.key = key
         self.value = value
+        self.headers = kwargs.get("headers")
 
     def flush(self) -> None:
         self.flush_called = True
@@ -105,6 +107,16 @@ def test_publish_flushes_producer():
     producer.publish_dispatch_event(_sample_event())
 
     assert fake.flush_called is True
+
+
+def test_publish_forwards_optional_headers():
+    fake = FakeProducer()
+    producer = KafkaJobProducer(producer=fake)
+    headers = [("traceparent", b"00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01")]
+
+    producer.publish_dispatch_event(_sample_event(), headers=headers)
+
+    assert fake.headers == headers
 
 
 def test_close_flushes_producer():
