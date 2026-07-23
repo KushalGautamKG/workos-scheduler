@@ -1,0 +1,17 @@
+# EKS overlay — builds on production policies; AWS/ECR image URIs injected at deploy time.
+# Do not commit real AWS account IDs here.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../production
+
+labels:
+  - pairs:
+      kernelq.io/cloud: aws
+      kernelq.io/platform: eks
+    includeSelectors: false
+
+# Logical image names (kernelq-worker, kernelq-control-plane) remain until
+# deploy_eks.sh / smoke_eks_config.sh wrap this overlay with an ephemeral
+# Kustomization that sets ECR newName + immutable Git SHA newTag.

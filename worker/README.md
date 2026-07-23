@@ -40,6 +40,8 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 125 — production policies:** Kustomize **`overlays/production`** (replicas 2, resources, RO rootfs, soft topology spread, PDBs). Policy smoke: **`./worker/scripts/smoke_k8s_policies.sh`** — **[kubernetes-production-policies.md](../docs/design/kubernetes-production-policies.md)**.
 
+**Day 126 — EKS prep:** **`overlays/eks`**, ECR publish/deploy/rollback scripts (immutable Git SHA tags), offline **`./worker/scripts/smoke_eks_config.sh`**. Not a live AWS deployment — **[eks-deployment.md](../docs/design/eks-deployment.md)**.
+
 ## What exists today
 
 This is **foundation only**—not a running worker yet:
@@ -71,6 +73,10 @@ This is **foundation only**—not a running worker yet:
 | `scripts/smoke_container.sh` | Docker build + worker SERVING smoke (Day 123) |
 | `scripts/smoke_k8s.sh` | local kustomize rollout + gRPC Execute (Day 124) |
 | `scripts/smoke_k8s_policies.sh` | base/local/production policy assertions (Day 125) |
+| `scripts/smoke_eks_config.sh` | offline EKS/ECR config + dry-runs (Day 126) |
+| `scripts/publish_ecr.sh` | ECR publish (immutable SHA; supports DRY_RUN) |
+| `scripts/deploy_eks.sh` | EKS apply + rollout verify (supports DRY_RUN) |
+| `scripts/rollback_eks.sh` | EKS rollout undo (supports DRY_RUN) |
 | `scripts/smoke_grpc_execute.sh` | Loopback SUCCESS → DUPLICATE_SKIPPED smoke (Day 117) |
 | `scripts/smoke_grpc_health.sh` | Health SERVING + clean SIGINT smoke (Day 118) |
 | `../proto/worker_execution.proto` | gRPC contract — regenerate with `make proto` |

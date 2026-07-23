@@ -1,0 +1,14 @@
+{
+  "repositories": [
+    {
+      "name": "kernelq-worker",
+      "imageTagMutability": "IMMUTABLE",
+      "scanOnPush": true
+    },
+    {
+      "name": "kernelq-control-plane",
+      "imageTagMutability": "IMMUTABLE",
+      "scanOnPush": true
+    }
+  ]
+}

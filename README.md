@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 125:** Kustomize **base / local / production** overlays with security, resource, rolling-update, topology-spread, and PDB policies — **[docs/design/kubernetes-production-policies.md](docs/design/kubernetes-production-policies.md)**.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 126:** EKS deployment **preparation** (ECR immutable Git SHA tags, EKS Kustomize overlay, safe deploy/rollback scripts) — **[docs/design/eks-deployment.md](docs/design/eks-deployment.md)**. Not evidence that KernelQ is running in AWS.
 
 ## MVP Status
 
@@ -55,6 +55,7 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/design/containerization.md](docs/design/containerization.md) | Docker + Kubernetes foundation (Day 123) |
 | [docs/design/local-kubernetes.md](docs/design/local-kubernetes.md) | Local Kubernetes rollout validation (Day 124) |
 | [docs/design/kubernetes-production-policies.md](docs/design/kubernetes-production-policies.md) | Production K8s overlays + policies (Day 125) |
+| [docs/design/eks-deployment.md](docs/design/eks-deployment.md) | EKS/ECR deployment preparation (Day 126) |
 | [docs/benchmarks/day117-grpc-loopback.md](docs/benchmarks/day117-grpc-loopback.md) | Localhost gRPC loopback functional note (Day 117) |
 | [docs/benchmarks/day118-grpc-health.md](docs/benchmarks/day118-grpc-health.md) | gRPC health lifecycle functional note (Day 118) |
 | [docs/benchmarks/day119-otel-foundation.md](docs/benchmarks/day119-otel-foundation.md) | OTel provider init functional note (Day 119) |
@@ -64,6 +65,7 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/benchmarks/day123-containerization.md](docs/benchmarks/day123-containerization.md) | Container build/smoke verification note (Day 123) |
 | [docs/benchmarks/day124-k8s-validation.md](docs/benchmarks/day124-k8s-validation.md) | Local Kubernetes rollout verification note (Day 124) |
 | [docs/benchmarks/day125-kubernetes-policies.md](docs/benchmarks/day125-kubernetes-policies.md) | K8s policy overlay verification note (Day 125) |
+| [docs/benchmarks/day126-eks-preparation.md](docs/benchmarks/day126-eks-preparation.md) | EKS config / dry-run verification note (Day 126) |
 | [docs/benchmarks/day114-kafka-execution-replay.md](docs/benchmarks/day114-kafka-execution-replay.md) | Duplicate Kafka dispatch replay methodology (Day 114) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |
