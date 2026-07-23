@@ -36,7 +36,9 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 123 — containers:** multi-stage **`deploy/docker/Dockerfile.worker`** (default **`grpc-server`**, also ships **`consumer`**); Kubernetes manifests under **`deploy/kubernetes/`** with Day 118 gRPC probes. Smoke: **`./worker/scripts/smoke_container.sh`** — **[containerization.md](../docs/design/containerization.md)**.
 
-**Day 124 — local Kubernetes:** **`kubectl apply -k deploy/kubernetes`**, rollout + Ready Pods, Service port-forward Execute. Smoke: **`./worker/scripts/smoke_k8s.sh`** — **[local-kubernetes.md](../docs/design/local-kubernetes.md)**.
+**Day 124 — local Kubernetes:** **`kubectl apply -k deploy/kubernetes/overlays/local`**, rollout + Ready Pods, Service port-forward Execute. Smoke: **`./worker/scripts/smoke_k8s.sh`** — **[local-kubernetes.md](../docs/design/local-kubernetes.md)**.
+
+**Day 125 — production policies:** Kustomize **`overlays/production`** (replicas 2, resources, RO rootfs, soft topology spread, PDBs). Policy smoke: **`./worker/scripts/smoke_k8s_policies.sh`** — **[kubernetes-production-policies.md](../docs/design/kubernetes-production-policies.md)**.
 
 ## What exists today
 
@@ -68,6 +70,7 @@ This is **foundation only**—not a running worker yet:
 | `scripts/smoke_kafka_trace.sh` | shared TraceID across Kafka + execute (Day 122) |
 | `scripts/smoke_container.sh` | Docker build + worker SERVING smoke (Day 123) |
 | `scripts/smoke_k8s.sh` | local kustomize rollout + gRPC Execute (Day 124) |
+| `scripts/smoke_k8s_policies.sh` | base/local/production policy assertions (Day 125) |
 | `scripts/smoke_grpc_execute.sh` | Loopback SUCCESS → DUPLICATE_SKIPPED smoke (Day 117) |
 | `scripts/smoke_grpc_health.sh` | Health SERVING + clean SIGINT smoke (Day 118) |
 | `../proto/worker_execution.proto` | gRPC contract — regenerate with `make proto` |

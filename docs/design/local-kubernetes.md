@@ -44,9 +44,10 @@ Worker probes use Day 118 **`grpc.health.v1`**. Until overall health is **SERVIN
 ## Apply
 
 ```bash
-kubectl kustomize deploy/kubernetes
-kubectl apply -k deploy/kubernetes
+kubectl kustomize deploy/kubernetes/overlays/local
+kubectl apply -k deploy/kubernetes/overlays/local
 ./worker/scripts/smoke_k8s.sh
+./worker/scripts/smoke_k8s_policies.sh
 ```
 
 ## Deferred

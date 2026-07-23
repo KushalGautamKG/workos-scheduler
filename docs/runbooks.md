@@ -10,11 +10,13 @@ Quick checks from the **repository root** after infra is up (`docker compose up 
 
 **OpenTelemetry (Day 119–122):** shared tracer provider + **`worker.execute`** + **gRPC** + **Kafka** W3C header propagation. Smokes: **`./worker/scripts/smoke_worker_trace.sh`**, **`./worker/scripts/smoke_grpc_trace.sh`**, **`./worker/scripts/smoke_kafka_trace.sh`**. OTLP deferred (stdout). Design: **[kafka-tracing.md](design/kafka-tracing.md)**.
 
-**Containers (Day 123–124):** multi-stage images in **`deploy/docker/`**, Kubernetes manifests in **`deploy/kubernetes/`** (ConfigMap, Secret example, Deployments, Services, gRPC/HTTP probes, non-root). Smokes: **`./worker/scripts/smoke_container.sh`**, **`./worker/scripts/smoke_k8s.sh`**. Design: **[local-kubernetes.md](design/local-kubernetes.md)**.
+**Containers (Day 123–125):** multi-stage images in **`deploy/docker/`**; Kustomize **`deploy/kubernetes/base`** + **`overlays/local`** + **`overlays/production`** (security, resources, rolling update, topology spread, PDBs). Smokes: **`./worker/scripts/smoke_container.sh`**, **`./worker/scripts/smoke_k8s.sh`**, **`./worker/scripts/smoke_k8s_policies.sh`**. Design: **[kubernetes-production-policies.md](design/kubernetes-production-policies.md)**.
 
 **Diagnosing `smoke_container` failure:** confirm Docker is running; rebuild with `docker build -f deploy/docker/Dockerfile.worker …`; ensure **`KERNELQ_GRPC_ADDR=0.0.0.0:50051`** inside the container (not `127.0.0.1`); check logs for `event=grpc_server_ready status=SERVING`.
 
-**Diagnosing `smoke_k8s` failure:** confirm a cluster (`kind`, minikube, or Docker Desktop Kubernetes); run **`kubectl kustomize deploy/kubernetes`**; check **`kubectl -n kernelq get pods,svc,events`**; on rollout failure the smoke prints **`describe`** / **`logs`** automatically; for kind, ensure **`kind load docker-image`** ran for both images.
+**Diagnosing `smoke_k8s` failure:** confirm a cluster (`kind`, minikube, or Docker Desktop Kubernetes); run **`kubectl kustomize deploy/kubernetes/overlays/local`**; check **`kubectl -n kernelq get pods,svc,events`**; on rollout failure the smoke prints **`describe`** / **`logs`** automatically; for kind, ensure **`kind load docker-image`** ran for both images.
+
+**Diagnosing `smoke_k8s_policies` failure:** compare **`kubectl kustomize …/overlays/production`** against expected replicas, `resources`, `securityContext`, PDBs, and rolling-update fields; resource values are initial defaults only (not load-tested).
 
 **Diagnosing `smoke_grpc_trace` failure:** leftover **`grpc-server`** on the port; **`KERNELQ_OTEL_ENABLED=true`** / **`KERNELQ_OTEL_EXPORTER=stdout`**; both sides use otelgrpc options.
 
@@ -62,6 +64,7 @@ One-shot control-plane scripts print a final **key=value** summary line (Python:
 | `smoke_kafka_trace` | `success=true` — shared TraceID across Kafka publish/process + `worker.execute` |
 | `smoke_container` | `success=true` — worker/control-plane images build; worker reaches SERVING; clean stop |
 | `smoke_k8s` | `success=true` — kustomize apply, Pods Ready, gRPC Execute via Service |
+| `smoke_k8s_policies` | `success=true` — base/local/production policy assertions |
 | `scheduler_tick` | `published_count`, `duplicate_dispatches`, `errors_count`, `publish_errors_count` |
 | `duplicate_dispatch` | `job_id`, `attempt` |
 | `retry_scanner` | `requeued_count`, `errors_count`, optional `requeued_job_ids` |

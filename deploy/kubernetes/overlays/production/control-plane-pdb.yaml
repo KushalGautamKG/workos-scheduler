@@ -1,0 +1,15 @@
+# Protects voluntary disruptions (drain/upgrade). Does NOT protect against
+# crashes, node failure, force deletion, or general infrastructure outages.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: kernelq-control-plane
+  namespace: kernelq
+  labels:
+    app.kubernetes.io/name: kernelq-control-plane
+    app.kubernetes.io/part-of: kernelq
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kernelq-control-plane

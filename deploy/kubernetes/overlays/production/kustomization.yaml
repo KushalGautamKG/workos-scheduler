@@ -1,0 +1,23 @@
+# Production overlay — stronger replicas, resources, security, scheduling, PDBs.
+# Soft topology / preferred anti-affinity keep single-node clusters schedulable.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - worker-pdb.yaml
+  - control-plane-pdb.yaml
+
+patches:
+  - path: worker-patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: kernelq-worker
+  - path: control-plane-patch.yaml
+    target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: kernelq-control-plane

@@ -74,7 +74,7 @@ command -v kubectl >/dev/null 2>&1 || fail "kubectl is required"
 command -v docker >/dev/null 2>&1 || fail "docker is required"
 
 echo "==> Validating kustomize render..."
-kubectl kustomize deploy/kubernetes >/dev/null || fail "kubectl kustomize failed"
+kubectl kustomize deploy/kubernetes/overlays/local >/dev/null || fail "kubectl kustomize failed"
 
 ensure_cluster() {
   if kubectl cluster-info >/dev/null 2>&1; then
@@ -127,7 +127,7 @@ if [[ "${CTX}" == kind-* ]]; then
 fi
 
 echo "==> Applying manifests (kubectl apply -k)..."
-kubectl apply -k deploy/kubernetes || fail "kubectl apply -k failed"
+kubectl apply -k deploy/kubernetes/overlays/local || fail "kubectl apply -k failed"
 
 echo "==> Waiting for rollouts..."
 if ! kubectl -n "${NAMESPACE}" rollout status deployment/kernelq-worker --timeout=180s; then

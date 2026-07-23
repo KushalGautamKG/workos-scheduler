@@ -6,8 +6,6 @@ namespace: kernelq
 resources:
   - namespace.yaml
   - configmap.yaml
-  # Example-only credentials for local smoke / kustomize render.
-  # Replace with a real secret (never commit production credentials).
   - secret.example.yaml
   - worker-deployment.yaml
   - worker-service.yaml
