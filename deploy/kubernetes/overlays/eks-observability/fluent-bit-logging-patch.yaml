@@ -1,0 +1,20 @@
+# EKS-specific Fluent Bit env (example placeholders — replace at deploy time).
+# Offline smoke may override these with fake values; no real AWS account required.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kernelq-fluent-bit
+spec:
+  template:
+    spec:
+      containers:
+        - name: fluent-bit
+          env:
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: CLOUDWATCH_LOG_GROUP
+              value: "/kernelq/eks/application"
+            - name: CLOUDWATCH_LOG_STREAM_PREFIX
+              value: "from-fluent-bit-"
+            - name: CLUSTER_NAME
+              value: "REPLACE_EKS_CLUSTER_NAME"

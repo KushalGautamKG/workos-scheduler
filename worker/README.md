@@ -42,6 +42,8 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 126 — EKS prep:** **`overlays/eks`**, ECR publish/deploy/rollback scripts (immutable Git SHA tags), offline **`./worker/scripts/smoke_eks_config.sh`**. Not a live AWS deployment — **[eks-deployment.md](../docs/design/eks-deployment.md)**.
 
+**Day 127 — structured logging:** **`internal/logging`** (`log/slog`, `KERNELQ_LOG_*`), job/lifecycle JSON events with `trace_id`/`span_id`/`job_id`, Fluent Bit DaemonSet under **`deploy/observability/fluent-bit`**, EKS overlay **`overlays/eks-observability`**. Smokes: **`./worker/scripts/smoke_logging.sh`**, **`./worker/scripts/smoke_cloudwatch_config.sh`** (offline; no CloudWatch calls) — **[structured-logging.md](../docs/design/structured-logging.md)**.
+
 ## What exists today
 
 This is **foundation only**—not a running worker yet:
@@ -74,6 +76,10 @@ This is **foundation only**—not a running worker yet:
 | `scripts/smoke_k8s.sh` | local kustomize rollout + gRPC Execute (Day 124) |
 | `scripts/smoke_k8s_policies.sh` | base/local/production policy assertions (Day 125) |
 | `scripts/smoke_eks_config.sh` | offline EKS/ECR config + dry-runs (Day 126) |
+| `internal/logging` | structured slog + context helpers (Day 127) |
+| `cmd/logging-smoke` | JSON + trace correlation helper (Day 127) |
+| `scripts/smoke_logging.sh` | structured logging smoke (Day 127) |
+| `scripts/smoke_cloudwatch_config.sh` | Fluent Bit / EKS observability offline smoke (Day 127) |
 | `scripts/publish_ecr.sh` | ECR publish (immutable SHA; supports DRY_RUN) |
 | `scripts/deploy_eks.sh` | EKS apply + rollout verify (supports DRY_RUN) |
 | `scripts/rollback_eks.sh` | EKS rollout undo (supports DRY_RUN) |

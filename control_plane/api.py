@@ -15,6 +15,7 @@ from psycopg import Error as PsycopgError
 from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field
 
+from control_plane.app.core.logging_context import attach_context_filter
 from control_plane.kernelq.db import connect
 from control_plane.kernelq.enqueue_result import EnqueueStatus
 from control_plane.kernelq.job_repository import JobRepository
@@ -172,6 +173,9 @@ app = FastAPI(
         "Scheduling queues and Kafka worker dispatch will be integrated in later steps."
     ),
 )
+
+# Day 127: enrich stdlib LogRecords with service/environment/version (+ OTel ids when present).
+attach_context_filter(component="control_plane")
 
 
 @app.get(

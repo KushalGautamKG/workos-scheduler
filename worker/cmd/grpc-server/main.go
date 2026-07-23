@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net"
 	"os"
 	"os/signal"
@@ -15,6 +16,7 @@ import (
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/config"
 	workergrpc "github.com/KushalGautamKG/workos-scheduler/worker/internal/grpc"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/grpc/pb"
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/logging"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/worker"
 	"google.golang.org/grpc"
@@ -27,11 +29,21 @@ type loggingExecutor struct {
 
 func (executor *loggingExecutor) Execute(task worker.Task) (worker.ExecutionResult, error) {
 	executor.calls.Add(1)
-	fmt.Printf("event=grpc_execute job_id=%s\n", task.JobID)
 	return worker.SuccessResult(), nil
 }
 
 func main() {
+	logCfg, err := logging.LoadConfig()
+	if err != nil {
+		log.Fatalf("load logging config: %v", err)
+	}
+	logger, err := logging.New(logCfg, os.Stdout)
+	if err != nil {
+		log.Fatalf("create logger: %v", err)
+	}
+	slog.SetDefault(logger)
+	logger.Info("worker starting", "component", "worker", "operation", "lifecycle", "status", "starting")
+
 	cfg, err := config.LoadGRPCConfig()
 	if err != nil {
 		log.Fatalf("load grpc config: %v", err)
@@ -45,20 +57,28 @@ func main() {
 	if err != nil {
 		log.Fatalf("otel tracer provider: %v", err)
 	}
-	fmt.Printf(
-		"event=otel_tracer_provider_start enabled=%t exporter=%s service=%s\n",
-		tracerProvider.Enabled(),
-		otelCfg.Exporter,
-		otelCfg.ServiceName,
+	logger.Info(
+		"otel tracer provider start",
+		"component", "telemetry",
+		"operation", "lifecycle",
+		"status", "started",
+		"otel_enabled", tracerProvider.Enabled(),
+		"otel_exporter", otelCfg.Exporter,
 	)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
 		defer cancel()
 		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
-			fmt.Printf("event=otel_tracer_provider_shutdown error=%q\n", err.Error())
+			logger.Error(
+				"otel tracer provider shutdown",
+				"component", "telemetry",
+				"operation", "lifecycle",
+				"status", "failed",
+				"error_type", logging.ErrorType(err),
+			)
 			return
 		}
-		fmt.Println("event=otel_tracer_provider_stopped")
+		logger.Debug("otel tracer provider stopped", "component", "telemetry", "operation", "lifecycle")
 	}()
 
 	idempotencyStore, backend := buildIdempotencyStore()
@@ -67,6 +87,7 @@ func main() {
 		IdempotencyStore: idempotencyStore,
 		IdempotencyTTL:   24 * time.Hour,
 		WorkerName:       "kernelq-grpc-server",
+		Logger:           logger,
 	}
 
 	health := workergrpc.NewHealth()
@@ -82,12 +103,13 @@ func main() {
 	})
 	health.Register(grpcServer)
 
-	fmt.Printf(
-		"event=grpc_server_start addr=%s idempotency_backend=%s shutdown_timeout=%s request_timeout=%s\n",
-		cfg.Addr,
-		backend,
-		cfg.ShutdownTimeout,
-		cfg.RequestTimeout,
+	logger.Info(
+		"worker ready",
+		"component", "worker",
+		"operation", "lifecycle",
+		"status", "ready",
+		"addr", cfg.Addr,
+		"idempotency_backend", backend,
 	)
 
 	errCh := make(chan error, 1)
@@ -96,16 +118,14 @@ func main() {
 	}()
 
 	health.MarkReady()
-	fmt.Println("event=grpc_server_ready status=SERVING")
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	select {
 	case <-ctx.Done():
-		fmt.Println("event=grpc_server_shutdown reason=signal")
+		logger.Info("worker shutting down", "component", "worker", "operation", "lifecycle", "status", "stopping")
 		health.MarkNotReady()
-		fmt.Println("event=grpc_server_not_ready status=NOT_SERVING")
 
 		stopped := make(chan struct{})
 		go func() {
@@ -114,9 +134,9 @@ func main() {
 		}()
 		select {
 		case <-stopped:
-			fmt.Println("event=grpc_server_shutdown reason=graceful")
+			logger.Debug("grpc graceful stop completed", "component", "worker", "operation", "lifecycle")
 		case <-time.After(cfg.ShutdownTimeout):
-			fmt.Println("event=grpc_server_shutdown reason=force_stop")
+			logger.Warn("grpc force stop after timeout", "component", "worker", "operation", "lifecycle")
 			grpcServer.Stop()
 		}
 	case err := <-errCh:
@@ -126,7 +146,7 @@ func main() {
 		}
 	}
 
-	fmt.Println("event=grpc_server_stopped")
+	logger.Info("worker shutting down", "component", "worker", "operation", "lifecycle", "status", "stopped")
 }
 
 // Default memory backend so loopback duplicate smoke works without Redis.

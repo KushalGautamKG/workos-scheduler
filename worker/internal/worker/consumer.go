@@ -8,7 +8,9 @@ package worker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/logging"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.opentelemetry.io/otel/codes"
@@ -43,6 +45,7 @@ type DispatchHandler interface {
 // parsing, validation, and job handling.
 type ConsumerRunner struct {
 	Handler DispatchHandler
+	Logger  *slog.Logger // optional; logs kafka receive without payloads
 }
 
 // ProcessMessage is the single entry point for one dispatch message.
@@ -69,6 +72,16 @@ func (runner ConsumerRunner) ProcessMessage(ctx context.Context, message Message
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 		return err
+	}
+
+	if runner.Logger != nil {
+		log := logging.WithComponent(runner.Logger, "worker", "kafka_receive")
+		log = logging.WithJob(log, event.JobID, event.Attempt)
+		logging.WithTraceContext(ctx, log).Info(
+			"kafka message received",
+			"operation", "kafka_receive",
+			"status", "received",
+		)
 	}
 
 	if runner.Handler == nil {

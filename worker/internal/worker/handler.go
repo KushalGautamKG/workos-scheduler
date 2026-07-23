@@ -8,10 +8,12 @@ package worker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
 
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/logging"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 )
 
@@ -33,6 +35,7 @@ type DispatchEventHandler struct {
 	WorkerName       string         // optional: worker identity on result events
 	IdempotencyStore IdempotencyStore
 	IdempotencyTTL   time.Duration // 0 ⇒ DefaultExecutionIdempotencyTTL when store set
+	Logger           *slog.Logger  // optional structured logger (nil ⇒ no slog lines)
 
 	duplicateExecutions atomic.Int64
 	idempotencyErrors   atomic.Int64
@@ -91,6 +94,7 @@ func (handler *DispatchEventHandler) handle(
 	event DispatchEvent,
 ) (ExecutionResult, error) {
 	// ctx carries kafka.process (or caller) span into worker.execute / result publish.
+	log := handler.executionLogger(ctx, event)
 
 	// Step 1: ensure an executor is wired.
 	if handler.Executor == nil {
@@ -109,17 +113,24 @@ func (handler *DispatchEventHandler) handle(
 			ttl = DefaultExecutionIdempotencyTTL
 		}
 
+		log.Info("job claim attempted", "operation", "claim", "status", "attempted")
 		claimed, err := handler.IdempotencyStore.TryClaim(key, ttl)
 		if err != nil {
 			handler.idempotencyErrors.Add(1)
+			log.Error(
+				"job claim failed",
+				"operation", "claim",
+				"status", "failed",
+				"error_type", logging.ErrorType(err),
+			)
 			return ExecutionResult{}, fmt.Errorf("idempotency claim failed: %w", err)
 		}
 		if !claimed {
 			handler.duplicateExecutions.Add(1)
-			fmt.Printf(
-				"event=duplicate_worker_execution job_id=%s attempt=%d\n",
-				event.JobID,
-				event.Attempt,
+			log.Warn(
+				"duplicate execution skipped",
+				"operation", "claim",
+				"status", "duplicate_skipped",
 			)
 			// Duplicate skip is not a failure and must not go to DLQ.
 			// Do not publish to results (Python does not accept duplicate_skipped yet).
@@ -141,18 +152,43 @@ func (handler *DispatchEventHandler) handle(
 	}
 
 	// Step 5: run the task through the execution boundary.
+	log.Info("job execution started", "operation", "execute", "status", "started")
 	result, err := handler.Executor.Execute(task)
 	if err != nil {
 		// Infrastructure failure (for example Postgres unreachable). The executor
 		// could not report a trustworthy job outcome—return the error and let
 		// callers treat this separately from retry/terminal business failures.
+		log.Error(
+			"job execution failed",
+			"operation", "execute",
+			"status", "failed",
+			"error_type", logging.ErrorType(err),
+		)
 		return ExecutionResult{}, err
 	}
 
 	// Step 6: validate the outcome before we pass it upstream.
 	// Executors must return one of the known ExecutionStatus constants.
 	if err := result.Validate(); err != nil {
+		log.Error(
+			"job execution failed",
+			"operation", "execute",
+			"status", "failed",
+			"error_type", logging.ErrorType(err),
+		)
 		return ExecutionResult{}, err
+	}
+
+	switch result.Status {
+	case ExecutionSucceeded:
+		log.Info("job execution completed", "operation", "execute", "status", "success")
+	case ExecutionRetryableFailure, ExecutionTerminalFailure:
+		log.Error(
+			"job execution failed",
+			"operation", "execute",
+			"status", string(result.Status),
+			"error_type", "execution_failure",
+		)
 	}
 
 	// Step 7: optionally publish a WorkerResultEvent for the control plane.
@@ -167,9 +203,25 @@ func (handler *DispatchEventHandler) handle(
 		if err := handler.ResultProducer.PublishResult(ctx, resultEvent); err != nil {
 			// Execution succeeded from the executor's perspective, but we could
 			// not hand the outcome to Kafka—return the result plus the error.
+			// Result producer logs the publish failure at its boundary.
 			return result, err
 		}
 	}
 
 	return result, nil
+}
+
+func (handler *DispatchEventHandler) executionLogger(
+	ctx context.Context,
+	event DispatchEvent,
+) *slog.Logger {
+	if handler.Logger == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	log := logging.WithComponent(handler.Logger, "worker", "execute")
+	log = logging.WithJob(log, event.JobID, event.Attempt)
+	if strings.TrimSpace(event.TenantID) != "" {
+		log = log.With("tenant_id", event.TenantID)
+	}
+	return logging.WithTraceContext(ctx, log)
 }

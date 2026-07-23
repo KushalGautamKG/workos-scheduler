@@ -139,6 +139,7 @@ func (c *KafkaConsumer) Run(ctx context.Context, pollTimeoutMs int) error {
 			c.handleWorkItemError(workerID, item, err)
 		},
 	)
+	pool.Logger = c.Runner.Logger
 	c.recordWorkQueueCapacity(pool.QueueCapacity())
 	pool.Start()
 	defer func() {

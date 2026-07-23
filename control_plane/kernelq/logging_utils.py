@@ -3,12 +3,28 @@ Structured log line formatting for KernelQ control-plane scripts.
 
 Produces single-line key=value output that is easy to grep and parse.
 Uses only the Python standard library.
+
+Day 127: JSON application logs (stdlib logging) may also use
+``control_plane.app.core.logging_context`` for service/environment/version
+and optional trace correlation. Scripts continue to use ``format_log_event``.
 """
 
 from __future__ import annotations
 
 import json
 from typing import Any
+
+# Forbidden structured field names — never log these values.
+SENSITIVE_LOG_FIELDS = frozenset(
+    {
+        "authorization",
+        "password",
+        "token",
+        "raw_payload",
+        "redis_url",
+        "connection_string",
+    }
+)
 
 
 def _format_log_value(value: Any) -> str:

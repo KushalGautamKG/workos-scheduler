@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/logging"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/worker"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -40,7 +42,6 @@ type loggingExecutor struct {
 
 func (executor *loggingExecutor) Execute(task worker.Task) (worker.ExecutionResult, error) {
 	executor.calls.Add(1)
-	fmt.Printf("received task job_id=%s\n", task.JobID)
 	return worker.SuccessResult(), nil
 }
 
@@ -146,6 +147,18 @@ func buildIdempotencyStore() (worker.IdempotencyStore, string, error) {
 }
 
 func main() {
+	logCfg, err := logging.LoadConfig()
+	if err != nil {
+		log.Fatalf("load logging config: %v", err)
+	}
+	logger, err := logging.New(logCfg, os.Stdout)
+	if err != nil {
+		log.Fatalf("create logger: %v", err)
+	}
+	slog.SetDefault(logger)
+
+	logger.Info("worker starting", "component", "worker", "operation", "lifecycle", "status", "starting")
+
 	otelCfg, err := telemetry.LoadConfig()
 	if err != nil {
 		log.Fatalf("load otel config: %v", err)
@@ -154,20 +167,28 @@ func main() {
 	if err != nil {
 		log.Fatalf("otel tracer provider: %v", err)
 	}
-	fmt.Printf(
-		"event=otel_tracer_provider_start enabled=%t exporter=%s service=%s\n",
-		tracerProvider.Enabled(),
-		otelCfg.Exporter,
-		otelCfg.ServiceName,
+	logger.Info(
+		"otel tracer provider start",
+		"component", "telemetry",
+		"operation", "lifecycle",
+		"status", "started",
+		"otel_enabled", tracerProvider.Enabled(),
+		"otel_exporter", otelCfg.Exporter,
 	)
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := tracerProvider.Shutdown(shutdownCtx); err != nil {
-			fmt.Printf("event=otel_tracer_provider_shutdown error=%q\n", err.Error())
+			logger.Error(
+				"otel tracer provider shutdown",
+				"component", "telemetry",
+				"operation", "lifecycle",
+				"status", "failed",
+				"error_type", logging.ErrorType(err),
+			)
 			return
 		}
-		fmt.Println("event=otel_tracer_provider_stopped")
+		logger.Debug("otel tracer provider stopped", "component", "telemetry", "operation", "lifecycle")
 	}()
 
 	groupID := strings.TrimSpace(os.Getenv("KERNELQ_KAFKA_GROUP_ID"))
@@ -204,6 +225,7 @@ func main() {
 		_ = brokerConsumer.Close()
 		log.Fatalf("create result producer: %v", err)
 	}
+	resultProducer.Logger = logger
 
 	idempotencyStore, idempotencyBackend, err := buildIdempotencyStore()
 	if err != nil {
@@ -233,12 +255,14 @@ func main() {
 		WorkerName:       "kernelq-go-worker",
 		IdempotencyStore: idempotencyStore,
 		IdempotencyTTL:   idempotencyTTL,
+		Logger:           logger,
 	}
 
 	kafkaConsumer := &worker.KafkaConsumer{
 		Poller: brokerConsumer,
 		Runner: worker.ConsumerRunner{
 			Handler: handler,
+			Logger:  logger,
 		},
 		WorkerCount:        workerCountConfig,
 		QueueCapacity:      queueCapacity,
@@ -259,18 +283,17 @@ func main() {
 	if queueCapacity > 0 {
 		effectiveQueueCapacity = queueCapacity
 	}
-	fmt.Printf(
-		"KernelQ worker consumer started worker_count=%d queue_capacity=%d\n",
-		workerCount,
-		effectiveQueueCapacity,
+	logger.Info(
+		"worker ready",
+		"component", "worker",
+		"operation", "lifecycle",
+		"status", "ready",
+		"worker_count", workerCount,
+		"queue_capacity", effectiveQueueCapacity,
+		"backpressure_enabled", backpressureEnabled,
+		"idempotency_backend", idempotencyBackend,
+		"kafka_group_id", groupID,
 	)
-	fmt.Printf("backpressure_enabled=%t\n", backpressureEnabled)
-	fmt.Printf("backpressure_high_ratio=%g\n", backpressureHighRatio)
-	fmt.Printf("backpressure_low_ratio=%g\n", backpressureLowRatio)
-	fmt.Printf("worker_idempotency_backend=%s\n", idempotencyBackend)
-	fmt.Printf("worker_idempotency_ttl_seconds=%d\n", int(idempotencyTTL.Seconds()))
-	fmt.Printf("kafka_group_id=%s\n", groupID)
-	fmt.Printf("kafka_auto_offset_reset=%s\n", autoOffsetReset)
 
 	// Stop cleanly on Ctrl+C or SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -283,9 +306,9 @@ func main() {
 	kafkaConsumer.Stats.DuplicateExecutions = int(handler.DuplicateExecutions())
 	kafkaConsumer.Stats.IdempotencyErrors = int(handler.IdempotencyErrors())
 
-	fmt.Println("KernelQ worker consumer stopped")
-	fmt.Printf("executor_calls=%d\n", executor.Calls())
+	logger.Info("worker shutting down", "component", "worker", "operation", "lifecycle", "status", "stopping")
+	logger.Debug("executor_calls", "component", "worker", "calls", executor.Calls())
 	for _, line := range worker.ConsumerShutdownStatsLines(kafkaConsumer.Stats) {
-		fmt.Println(line)
+		logger.Debug(line, "component", "worker", "operation", "shutdown_stats")
 	}
 }

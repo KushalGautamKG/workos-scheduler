@@ -1,0 +1,25 @@
+# EKS observability overlay (Day 127).
+#
+# Composes production+EKS KernelQ workloads with the Fluent Bit collector.
+# Adds only logging configuration (region, log group, stream prefix, IRSA placeholder).
+# Does not duplicate application Deployments.
+#
+# Architecture:
+#   Production Overlay → EKS → EKS Observability
+#     ├── KernelQ workloads
+#     └── Fluent Bit DaemonSet
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../eks
+  - ../../../observability/fluent-bit
+
+patches:
+  - path: fluent-bit-logging-patch.yaml
+  - path: fluent-bit-sa-annotation-patch.yaml
+
+labels:
+  - pairs:
+      kernelq.io/observability: cloudwatch
+    includeSelectors: false

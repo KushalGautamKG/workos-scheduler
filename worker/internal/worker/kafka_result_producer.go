@@ -8,8 +8,10 @@ package worker
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/logging"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 )
@@ -25,6 +27,7 @@ const resultFlushTimeoutMs = 5000
 type KafkaResultProducer struct {
 	Producer KafkaProducerClient
 	Topic    string
+	Logger   *slog.Logger // optional; nil ⇒ no structured publish logs
 }
 
 // NewKafkaResultProducer creates a producer aimed at kernelq.jobs.results.
@@ -54,14 +57,29 @@ func (p KafkaResultProducer) PublishResult(ctx context.Context, event WorkerResu
 	ctx, span := telemetry.StartKafkaPublishSpan(ctx, topic, "publish")
 	defer span.End()
 
+	log := p.publishLogger(ctx, event)
+	log.Info("result publish started", "operation", "result_publish", "status", "started")
+
 	if err := event.Validate(); err != nil {
 		telemetry.RecordSpanError(span, err)
+		log.Error(
+			"result publish failed",
+			"operation", "result_publish",
+			"status", "failed",
+			"error_type", logging.ErrorType(err),
+		)
 		return err
 	}
 
 	jsonPayload, err := event.ToJSON()
 	if err != nil {
 		telemetry.RecordSpanError(span, err)
+		log.Error(
+			"result publish failed",
+			"operation", "result_publish",
+			"status", "failed",
+			"error_type", logging.ErrorType(err),
+		)
 		return err
 	}
 
@@ -82,6 +100,12 @@ func (p KafkaResultProducer) PublishResult(ctx context.Context, event WorkerResu
 	if err := p.Producer.Produce(message, deliveryChan); err != nil {
 		err = fmt.Errorf("produce result event: %w", err)
 		telemetry.RecordSpanError(span, err)
+		log.Error(
+			"result publish failed",
+			"operation", "result_publish",
+			"status", "failed",
+			"error_type", logging.ErrorType(err),
+		)
 		return err
 	}
 
@@ -91,11 +115,23 @@ func (p KafkaResultProducer) PublishResult(ctx context.Context, event WorkerResu
 		if !ok {
 			err := fmt.Errorf("deliver result event: unexpected event type %T", ev)
 			telemetry.RecordSpanError(span, err)
+			log.Error(
+				"result publish failed",
+				"operation", "result_publish",
+				"status", "failed",
+				"error_type", logging.ErrorType(err),
+			)
 			return err
 		}
 		if msg.TopicPartition.Error != nil {
 			err := fmt.Errorf("deliver result event: %w", msg.TopicPartition.Error)
 			telemetry.RecordSpanError(span, err)
+			log.Error(
+				"result publish failed",
+				"operation", "result_publish",
+				"status", "failed",
+				"error_type", logging.ErrorType(err),
+			)
 			return err
 		}
 		telemetry.SetKafkaDeliveryAttributes(
@@ -103,10 +139,28 @@ func (p KafkaResultProducer) PublishResult(ctx context.Context, event WorkerResu
 			msg.TopicPartition.Partition,
 			int64(msg.TopicPartition.Offset),
 		)
+		log.Info("result publish completed", "operation", "result_publish", "status", "success")
 		return nil
 	case <-time.After(time.Duration(resultFlushTimeoutMs) * time.Millisecond):
 		err := fmt.Errorf("deliver result event: timed out after %dms", resultFlushTimeoutMs)
 		telemetry.RecordSpanError(span, err)
+		log.Error(
+			"result publish failed",
+			"operation", "result_publish",
+			"status", "failed",
+			"error_type", "timeout",
+		)
 		return err
 	}
+}
+
+func (p KafkaResultProducer) publishLogger(ctx context.Context, event WorkerResultEvent) *slog.Logger {
+	if p.Logger == nil {
+		return slog.New(slog.DiscardHandler)
+	}
+	log := logging.WithComponent(p.Logger, "worker", "result_publish")
+	if event.JobID != "" {
+		log = log.With("job_id", event.JobID)
+	}
+	return logging.WithTraceContext(ctx, log)
 }

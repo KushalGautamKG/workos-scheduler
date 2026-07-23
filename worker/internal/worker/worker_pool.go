@@ -9,8 +9,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/logging"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
 	"go.opentelemetry.io/otel/codes"
@@ -55,6 +57,7 @@ type WorkerPool struct {
 	baseCtx       context.Context
 	workCh        chan WorkItem
 	wg            sync.WaitGroup
+	Logger        *slog.Logger // optional; kafka receive on pool path
 
 	onSuccess func(workerID string, item WorkItem)
 	onError   func(workerID string, item WorkItem, err error)
@@ -163,6 +166,15 @@ func (pool *WorkerPool) runWorker(workerID string) {
 			topic = "unknown"
 		}
 		ctx, span := telemetry.StartKafkaProcessSpan(parentCtx, topic, item.Partition, item.Offset)
+		if pool.Logger != nil {
+			log := logging.WithComponent(pool.Logger, "worker", "kafka_receive")
+			log = logging.WithJob(log, item.Event.JobID, item.Event.Attempt)
+			logging.WithTraceContext(ctx, log).Info(
+				"kafka message received",
+				"operation", "kafka_receive",
+				"status", "received",
+			)
+		}
 
 		_, err := pool.handler.Handle(ctx, item.Event)
 		if err != nil {

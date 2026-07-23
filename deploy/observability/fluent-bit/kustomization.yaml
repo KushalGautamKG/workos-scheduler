@@ -1,0 +1,14 @@
+# Independently renderable Fluent Bit collector (Day 127).
+#   kubectl kustomize deploy/observability/fluent-bit
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - serviceaccount.yaml
+  - configmap.yaml
+  - daemonset.yaml
+
+labels:
+  - pairs:
+      kernelq.io/observability: logging
+    includeSelectors: false

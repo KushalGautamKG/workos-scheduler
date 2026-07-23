@@ -709,3 +709,37 @@ Use this when **`./control_plane/scripts/smoke_full_completion.sh`** exits nonze
 - If dispatch works but results never appear, use **Worker Result Event Missing** checks above
 - If results are consumed but state stays wrong, use **Result Event Consumed but Job State Unchanged**
 - Retry scheduling and DLQ behavior are **not** part of this smoke test yet—failures map to **`failed`** only today
+
+## Structured Logging (Day 127)
+
+KernelQ emits **structured JSON** on stdout/stderr (one object per line). Common fields: `timestamp`, `level`, `message`, `service`, `environment`, `version`, plus contextual `trace_id`, `span_id`, `job_id`, `attempt`, `operation`, `status`, `error_type` when available. Do not log payloads, secrets, tokens, or authorization headers. Design: **[structured-logging.md](design/structured-logging.md)**. Collector: Fluent Bit under **`deploy/observability/fluent-bit`**; EKS compose overlay **`deploy/kubernetes/overlays/eks-observability`**. Offline smokes: **`./worker/scripts/smoke_logging.sh`**, **`./worker/scripts/smoke_cloudwatch_config.sh`**. CloudWatch ingestion has **not** been proven by these smokes.
+
+### Malformed JSON logs
+
+1. Confirm `KERNELQ_LOG_FORMAT=json` (default) on the worker / control plane.
+2. Inspect a single line with `jq` / `python -m json.tool` — mixed text (`fmt.Printf`) may still appear from older paths or dependencies.
+3. Re-run **`./worker/scripts/smoke_logging.sh`** locally to confirm the slog path emits valid JSON.
+
+### Missing trace correlation
+
+1. Confirm OpenTelemetry is enabled for the process (`KERNELQ_OTEL_*`) and a span is active for the request/job path.
+2. Expect `trace_id` / `span_id` only when span context is valid — omit is normal for startup/lifecycle lines.
+3. For Kafka/gRPC paths, verify Day 121–122 propagation still injects/extracts W3C headers.
+
+### Collector Pod failure
+
+1. `kubectl -n <ns> get ds,pods -l app.kubernetes.io/name=fluent-bit`
+2. Check mounts (`/var/log` read-only) and that the Pod uses SA **`kernelq-fluent-bit`** (not an app SA).
+3. Confirm the image tag is pinned (not `latest`) and probes on `:2020` succeed.
+
+### CloudWatch delivery failure
+
+1. Offline: re-render with **`./worker/scripts/smoke_cloudwatch_config.sh`** — validates ConfigMap/DaemonSet only.
+2. Live (when wired): check Fluent Bit identity (IRSA/Pod Identity), region, pre-created log group, and IAM boundary in **[deploy/aws/cloudwatch-logs.md](../deploy/aws/cloudwatch-logs.md)**. Collector IAM must not be on Worker/Control Plane Pods.
+3. Do not mount static AWS keys.
+
+### Unexpected sensitive fields
+
+1. Search logs for `authorization`, `password`, `token`, `raw_payload`, credentialed URLs.
+2. Fix at the call site — never log full Kafka records, connection strings, or auth headers.
+3. Prefer `error_type` + `operation` + `status` over unbounded exception objects.

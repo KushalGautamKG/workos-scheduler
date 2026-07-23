@@ -188,6 +188,7 @@ Honest gaps — not production-ready yet:
 - **Internal gRPC** — **Day 118** health + readiness lifecycle + env config; Kafka still dispatches — **[grpc-lifecycle.md](design/grpc-lifecycle.md)**
 - **OpenTelemetry** — **Day 122** Kafka W3C header propagation linked to **`worker.execute`** and result publish; gRPC from Day 121; OTLP deferred — **[kafka-tracing.md](design/kafka-tracing.md)**
 - **Containers / Kubernetes** — **Day 126** EKS/ECR deployment preparation (immutable image tags, context-safe deploy/rollback); production policies from Day 125 — **[eks-deployment.md](design/eks-deployment.md)**
+- **Structured logging** — **Day 127** JSON stdout contract, trace/span correlation, Fluent Bit collector + CloudWatch-oriented config (offline validation; not live ingestion) — **[structured-logging.md](design/structured-logging.md)**
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
 ---

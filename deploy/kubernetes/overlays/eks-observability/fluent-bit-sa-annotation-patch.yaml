@@ -1,0 +1,9 @@
+# IRSA / Pod Identity annotation placeholder for the Fluent Bit service account only.
+# Do not attach this annotation to KernelQ Worker or Control Plane Pods.
+# Replace <AWS_ACCOUNT_ID> and <FLUENT_BIT_ROLE> before live EKS deploy — never commit real ARNs.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kernelq-fluent-bit
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::<AWS_ACCOUNT_ID>:role/<FLUENT_BIT_ROLE>

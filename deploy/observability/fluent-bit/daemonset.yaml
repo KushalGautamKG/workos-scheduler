@@ -1,0 +1,104 @@
+# Fluent Bit DaemonSet — one collector Pod per node (Day 127).
+#
+# Host log path access may require filesystem permissions different from KernelQ
+# application Pods (read-only mounts of /var/log and container log roots).
+# This DaemonSet intentionally uses a dedicated service account and does not
+# run privileged. Image is version-pinned (not latest).
+# Resource values are starting points — not claimed as production-tuned.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kernelq-fluent-bit
+  labels:
+    app.kubernetes.io/name: fluent-bit
+    app.kubernetes.io/part-of: kernelq
+    app.kubernetes.io/component: logging-collector
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fluent-bit
+      app.kubernetes.io/component: logging-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fluent-bit
+        app.kubernetes.io/part-of: kernelq
+        app.kubernetes.io/component: logging-collector
+    spec:
+      serviceAccountName: kernelq-fluent-bit
+      terminationGracePeriodSeconds: 30
+      # Host log directories are typically root-owned; the aws-for-fluent-bit
+      # image expects UID 0 for node log tailing. This is a narrow exception
+      # vs KernelQ application Pods (runAsNonRoot). Prefer read-only mounts
+      # and dropped capabilities instead of privileged mode.
+      securityContext:
+        runAsNonRoot: false
+        runAsUser: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fluent-bit
+          image: public.ecr.aws/aws-observability/aws-for-fluent-bit:2.32.4
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 2020
+              protocol: TCP
+          env:
+            - name: AWS_REGION
+              value: "REPLACE_AWS_REGION"
+            - name: CLOUDWATCH_LOG_GROUP
+              value: "/kernelq/eks/application"
+            - name: CLOUDWATCH_LOG_STREAM_PREFIX
+              value: "from-fluent-bit-"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: config
+              mountPath: /fluent-bit/etc/
+              readOnly: true
+            - name: varlog
+              mountPath: /var/log
+              readOnly: true
+            - name: varlibdockercontainers
+              mountPath: /var/lib/docker/containers
+              readOnly: true
+            - name: fluentbit-state
+              mountPath: /var/fluent-bit/state
+      volumes:
+        - name: config
+          configMap:
+            name: kernelq-fluent-bit-config
+        - name: varlog
+          hostPath:
+            path: /var/log
+        - name: varlibdockercontainers
+          hostPath:
+            path: /var/lib/docker/containers
+        - name: fluentbit-state
+          hostPath:
+            path: /var/fluent-bit/state
+            type: DirectoryOrCreate
