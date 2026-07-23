@@ -6,8 +6,9 @@ namespace: kernelq
 resources:
   - namespace.yaml
   - configmap.yaml
-  # Copy secret.example.yaml → secret.yaml (do not commit real credentials), then:
-  # - secret.yaml
+  # Example-only credentials for local smoke / kustomize render.
+  # Replace with a real secret (never commit production credentials).
+  - secret.example.yaml
   - worker-deployment.yaml
   - worker-service.yaml
   - control-plane-deployment.yaml

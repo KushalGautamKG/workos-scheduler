@@ -49,7 +49,7 @@ The worker plane prioritizes throughput, low latency, and resource efficiency. I
 - **Workers**: Go processes that consume from Kafka and execute tasks
 - **Internal gRPC (Day 116–118):** `WorkerExecutionService` + **`grpc.health.v1`** readiness lifecycle and env-based config — **[grpc-lifecycle.md](design/grpc-lifecycle.md)**. Kafka remains the async dispatch mechanism. Graceful shutdown + health prepare Kubernetes probes; no production RPC routing yet.
 - **OpenTelemetry (Day 119–122):** shared tracer provider + **`worker.execute`** + **gRPC** (`otelgrpc`) + **Kafka** W3C header propagation (`kafka.publish` / `kafka.process`) — **[kafka-tracing.md](design/kafka-tracing.md)**. Payloads are not traced; missing headers do not block processing. OTLP deferred (stdout verification); metrics remain Prometheus.
-- **Containers / Kubernetes (Day 123):** multi-stage Docker images + manifests under **`deploy/`** (ConfigMap, Deployments, Services, gRPC/HTTP probes, non-root). Cluster apply Day 124 — **[containerization.md](design/containerization.md)**.
+- **Containers / Kubernetes (Day 123–124):** multi-stage Docker images + manifests under **`deploy/`**; local cluster validation via **`./worker/scripts/smoke_k8s.sh`** (kustomize, rollout, gRPC readiness, Execute via Service) — **[local-kubernetes.md](design/local-kubernetes.md)**.
 
 ## FIFO Scheduling Policy
 

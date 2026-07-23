@@ -187,7 +187,7 @@ Honest gaps — not production-ready yet:
 - **Redis dedupe** — three layers complete; **Day 115** documents **claim-before-completion** gap (recovery deferred) — **[execution-recovery.md](design/execution-recovery.md)**
 - **Internal gRPC** — **Day 118** health + readiness lifecycle + env config; Kafka still dispatches — **[grpc-lifecycle.md](design/grpc-lifecycle.md)**
 - **OpenTelemetry** — **Day 122** Kafka W3C header propagation linked to **`worker.execute`** and result publish; gRPC from Day 121; OTLP deferred — **[kafka-tracing.md](design/kafka-tracing.md)**
-- **Containers / Kubernetes** — **Day 123** Docker images + K8s manifests (probes, ConfigMap/Secret placeholders); cluster apply Day 124 — **[containerization.md](design/containerization.md)**
+- **Containers / Kubernetes** — **Day 124** local kustomize rollout + readiness/Service validation; images from Day 123 — **[local-kubernetes.md](design/local-kubernetes.md)**
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
 ---

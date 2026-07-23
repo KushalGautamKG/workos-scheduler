@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 123:** multi-stage **Docker** images + **Kubernetes** manifests (ConfigMap, Deployments, Services, gRPC/HTTP probes) — **[docs/design/containerization.md](docs/design/containerization.md)**. Cluster apply is Day 124.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 124:** local **Kubernetes** validation (kustomize apply, rollout, gRPC readiness, Execute via Service) — **[docs/design/local-kubernetes.md](docs/design/local-kubernetes.md)**.
 
 ## MVP Status
 
@@ -53,6 +53,7 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/design/grpc-tracing.md](docs/design/grpc-tracing.md) | gRPC client/server trace propagation (Day 121) |
 | [docs/design/kafka-tracing.md](docs/design/kafka-tracing.md) | Kafka header trace propagation (Day 122) |
 | [docs/design/containerization.md](docs/design/containerization.md) | Docker + Kubernetes foundation (Day 123) |
+| [docs/design/local-kubernetes.md](docs/design/local-kubernetes.md) | Local Kubernetes rollout validation (Day 124) |
 | [docs/benchmarks/day117-grpc-loopback.md](docs/benchmarks/day117-grpc-loopback.md) | Localhost gRPC loopback functional note (Day 117) |
 | [docs/benchmarks/day118-grpc-health.md](docs/benchmarks/day118-grpc-health.md) | gRPC health lifecycle functional note (Day 118) |
 | [docs/benchmarks/day119-otel-foundation.md](docs/benchmarks/day119-otel-foundation.md) | OTel provider init functional note (Day 119) |
@@ -60,6 +61,7 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/benchmarks/day121-grpc-tracing.md](docs/benchmarks/day121-grpc-tracing.md) | gRPC shared-trace verification note (Day 121) |
 | [docs/benchmarks/day122-kafka-tracing.md](docs/benchmarks/day122-kafka-tracing.md) | Kafka shared-trace verification note (Day 122) |
 | [docs/benchmarks/day123-containerization.md](docs/benchmarks/day123-containerization.md) | Container build/smoke verification note (Day 123) |
+| [docs/benchmarks/day124-k8s-validation.md](docs/benchmarks/day124-k8s-validation.md) | Local Kubernetes rollout verification note (Day 124) |
 | [docs/benchmarks/day114-kafka-execution-replay.md](docs/benchmarks/day114-kafka-execution-replay.md) | Duplicate Kafka dispatch replay methodology (Day 114) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |

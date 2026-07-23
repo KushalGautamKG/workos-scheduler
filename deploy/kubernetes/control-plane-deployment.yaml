@@ -20,6 +20,7 @@ spec:
         app.kubernetes.io/component: control-plane
     spec:
       restartPolicy: Always
+      terminationGracePeriodSeconds: 30
       securityContext:
         runAsNonRoot: true
         runAsUser: 65532

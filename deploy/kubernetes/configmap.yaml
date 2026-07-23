@@ -7,7 +7,7 @@ metadata:
     app.kubernetes.io/part-of: kernelq
 data:
   KERNELQ_GRPC_ADDR: "0.0.0.0:50051"
-  KERNELQ_OTEL_ENABLED: "false"
-  KERNELQ_OTEL_EXPORTER: "none"
+  KERNELQ_OTEL_ENABLED: "true"
+  KERNELQ_OTEL_EXPORTER: "stdout"
   KERNELQ_OTEL_SERVICE_NAME: "kernelq-worker"
   KERNELQ_WORKER_IDEMPOTENCY_BACKEND: "memory"
