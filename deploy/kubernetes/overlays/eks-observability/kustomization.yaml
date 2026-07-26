@@ -1,19 +1,21 @@
-# EKS observability overlay (Day 127).
+# EKS observability overlay (Day 127–128).
 #
-# Composes production+EKS KernelQ workloads with the Fluent Bit collector.
-# Adds only logging configuration (region, log group, stream prefix, IRSA placeholder).
+# Composes production+EKS KernelQ workloads with Fluent Bit + Prometheus rule ConfigMaps.
+# Adds logging configuration and monitoring rule manifests.
 # Does not duplicate application Deployments.
 #
 # Architecture:
 #   Production Overlay → EKS → EKS Observability
 #     ├── KernelQ workloads
-#     └── Fluent Bit DaemonSet
+#     ├── Fluent Bit DaemonSet
+#     └── Prometheus recording/alert rule ConfigMaps
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
 resources:
   - ../eks
   - ../../../observability/fluent-bit
+  - ../../../observability/prometheus
 
 patches:
   - path: fluent-bit-logging-patch.yaml

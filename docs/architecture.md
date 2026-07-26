@@ -51,6 +51,7 @@ The worker plane prioritizes throughput, low latency, and resource efficiency. I
 - **OpenTelemetry (Day 119–122):** shared tracer provider + **`worker.execute`** + **gRPC** (`otelgrpc`) + **Kafka** W3C header propagation (`kafka.publish` / `kafka.process`) — **[kafka-tracing.md](design/kafka-tracing.md)**. Payloads are not traced; missing headers do not block processing. OTLP deferred (stdout verification); metrics remain Prometheus.
 - **Containers / Kubernetes (Day 123–126):** multi-stage images + Kustomize base/local/production/**eks** overlays; ECR immutable Git SHA workflow and EKS deploy/rollback **scripts** (prep only — not proof of a live AWS cluster) — **[eks-deployment.md](design/eks-deployment.md)**.
 - **Structured logging (Day 127):** shared JSON field contract (Go `slog` + Python logging context), `trace_id`/`span_id` correlation, Fluent Bit DaemonSet + **eks-observability** overlay toward CloudWatch — offline config validation only — **[structured-logging.md](design/structured-logging.md)**.
+- **Monitoring (Day 128):** SLIs/SLOs, Prometheus recording + alert rules, Grafana monitoring dashboard, alert runbooks — offline validation only; managed Prometheus/Grafana/PagerDuty are future — **[monitoring.md](design/monitoring.md)**.
 
 ## FIFO Scheduling Policy
 

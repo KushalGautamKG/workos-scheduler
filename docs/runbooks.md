@@ -743,3 +743,17 @@ KernelQ emits **structured JSON** on stdout/stderr (one object per line). Common
 1. Search logs for `authorization`, `password`, `token`, `raw_payload`, credentialed URLs.
 2. Fix at the call site — never log full Kafka records, connection strings, or auth headers.
 3. Prefer `error_type` + `operation` + `status` over unbounded exception objects.
+
+## Monitoring Alerts (Day 128)
+
+Prometheus **recording rules** and **alert rules** live under **`deploy/observability/prometheus`**. Grafana dashboard: **`deploy/observability/grafana/kernelq-dashboard.json`**. Alert index: **[runbooks/alerts.md](runbooks/alerts.md)**. Design: **[design/monitoring.md](design/monitoring.md)**.
+
+Offline smokes: **`./worker/scripts/smoke_monitoring.sh`**, **`./worker/scripts/smoke_dashboard.sh`**. These do **not** deploy Prometheus/Grafana or prove alert delivery / production SLO compliance. Managed observability (Alertmanager, PagerDuty, AMP, Managed Grafana) is future work.
+
+| Condition | Runbook |
+|-----------|---------|
+| High latency | [runbooks/high-latency.md](runbooks/high-latency.md) |
+| High error / retry / publish failure | [runbooks/high-error-rate.md](runbooks/high-error-rate.md) |
+| Kafka backlog / consumer stopped | [runbooks/kafka-backlog.md](runbooks/kafka-backlog.md) |
+| Redis idempotency failures | [runbooks/redis-failures.md](runbooks/redis-failures.md) |
+| Worker unavailable | [runbooks/worker-unavailable.md](runbooks/worker-unavailable.md) |

@@ -1,0 +1,13 @@
+# Independently renderable Prometheus monitoring rules (Day 128).
+#   kubectl kustomize deploy/observability/prometheus
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - recording-rules.yaml
+  - alert-rules.yaml
+
+labels:
+  - pairs:
+      kernelq.io/observability: metrics
+    includeSelectors: false

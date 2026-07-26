@@ -1,6 +1,6 @@
 # KernelQ
 
-Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 127:** structured JSON logging (shared fields, trace/span correlation) + Fluent Bit collector config toward CloudWatch — **[docs/design/structured-logging.md](docs/design/structured-logging.md)**. Offline config validation only; not proof of CloudWatch ingestion.
+Distributed job orchestration prototype: **Python control plane** (API, scheduling, Postgres state) + **Go workers** (Kafka consume/execute/publish) + **Kafka** between the planes. **Day 128:** SLIs/SLOs, Prometheus recording + alert rules, Grafana monitoring dashboard, and alert runbooks — **[docs/design/monitoring.md](docs/design/monitoring.md)**. Offline configuration validation only; not proof of alert delivery or production SLO compliance.
 
 ## MVP Status
 
@@ -57,6 +57,7 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/design/kubernetes-production-policies.md](docs/design/kubernetes-production-policies.md) | Production K8s overlays + policies (Day 125) |
 | [docs/design/eks-deployment.md](docs/design/eks-deployment.md) | EKS/ECR deployment preparation (Day 126) |
 | [docs/design/structured-logging.md](docs/design/structured-logging.md) | Structured JSON logging + Fluent Bit (Day 127) |
+| [docs/design/monitoring.md](docs/design/monitoring.md) | SLIs/SLOs, recording/alert rules, dashboards (Day 128) |
 | [docs/benchmarks/day117-grpc-loopback.md](docs/benchmarks/day117-grpc-loopback.md) | Localhost gRPC loopback functional note (Day 117) |
 | [docs/benchmarks/day118-grpc-health.md](docs/benchmarks/day118-grpc-health.md) | gRPC health lifecycle functional note (Day 118) |
 | [docs/benchmarks/day119-otel-foundation.md](docs/benchmarks/day119-otel-foundation.md) | OTel provider init functional note (Day 119) |
@@ -68,6 +69,7 @@ Provisioned dashboard **KernelQ MVP** — **`kernelq_jobs_by_state`** and **Resu
 | [docs/benchmarks/day125-kubernetes-policies.md](docs/benchmarks/day125-kubernetes-policies.md) | K8s policy overlay verification note (Day 125) |
 | [docs/benchmarks/day126-eks-preparation.md](docs/benchmarks/day126-eks-preparation.md) | EKS config / dry-run verification note (Day 126) |
 | [docs/benchmarks/day127-logging.md](docs/benchmarks/day127-logging.md) | Structured logging / collector config verification (Day 127) |
+| [docs/benchmarks/day128-monitoring.md](docs/benchmarks/day128-monitoring.md) | Monitoring rules / dashboard verification (Day 128) |
 | [docs/benchmarks/day114-kafka-execution-replay.md](docs/benchmarks/day114-kafka-execution-replay.md) | Duplicate Kafka dispatch replay methodology (Day 114) |
 | [docs/deploy.md](docs/deploy.md) | Local setup and smoke tests |
 | [docs/runbooks.md](docs/runbooks.md) | Operational runbooks |

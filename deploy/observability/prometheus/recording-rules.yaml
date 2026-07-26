@@ -1,0 +1,70 @@
+# KernelQ Prometheus recording rules (Day 128).
+# Loaded as a ConfigMap for offline render / future Prometheus mount.
+# Expressions use current KernelQ metrics where available and stable intended
+# metric names for counters/histograms still being instrumented.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kernelq-prometheus-recording-rules
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: kernelq
+    app.kubernetes.io/component: monitoring
+data:
+  recording-rules.yaml: |
+    groups:
+      - name: kernelq.recording
+        interval: 30s
+        rules:
+          # Successful executions / total execution attempts (intended counters).
+          - record: kernelq:job_success_rate
+            expr: |
+              sum(rate(kernelq_job_executions_total{status="success"}[5m]))
+              /
+              clamp_min(sum(rate(kernelq_job_executions_total[5m])), 1e-9)
+
+          - record: kernelq:job_failure_rate
+            expr: |
+              sum(rate(kernelq_job_executions_total{status=~"failed|retryable_failure|terminal_failure"}[5m]))
+              /
+              clamp_min(sum(rate(kernelq_job_executions_total[5m])), 1e-9)
+
+          # P95 execution duration from intended histogram.
+          - record: kernelq:execution_latency_p95
+            expr: |
+              histogram_quantile(
+                0.95,
+                sum(rate(kernelq_job_execution_duration_seconds_bucket[5m])) by (le)
+              )
+
+          # Queue latency — uses exposed control-plane quantile gauge today.
+          - record: kernelq:queue_latency_p95
+            expr: kernelq_queue_wait_seconds{quantile="0.95"}
+
+          # Retries / executions (intended counters).
+          - record: kernelq:retry_rate
+            expr: |
+              sum(rate(kernelq_job_retries_total[5m]))
+              /
+              clamp_min(sum(rate(kernelq_job_executions_total[5m])), 1e-9)
+
+          # Result publish success (intended counters).
+          - record: kernelq:publish_success_rate
+            expr: |
+              sum(rate(kernelq_result_publish_total{status="success"}[5m]))
+              /
+              clamp_min(sum(rate(kernelq_result_publish_total[5m])), 1e-9)
+
+          # Worker availability proxy (kube-state-metrics when present).
+          - record: kernelq:worker_availability
+            expr: |
+              sum(kube_deployment_status_replicas_available{deployment="kernelq-worker"})
+              /
+              clamp_min(sum(kube_deployment_spec_replicas{deployment="kernelq-worker"}), 1)
+
+          # Convenience rates for dashboards.
+          - record: kernelq:jobs_per_second
+            expr: sum(rate(kernelq_job_executions_total[5m]))
+
+          - record: kernelq:queue_depth
+            expr: sum(kernelq_jobs_by_state{state="queued"})

@@ -1,0 +1,104 @@
+# KernelQ Prometheus alert rules (Day 128).
+# Sustained-condition alerts; each annotation.runbook points at docs/runbooks/*.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kernelq-prometheus-alert-rules
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/part-of: kernelq
+    app.kubernetes.io/component: monitoring
+data:
+  alert-rules.yaml: |
+    groups:
+      - name: kernelq.alerts
+        rules:
+          - alert: WorkerUnavailable
+            expr: |
+              (
+                sum(kube_deployment_status_replicas_available{deployment="kernelq-worker"}) or vector(0)
+              ) == 0
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: "No Ready KernelQ worker Pods"
+              description: "kernelq-worker has zero available replicas for 5m."
+              runbook: docs/runbooks/worker-unavailable.md
+
+          - alert: HighExecutionLatency
+            expr: kernelq:execution_latency_p95 > 2
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Execution latency P95 exceeds SLO target"
+              description: "kernelq:execution_latency_p95 is above 2s for 10m (proposed SLO)."
+              runbook: docs/runbooks/high-latency.md
+
+          - alert: HighFailureRate
+            expr: kernelq:job_failure_rate > 0.05
+            for: 10m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Job failure rate is elevated"
+              description: "kernelq:job_failure_rate exceeded 5% for 10m."
+              runbook: docs/runbooks/high-error-rate.md
+
+          - alert: RetryStorm
+            expr: kernelq:retry_rate > 0.20
+            for: 10m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Retry rate exceeds threshold"
+              description: "kernelq:retry_rate exceeded 20% of executions for 10m."
+              runbook: docs/runbooks/high-error-rate.md
+
+          - alert: PublishFailures
+            expr: kernelq:publish_success_rate < 0.99
+            for: 10m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Result publish success below objective"
+              description: "kernelq:publish_success_rate below 99% for 10m."
+              runbook: docs/runbooks/high-error-rate.md
+
+          - alert: KafkaConsumerStopped
+            expr: |
+              sum(rate(kernelq_kafka_messages_consumed_total[10m])) == 0
+              and
+              sum(kernelq_jobs_by_state{state="dispatched"}) > 0
+            for: 15m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Kafka consumer appears inactive while work is pending"
+              description: "No consume rate for 15m while dispatched jobs remain."
+              runbook: docs/runbooks/kafka-backlog.md
+
+          - alert: QueueBacklogGrowing
+            expr: |
+              deriv(kernelq:queue_depth[15m]) > 0
+              and
+              kernelq:queue_depth > 100
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Queued job backlog is growing"
+              description: "kernelq:queue_depth is rising and above 100 for 15m."
+              runbook: docs/runbooks/kafka-backlog.md
+
+          - alert: RedisIdempotencyFailures
+            expr: |
+              sum(rate(kernelq_redis_idempotency_errors_total[5m])) > 0
+            for: 5m
+            labels:
+              severity: warning
+            annotations:
+              summary: "Redis idempotency errors detected"
+              description: "kernelq_redis_idempotency_errors_total is increasing."
+              runbook: docs/runbooks/redis-failures.md

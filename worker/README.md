@@ -44,6 +44,8 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 127 — structured logging:** **`internal/logging`** (`log/slog`, `KERNELQ_LOG_*`), job/lifecycle JSON events with `trace_id`/`span_id`/`job_id`, Fluent Bit DaemonSet under **`deploy/observability/fluent-bit`**, EKS overlay **`overlays/eks-observability`**. Smokes: **`./worker/scripts/smoke_logging.sh`**, **`./worker/scripts/smoke_cloudwatch_config.sh`** (offline; no CloudWatch calls) — **[structured-logging.md](../docs/design/structured-logging.md)**.
 
+**Day 128 — monitoring:** Prometheus **recording/alert rules** under **`deploy/observability/prometheus`**, Grafana **`kernelq-dashboard.json`**, alert runbooks under **`docs/runbooks/`**. Smokes: **`./worker/scripts/smoke_monitoring.sh`**, **`./worker/scripts/smoke_dashboard.sh`** (offline; no Prometheus/Grafana deploy) — **[monitoring.md](../docs/design/monitoring.md)**.
+
 ## What exists today
 
 This is **foundation only**—not a running worker yet:
@@ -80,6 +82,8 @@ This is **foundation only**—not a running worker yet:
 | `cmd/logging-smoke` | JSON + trace correlation helper (Day 127) |
 | `scripts/smoke_logging.sh` | structured logging smoke (Day 127) |
 | `scripts/smoke_cloudwatch_config.sh` | Fluent Bit / EKS observability offline smoke (Day 127) |
+| `scripts/smoke_monitoring.sh` | Prometheus recording/alert rule smoke (Day 128) |
+| `scripts/smoke_dashboard.sh` | Grafana dashboard JSON smoke (Day 128) |
 | `scripts/publish_ecr.sh` | ECR publish (immutable SHA; supports DRY_RUN) |
 | `scripts/deploy_eks.sh` | EKS apply + rollout verify (supports DRY_RUN) |
 | `scripts/rollback_eks.sh` | EKS rollout undo (supports DRY_RUN) |
