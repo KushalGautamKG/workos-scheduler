@@ -52,6 +52,7 @@ The worker plane prioritizes throughput, low latency, and resource efficiency. I
 - **Containers / Kubernetes (Day 123–126):** multi-stage images + Kustomize base/local/production/**eks** overlays; ECR immutable Git SHA workflow and EKS deploy/rollback **scripts** (prep only — not proof of a live AWS cluster) — **[eks-deployment.md](design/eks-deployment.md)**.
 - **Structured logging (Day 127):** shared JSON field contract (Go `slog` + Python logging context), `trace_id`/`span_id` correlation, Fluent Bit DaemonSet + **eks-observability** overlay toward CloudWatch — offline config validation only — **[structured-logging.md](design/structured-logging.md)**.
 - **Monitoring (Day 128):** SLIs/SLOs, Prometheus recording + alert rules, Grafana monitoring dashboard, alert runbooks — offline validation only; managed Prometheus/Grafana/PagerDuty are future — **[monitoring.md](design/monitoring.md)**.
+- **Resilience testing (Day 129):** deterministic fault injection, duplicate-delivery and dependency-outage smokes, graceful shutdown / optional k8s Pod replacement — **local validation only**, not production chaos — **[resilience-testing.md](design/resilience-testing.md)**.
 
 ## FIFO Scheduling Policy
 

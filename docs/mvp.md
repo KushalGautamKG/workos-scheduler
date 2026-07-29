@@ -190,6 +190,7 @@ Honest gaps — not production-ready yet:
 - **Containers / Kubernetes** — **Day 126** EKS/ECR deployment preparation (immutable image tags, context-safe deploy/rollback); production policies from Day 125 — **[eks-deployment.md](design/eks-deployment.md)**
 - **Structured logging** — **Day 127** JSON stdout contract, trace/span correlation, Fluent Bit collector + CloudWatch-oriented config (offline validation; not live ingestion) — **[structured-logging.md](design/structured-logging.md)**
 - **Monitoring** — **Day 128** SLIs/SLOs, recording/alert rules, Grafana dashboard + runbooks (offline validation; not alert delivery or production SLO proof) — **[monitoring.md](design/monitoring.md)**
+- **Resilience testing** — **Day 129** fault injection + recovery smokes (local only; not production chaos) — **[resilience-testing.md](design/resilience-testing.md)**
 - **Config / secrets** — no production-grade secret management or env-based config layering
 
 ---

@@ -13,7 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/faults"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/logging"
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/metrics"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/worker"
 	"github.com/confluentinc/confluent-kafka-go/v2/kafka"
@@ -159,6 +161,28 @@ func main() {
 
 	logger.Info("worker starting", "component", "worker", "operation", "lifecycle", "status", "starting")
 
+	if err := metrics.RegisterResilienceMetrics(); err != nil {
+		log.Fatalf("register resilience metrics: %v", err)
+	}
+
+	faultCfg, err := faults.LoadConfig()
+	if err != nil {
+		log.Fatalf("load fault config: %v", err)
+	}
+	faultInjector, err := faults.New(faultCfg, faults.WithObserver(faults.LoggingObserver{Logger: logger}))
+	if err != nil {
+		log.Fatalf("create fault injector: %v", err)
+	}
+	if faultCfg.Enabled {
+		logger.Warn(
+			"fault injection enabled",
+			"component", "fault_injector",
+			"operation", string(faultCfg.Point),
+			"fault_mode", string(faultCfg.Mode),
+			"environment", faultCfg.EnvName,
+		)
+	}
+
 	otelCfg, err := telemetry.LoadConfig()
 	if err != nil {
 		log.Fatalf("load otel config: %v", err)
@@ -256,6 +280,7 @@ func main() {
 		IdempotencyStore: idempotencyStore,
 		IdempotencyTTL:   idempotencyTTL,
 		Logger:           logger,
+		FaultInjector:    faultInjector,
 	}
 
 	kafkaConsumer := &worker.KafkaConsumer{
@@ -307,8 +332,10 @@ func main() {
 	kafkaConsumer.Stats.IdempotencyErrors = int(handler.IdempotencyErrors())
 
 	logger.Info("worker shutting down", "component", "worker", "operation", "lifecycle", "status", "stopping")
+	logger.Info("draining in-flight work", "component", "worker", "operation", "lifecycle", "status", "draining")
 	logger.Debug("executor_calls", "component", "worker", "calls", executor.Calls())
 	for _, line := range worker.ConsumerShutdownStatsLines(kafkaConsumer.Stats) {
 		logger.Debug(line, "component", "worker", "operation", "shutdown_stats")
 	}
+	logger.Info("worker stopped", "component", "worker", "operation", "lifecycle", "status", "stopped")
 }

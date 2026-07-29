@@ -757,3 +757,15 @@ Offline smokes: **`./worker/scripts/smoke_monitoring.sh`**, **`./worker/scripts/
 | Kafka backlog / consumer stopped | [runbooks/kafka-backlog.md](runbooks/kafka-backlog.md) |
 | Redis idempotency failures | [runbooks/redis-failures.md](runbooks/redis-failures.md) |
 | Worker unavailable | [runbooks/worker-unavailable.md](runbooks/worker-unavailable.md) |
+
+## Resilience Failure Testing (Day 129)
+
+Deterministic **fault injection** (`worker/internal/faults`) is **disabled by default** and rejected in production environments. Smokes: **`./worker/scripts/smoke_resilience.sh`** (master), **`smoke_worker_recovery.sh`**, **`smoke_dependency_failures.sh`**, optional **`smoke_k8s_resilience.sh`**. Design: **[design/resilience-testing.md](design/resilience-testing.md)**.
+
+| Topic | Runbook |
+|-------|---------|
+| Worker crash / incomplete work | [runbooks/worker-crash-recovery.md](runbooks/worker-crash-recovery.md) |
+| Redis / Kafka / gRPC outage | [runbooks/dependency-outage.md](runbooks/dependency-outage.md) |
+| Duplicate delivery vs completion | [runbooks/duplicate-delivery.md](runbooks/duplicate-delivery.md) |
+
+Local-test limitations apply — production chaos testing has **not** been completed.

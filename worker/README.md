@@ -46,6 +46,8 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 128 — monitoring:** Prometheus **recording/alert rules** under **`deploy/observability/prometheus`**, Grafana **`kernelq-dashboard.json`**, alert runbooks under **`docs/runbooks/`**. Smokes: **`./worker/scripts/smoke_monitoring.sh`**, **`./worker/scripts/smoke_dashboard.sh`** (offline; no Prometheus/Grafana deploy) — **[monitoring.md](../docs/design/monitoring.md)**.
 
+**Day 129 — resilience:** **`internal/faults`** (disabled by default; non-prod only), resilience metrics, worker recovery / dependency / k8s / master smokes. Telemetry-based recovery evidence; local-test limitations apply — **[resilience-testing.md](../docs/design/resilience-testing.md)**.
+
 ## What exists today
 
 This is **foundation only**—not a running worker yet:
@@ -84,6 +86,13 @@ This is **foundation only**—not a running worker yet:
 | `scripts/smoke_cloudwatch_config.sh` | Fluent Bit / EKS observability offline smoke (Day 127) |
 | `scripts/smoke_monitoring.sh` | Prometheus recording/alert rule smoke (Day 128) |
 | `scripts/smoke_dashboard.sh` | Grafana dashboard JSON smoke (Day 128) |
+| `internal/faults` | Deterministic fault injection (Day 129; off by default) |
+| `internal/metrics` | Resilience counters (Day 129) |
+| `cmd/resilience-scenarios` | In-process failure scenarios (Day 129) |
+| `scripts/smoke_worker_recovery.sh` | Fault recovery smoke (Day 129) |
+| `scripts/smoke_dependency_failures.sh` | Redis/Kafka/gRPC outage smoke (Day 129) |
+| `scripts/smoke_k8s_resilience.sh` | Optional Pod replacement smoke (Day 129) |
+| `scripts/smoke_resilience.sh` | Master resilience smoke (Day 129) |
 | `scripts/publish_ecr.sh` | ECR publish (immutable SHA; supports DRY_RUN) |
 | `scripts/deploy_eks.sh` | EKS apply + rollout verify (supports DRY_RUN) |
 | `scripts/rollback_eks.sh` | EKS rollout undo (supports DRY_RUN) |

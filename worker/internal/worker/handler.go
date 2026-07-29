@@ -13,7 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/faults"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/logging"
+	"github.com/KushalGautamKG/workos-scheduler/worker/internal/metrics"
 	"github.com/KushalGautamKG/workos-scheduler/worker/internal/telemetry"
 )
 
@@ -36,6 +38,7 @@ type DispatchEventHandler struct {
 	IdempotencyStore IdempotencyStore
 	IdempotencyTTL   time.Duration // 0 ⇒ DefaultExecutionIdempotencyTTL when store set
 	Logger           *slog.Logger  // optional structured logger (nil ⇒ no slog lines)
+	FaultInjector    faults.Injector // optional; nil ⇒ no injection (production default)
 
 	duplicateExecutions atomic.Int64
 	idempotencyErrors   atomic.Int64
@@ -101,6 +104,10 @@ func (handler *DispatchEventHandler) handle(
 		return ExecutionResult{}, fmt.Errorf("executor is not configured")
 	}
 
+	if err := handler.inject(ctx, faults.PointBeforeClaim); err != nil {
+		return ExecutionResult{}, err
+	}
+
 	// Step 2: optional execution idempotency claim before Execute.
 	if handler.IdempotencyStore != nil {
 		key, err := ExecutionIdempotencyKey(event.JobID, event.Attempt)
@@ -127,6 +134,7 @@ func (handler *DispatchEventHandler) handle(
 		}
 		if !claimed {
 			handler.duplicateExecutions.Add(1)
+			_ = metrics.IncDuplicateDelivery("skipped")
 			log.Warn(
 				"duplicate execution skipped",
 				"operation", "claim",
@@ -135,6 +143,9 @@ func (handler *DispatchEventHandler) handle(
 			// Duplicate skip is not a failure and must not go to DLQ.
 			// Do not publish to results (Python does not accept duplicate_skipped yet).
 			return DuplicateSkippedResult(), nil
+		}
+		if err := handler.inject(ctx, faults.PointAfterClaim); err != nil {
+			return ExecutionResult{}, err
 		}
 	}
 
@@ -152,6 +163,9 @@ func (handler *DispatchEventHandler) handle(
 	}
 
 	// Step 5: run the task through the execution boundary.
+	if err := handler.inject(ctx, faults.PointBeforeExecute); err != nil {
+		return ExecutionResult{}, err
+	}
 	log.Info("job execution started", "operation", "execute", "status", "started")
 	result, err := handler.Executor.Execute(task)
 	if err != nil {
@@ -164,6 +178,9 @@ func (handler *DispatchEventHandler) handle(
 			"status", "failed",
 			"error_type", logging.ErrorType(err),
 		)
+		return ExecutionResult{}, err
+	}
+	if err := handler.inject(ctx, faults.PointAfterExecute); err != nil {
 		return ExecutionResult{}, err
 	}
 
@@ -200,15 +217,28 @@ func (handler *DispatchEventHandler) handle(
 		}
 
 		resultEvent := NewWorkerResultEvent(event.JobID, result, workerName)
+		if err := handler.inject(ctx, faults.PointBeforeResultPublish); err != nil {
+			return result, err
+		}
 		if err := handler.ResultProducer.PublishResult(ctx, resultEvent); err != nil {
 			// Execution succeeded from the executor's perspective, but we could
 			// not hand the outcome to Kafka—return the result plus the error.
 			// Result producer logs the publish failure at its boundary.
 			return result, err
 		}
+		if err := handler.inject(ctx, faults.PointAfterResultPublish); err != nil {
+			return result, err
+		}
 	}
 
 	return result, nil
+}
+
+func (handler *DispatchEventHandler) inject(ctx context.Context, point faults.Point) error {
+	if handler.FaultInjector == nil {
+		return nil
+	}
+	return handler.FaultInjector.Inject(ctx, point)
 }
 
 func (handler *DispatchEventHandler) executionLogger(
