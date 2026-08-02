@@ -53,6 +53,7 @@ The worker plane prioritizes throughput, low latency, and resource efficiency. I
 - **Structured logging (Day 127):** shared JSON field contract (Go `slog` + Python logging context), `trace_id`/`span_id` correlation, Fluent Bit DaemonSet + **eks-observability** overlay toward CloudWatch — offline config validation only — **[structured-logging.md](design/structured-logging.md)**.
 - **Monitoring (Day 128):** SLIs/SLOs, Prometheus recording + alert rules, Grafana monitoring dashboard, alert runbooks — offline validation only; managed Prometheus/Grafana/PagerDuty are future — **[monitoring.md](design/monitoring.md)**.
 - **Resilience testing (Day 129):** deterministic fault injection, duplicate-delivery and dependency-outage smokes, graceful shutdown / optional k8s Pod replacement — **local validation only**, not production chaos — **[resilience-testing.md](design/resilience-testing.md)**.
+- **Day 130 completion:** final architecture, evidence matrix, readiness checklist, demo/interview guides — **[architecture-final.md](architecture-final.md)**, **[checkpoints/day130.md](checkpoints/day130.md)**.
 
 ## FIFO Scheduling Policy
 

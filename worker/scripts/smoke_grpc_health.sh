@@ -56,7 +56,9 @@ SERVER_PID=$!
 
 READY=0
 for _ in $(seq 1 50); do
-  if grep -Fq "event=grpc_server_ready status=SERVING" "${SERVER_LOG}" 2>/dev/null; then
+  if grep -Fq "event=grpc_server_ready status=SERVING" "${SERVER_LOG}" 2>/dev/null \
+    || grep -Fq '"message":"worker ready"' "${SERVER_LOG}" 2>/dev/null \
+    || grep -Fq '"status":"ready"' "${SERVER_LOG}" 2>/dev/null; then
     READY=1
     break
   fi
@@ -92,10 +94,14 @@ fi
 wait "${SERVER_PID}" 2>/dev/null || true
 SERVER_PID=""
 
-grep -Fq "event=grpc_server_not_ready status=NOT_SERVING" "${SERVER_LOG}" \
-  || fail "missing NOT_SERVING transition in server log"
-grep -Fq "event=grpc_server_stopped" "${SERVER_LOG}" \
-  || fail "missing grpc_server_stopped in server log"
+if ! grep -Fq "event=grpc_server_not_ready status=NOT_SERVING" "${SERVER_LOG}" \
+  && ! grep -Fq '"status":"stopping"' "${SERVER_LOG}"; then
+  fail "missing readiness drain / shutting-down transition in server log"
+fi
+if ! grep -Fq "event=grpc_server_stopped" "${SERVER_LOG}" \
+  && ! grep -Fq '"status":"stopped"' "${SERVER_LOG}"; then
+  fail "missing worker stopped / grpc_server_stopped in server log"
+fi
 
 echo "PASS: grpc health smoke succeeded"
 echo "event=smoke_grpc_health success=true"

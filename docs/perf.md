@@ -2,6 +2,8 @@
 
 **Day 96–115:** three idempotency boundaries complete. **Day 116:** internal gRPC `WorkerExecutionService` contract (local only; Kafka dispatch unchanged). — **[grpc-worker-execution.md](design/grpc-worker-execution.md)**.
 
+**Day 130:** Resume-safe metric inventory and unsupported-claim review live in **[resume-metrics.md](resume-metrics.md)**. Do not quote 3.1× / 0.01% / 99.95% / 60% MTTR without new experiments.
+
 ## Baseline Metrics Plan
 
 | Metric | What it means | How we'll measure it | Why it matters | Target |

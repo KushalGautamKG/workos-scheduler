@@ -74,7 +74,9 @@ SERVER_PID=$!
 
 READY=0
 for _ in $(seq 1 50); do
-  if grep -Fq "event=grpc_server_ready status=SERVING" "${SERVER_LOG}" 2>/dev/null; then
+  if grep -Fq "event=grpc_server_ready status=SERVING" "${SERVER_LOG}" 2>/dev/null \
+    || grep -Fq '"message":"worker ready"' "${SERVER_LOG}" 2>/dev/null \
+    || grep -Fq '"status":"ready"' "${SERVER_LOG}" 2>/dev/null; then
     READY=1
     break
   fi

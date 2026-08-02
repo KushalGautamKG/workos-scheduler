@@ -769,3 +769,11 @@ Deterministic **fault injection** (`worker/internal/faults`) is **disabled by de
 | Duplicate delivery vs completion | [runbooks/duplicate-delivery.md](runbooks/duplicate-delivery.md) |
 
 Local-test limitations apply — production chaos testing has **not** been completed.
+
+## Day 130 — Final verification
+
+Orchestrator: **`./worker/scripts/smoke_day130.sh`**
+
+Expect `required_checks_failed=0` and `event=smoke_day130 success=true`.
+
+Project completion docs: [checkpoints/day130.md](checkpoints/day130.md) · [production-readiness.md](production-readiness.md) · [known-limitations.md](known-limitations.md) · [demo.md](demo.md)

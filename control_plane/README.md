@@ -2,6 +2,8 @@
 
 The KernelQ control plane is the "brain" of the system. It makes decisions about when jobs should run and coordinates everything.
 
+**Day 130:** KernelQ is implementation-complete for its portfolio scope (locally validated). See **[docs/checkpoints/day130.md](../docs/checkpoints/day130.md)**, **[docs/architecture-final.md](../docs/architecture-final.md)**, and **[docs/demo.md](../docs/demo.md)**. Production AWS operation is not claimed.
+
 ## Why Python?
 
 The control plane is written in Python because:

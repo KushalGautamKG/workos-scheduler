@@ -48,6 +48,8 @@ Kafka carries the handoff; Postgres stays the system of record. See `docs/archit
 
 **Day 129 — resilience:** **`internal/faults`** (disabled by default; non-prod only), resilience metrics, worker recovery / dependency / k8s / master smokes. Telemetry-based recovery evidence; local-test limitations apply — **[resilience-testing.md](../docs/design/resilience-testing.md)**.
 
+**Day 130 — completion:** Final readiness docs + **`./worker/scripts/smoke_day130.sh`** orchestrator. Portfolio implementation complete; production AWS operation not claimed — **[day130.md](../docs/checkpoints/day130.md)**.
+
 ## What exists today
 
 This is **foundation only**—not a running worker yet:
@@ -93,6 +95,7 @@ This is **foundation only**—not a running worker yet:
 | `scripts/smoke_dependency_failures.sh` | Redis/Kafka/gRPC outage smoke (Day 129) |
 | `scripts/smoke_k8s_resilience.sh` | Optional Pod replacement smoke (Day 129) |
 | `scripts/smoke_resilience.sh` | Master resilience smoke (Day 129) |
+| `scripts/smoke_day130.sh` | Final Day 130 production-readiness orchestrator |
 | `scripts/publish_ecr.sh` | ECR publish (immutable SHA; supports DRY_RUN) |
 | `scripts/deploy_eks.sh` | EKS apply + rollout verify (supports DRY_RUN) |
 | `scripts/rollback_eks.sh` | EKS rollout undo (supports DRY_RUN) |
